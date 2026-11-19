@@ -214,6 +214,12 @@ class ResolverLoader {
       // kind { global?, countries? }), for Pop of the Tops' source and region
       // menus. Outside `capabilities` for the same reason. null when none.
       charts: ResolverLoader.chartsInfo(axe.charts),
+      // Artist bios (capabilities.biography, #1539 step 6): the manifest's
+      // top-level `biography` ({ preferred: true }), outside `capabilities`
+      // for the same reason. A preferred plug-in's bio is shown first until
+      // the user picks a source. null when none.
+      biography: axe.biography && typeof axe.biography === 'object' && axe.biography.preferred === true
+        ? { preferred: true } : null,
 
       // Settings
       requiresAuth: settings?.requiresAuth || false,

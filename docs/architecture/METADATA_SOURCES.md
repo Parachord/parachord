@@ -7,7 +7,7 @@ This document describes all external data sources used by Parachord for fetching
 | Metadata Type | Primary Provider | Fallback 1 | Fallback 2 | Fallback 3 |
 |---------------|------------------|------------|------------|------------|
 | **Artist Images** | Spotify (plug-in on and signed in) | MusicKit (Apple Music, plug-in on) | Wikipedia | Discogs |
-| **Artist Bios** | Plug-ins with `biography`, in the user's order (Discogs, Last.fm, Wikipedia); every bio found is offered in the Biography tab's Source menu | - | - | - |
+| **Artist Bios** | The source the user last picked, else Wikipedia (its manifest's `biography.preferred`), else the next plug-in with `biography` that has one; every bio found is offered in the Biography tab's Source picker | - | - | - |
 | **Related Artists** | Last.fm + ListenBrainz (merged) | - | - | - |
 | **Album Art** | Cover Art Archive | Embedded metadata | Folder art | - |
 | **Charts (Albums)** | Plug-ins with `charts`, in the user's order (Apple Music, ListenBrainz) | - | - | - |
@@ -48,9 +48,9 @@ Displayed on the artist page's Biography tab, in the playbar's artist tooltip an
 | Discogs | `api.discogs.com/artists/{id}` | Optional PAT | The profile, `markup: 'bbcode'` |
 | Last.fm | `ws.audioscrobbler.com/2.0/?method=artist.getinfo` | API key | Full bio and a summary, without the "Read more on Last.fm" link and licence line |
 
-**Which bio:** all of them are asked at once (`fetchArtistBioUncached` in `src/renderer/app.js`: `askEach(similarProvidersFor('biography'), …)`): active plug-ins and meta-services in the user's order, minus one switched off (its Enable or "Use metadata from" switch). `bioWithSources` (`src/renderer/lib/artist-bio.js`) keeps every bio found; the first is shown and the rest are in `sources`. Meta-services have no order of their own yet, so among them it is the order they load in. The Biography tab's **Source** picker (`SortMenu`, `variant: 'button'`) lists every plug-in with a bio for the artist and switches to one (`bioFromSource`) for as long as the page is open; with one source the line just names it. A plug-in that fails is left out; none answering reads as "No biography for this artist".
+**Which bio:** all of them are asked at once (`fetchArtistBioUncached` in `src/renderer/app.js`: `askEach(similarProvidersFor('biography'), …)`): active plug-ins and meta-services in the user's order, minus one switched off (its Enable or "Use metadata from" switch). `bioWithSources` (`src/renderer/lib/artist-bio.js`) keeps every bio found in `sources`. Which one is shown (`fetchArtistBio`: `preferredBio(bio, bioPreference(pick, plug-ins))`): the source the user last picked, when it has a bio for this artist; else a plug-in whose manifest declares `biography: { preferred: true }` (Wikipedia); else the first in the user's order (meta-services have no order of their own, so among them it is the order they load in). The Biography tab's **Source** picker (`SortMenu`, `variant: 'button'`) lists every plug-in with a bio for the artist; picking one shows it and saves it (`artist_bio_source`, `pickArtistBioSource`), so it comes first for every artist after, cached bios included. With one source the line just names it. A plug-in that fails is left out; none answering reads as "No biography for this artist".
 
-Before #1539 step 6 the order was fixed (Wikipedia, then Discogs, then Last.fm), and Last.fm's bio was never shown: its text always ends with "Read more on Last.fm", which the old check treated as an empty bio.
+Before #1539 step 6 the order was fixed (Wikipedia, then Discogs, then Last.fm) and there was no choice, and Last.fm's bio was never shown: its text always ends with "Read more on Last.fm", which the old check treated as an empty bio.
 
 **Lookup Chain for Wikipedia** (the Wikipedia plug-in, `plugins-src/wikipedia/implementation.js`):
 1. The artist MBID (from the artist page, or the MBID mapper / a MusicBrainz search for the playbar, or the MusicBrainz row's id in Search)

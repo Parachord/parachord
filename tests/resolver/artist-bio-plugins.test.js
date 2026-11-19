@@ -45,6 +45,13 @@ describe('manifests', () => {
     }
     expect(loader.getBiographyResolvers().map((r) => r.id).sort()).toEqual(['discogs', 'lastfm', 'wikipedia']);
   });
+
+  test('Wikipedia is the preferred bio source (top-level biography.preferred); the others are not', () => {
+    expect(axeOf('wikipedia').biography).toEqual({ preferred: true });
+    expect(loader.resolvers.get('wikipedia').biography).toEqual({ preferred: true });
+    expect(loader.resolvers.get('discogs').biography).toBeNull();
+    expect(loader.resolvers.get('lastfm').biography).toBeNull();
+  });
 });
 
 describe('Last.fm getArtistBio', () => {

@@ -47,7 +47,6 @@ const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
 const { parseBioMarkup } = require('../lib/bio-markup');
-const { bioFromSource } = require('../lib/artist-bio');
 const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -66,6 +65,7 @@ const ARTIST_PAGE_HANDLERS = [
   'handleSearchInput',
   'loadArtistConcerts',
   'openAlbumVersions',
+  'pickArtistBioSource',
   'prefetchReleaseTracks',
   'reprioritizeAlbumArtQueue',
   'resolveRelatedArtistImages',
@@ -126,6 +126,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     loadingRelated,
     loadingRelease,
     openAlbumVersions,
+    pickArtistBioSource,
     playbackContext,
     prefetchReleaseTracks,
     prefetchedReleasesRef,
@@ -1432,7 +1433,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                           options: bioSources.map(src => ({ value: src.source, label: pluginName(src.source) })),
                           label: 'Biography source',
                           prefix: 'Source:',
-                          onChange: (id) => setArtistBio(bioFromSource(artistBio, id)),
+                          // Shows it and remembers it for every artist (app.js).
+                          onChange: pickArtistBioSource,
                         })
                       )
                     : React.createElement('div', { className: 'h-8 flex items-center text-sm text-ink-tertiary' },

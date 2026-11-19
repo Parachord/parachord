@@ -149,7 +149,27 @@ function bioFromSource(bio, sourceId) {
   return pick ? { ...pick, sources: bio.sources } : bio;
 }
 
+// The plug-ins whose bio to show first, best first: the source the user last
+// picked in the Biography tab (`pick`, saved as artist_bio_source), then the
+// plug-ins whose manifest says `biography: { preferred: true }` (Wikipedia),
+// in the order given. resolvers: the biography plug-ins, in the user's order.
+function bioPreference(pick, resolvers) {
+  const preferred = (resolvers || []).filter((r) => r && r.biography && r.biography.preferred).map((r) => r.id);
+  return [...new Set([pick, ...preferred].filter((id) => typeof id === 'string' && id))];
+}
+
+// The bio to show: the first plug-in in `prefer` that has a bio for this
+// artist, else the bio as it came (the first in the user's order). The cache
+// keeps the bio as fetched, so a new pick applies to bios fetched before it.
+function preferredBio(bio, prefer) {
+  if (!bio || !Array.isArray(bio.sources)) return bio;
+  const id = (prefer || []).find((p) => bio.sources.some((s) => s.source === p));
+  return id && id !== bio.source ? bioFromSource(bio, id) : bio;
+}
+
 module.exports = {
+  bioPreference,
+  preferredBio,
   bioWithSources,
   bioFromSource,
   isMbid,

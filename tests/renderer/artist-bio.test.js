@@ -14,6 +14,8 @@ const {
   createArtistBioCache,
   bioWithSources,
   bioFromSource,
+  bioPreference,
+  preferredBio,
 } = require('../../src/renderer/lib/artist-bio');
 
 const WILD_PINK = '94fdf751-0644-4b78-9e72-dbdce539b5b7';
@@ -234,5 +236,38 @@ describe('bioWithSources (#1539 step 6)', () => {
     expect(lastfm.markup).toBeUndefined();
     expect(lastfm.sources).toBe(bio.sources);
     expect(bioFromSource(bio, 'nope')).toBe(bio);
+  });
+});
+
+describe('the bio shown first: the last pick, then a preferred plug-in (#1539 step 6)', () => {
+  const resolvers = [{ id: 'discogs' }, { id: 'lastfm' }, { id: 'wikipedia', biography: { preferred: true } }];
+  const bio = bioWithSources([
+    { id: 'discogs', items: [{ text: 'D' }] },
+    { id: 'lastfm', items: [{ text: 'L' }] },
+    { id: 'wikipedia', items: [{ text: 'W' }] },
+  ]);
+
+  test('bioPreference: the pick, then the manifest-preferred plug-ins, no repeats', () => {
+    expect(bioPreference(null, resolvers)).toEqual(['wikipedia']);
+    expect(bioPreference('lastfm', resolvers)).toEqual(['lastfm', 'wikipedia']);
+    expect(bioPreference('wikipedia', resolvers)).toEqual(['wikipedia']);
+    expect(bioPreference(undefined, undefined)).toEqual([]);
+  });
+
+  test('with no pick, the preferred plug-in (Wikipedia) is shown', () => {
+    expect(preferredBio(bio, bioPreference(null, resolvers))).toMatchObject({ text: 'W', source: 'wikipedia' });
+  });
+
+  test('the pick wins when it has a bio for the artist; otherwise the next preference', () => {
+    expect(preferredBio(bio, bioPreference('lastfm', resolvers))).toMatchObject({ text: 'L', source: 'lastfm' });
+    const noLastfm = bioWithSources([{ id: 'discogs', items: [{ text: 'D' }] }, { id: 'wikipedia', items: [{ text: 'W' }] }]);
+    expect(preferredBio(noLastfm, bioPreference('lastfm', resolvers))).toMatchObject({ source: 'wikipedia' });
+    const discogsOnly = bioWithSources([{ id: 'discogs', items: [{ text: 'D' }] }]);
+    expect(preferredBio(discogsOnly, bioPreference('lastfm', resolvers))).toBe(discogsOnly);
+  });
+
+  test('no bio stays null; every source is kept', () => {
+    expect(preferredBio(null, ['wikipedia'])).toBeNull();
+    expect(preferredBio(bio, ['lastfm']).sources).toBe(bio.sources);
   });
 });

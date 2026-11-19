@@ -1363,7 +1363,7 @@ const { formatCalendarDate } = require('./lib/calendar-date');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
 const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
-const { createWikidataIdLookup, createArtistBioCache, bioWithSources, isMbid } = require('./lib/artist-bio');
+const { createWikidataIdLookup, createArtistBioCache, bioWithSources, bioFromSource, bioPreference, preferredBio, isMbid } = require('./lib/artist-bio');
 const { bioPlainText } = require('./lib/bio-markup');
 // Wikidata first, MusicBrainz url-rels as the fallback, so the Wikipedia
 // image survives a MusicBrainz outage (the Wikipedia plug-in's bio does the
@@ -3670,7 +3670,9 @@ const Parachord = () => {
   const [artistSearchOpen, setArtistSearchOpen] = useState(false);
   const [artistSearch, setArtistSearch] = useState('');
   const [artistSort, setArtistSort] = useState('date-desc'); // date-desc, date-asc, alpha-asc, alpha-desc
-  const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm (for artist page)
+  const [artistBio, setArtistBio] = useState(null); // The artist page's bio ({ text, source, sources, ... }), false when none
+  // The bio source the user last picked (artist_bio_source, #1539 step 6).
+  const artistBioPickRef = useRef(null);
   const [playbarArtistBio, setPlaybarArtistBio] = useState(null); // Artist bio for playbar tooltip (current track's artist)
   const [artistExtendedInfo, setArtistExtendedInfo] = useState(null); // Extended info from MusicBrainz (founded, location, URLs, members)
   const [loadingExtendedInfo, setLoadingExtendedInfo] = useState(false);
@@ -19135,6 +19137,7 @@ ${trackListXml}
         'cache_critics_picks',
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'metadata_off_resolvers', 'meta_service_configs',
+        'artist_bio_source',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'collection_hidden_local_albums', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19687,6 +19690,7 @@ ${trackListXml}
       if (Array.isArray(d['playback_off_resolvers'])) setPlaybackOffResolvers(d['playback_off_resolvers']);
       if (Array.isArray(d['recommendations_off_resolvers'])) setRecommendationsOffResolvers(d['recommendations_off_resolvers']);
       if (Array.isArray(d['metadata_off_resolvers'])) setMetadataOffResolvers(d['metadata_off_resolvers']);
+      if (typeof d['artist_bio_source'] === 'string' && d['artist_bio_source']) artistBioPickRef.current = d['artist_bio_source'];
       const savedResolverOrder = d['resolver_order'];
       const savedMetaServiceConfigs = d['meta_service_configs'];
       const savedAppleMusicDevToken = d['applemusic_developer_token'];
@@ -32615,9 +32619,24 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Shared by the playbar and the artist page; a bio found by one is reused
-  // by the other. Touches no loading state.
-  const fetchArtistBio = (artistName, artistMbid) =>
-    artistBioCache.load(artistName, artistMbid, fetchArtistBioUncached);
+  // by the other. Touches no loading state. The bio shown is the user's last
+  // pick when it has one for this artist, else a preferred plug-in's
+  // (Wikipedia's manifest), else the first in the user's order (bioPreference).
+  const fetchArtistBio = async (artistName, artistMbid) => {
+    const bio = await artistBioCache.load(artistName, artistMbid, fetchArtistBioUncached);
+    const resolvers = resolverLoaderRef.current?.getBiographyResolvers?.() || [];
+    return preferredBio(bio, bioPreference(artistBioPickRef.current, resolvers));
+  };
+
+  // The Biography tab's Source picker: show that plug-in's bio, and remember
+  // it (artist_bio_source) so it is shown first for every artist that has one.
+  const pickArtistBioSource = (sourceId) => {
+    if (!sourceId) return;
+    artistBioPickRef.current = sourceId;
+    window.electron?.store?.set('artist_bio_source', sourceId)
+      ?.catch?.(err => console.error('[Bio] Could not save the bio source:', err));
+    setArtistBio(prev => (prev && typeof prev === 'object' ? bioFromSource(prev, sourceId) : prev));
+  };
 
   // The artist page's fetch: drives its Biography tab skeleton. The playbar
   // calls fetchArtistBio instead, so its fetch can't leave the tab's
@@ -36150,7 +36169,7 @@ useEffect(() => {
     addToQueue, copyParachordLink, fetchArtistData, fetchReleaseData, getArtistBio,
     getArtistTopTracks, getRelatedArtists, handlePlay,
     handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, openAlbumVersions,
-    playArtistTopTracks, prefetchReleaseTracks, getServiceColor, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
+    pickArtistBioSource, playArtistTopTracks, prefetchReleaseTracks, getServiceColor, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
     retryReleaseLoad, selectAlbumVersion, setQueueWithContext,
   });
 

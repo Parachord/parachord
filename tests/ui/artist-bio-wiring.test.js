@@ -67,4 +67,16 @@ describe('artist bio wiring', () => {
     expect(playbar).toContain('await fetchArtistBio(currentTrack.artist, mbid)');
     expect(playbar).not.toContain('getArtistBio(');
   });
+  test('the bio shown follows the last pick, then a preferred plug-in, and the pick is saved', () => {
+    const fetchBio = body('const fetchArtistBio = async (artistName, artistMbid) => {', '\n  };\n');
+    expect(fetchBio).toContain('preferredBio(bio, bioPreference(artistBioPickRef.current, resolvers))');
+    const pick = body('const pickArtistBioSource = (sourceId) => {', '\n  };\n');
+    expect(pick).toContain("store?.set('artist_bio_source', sourceId)");
+    expect(pick).toContain('artistBioPickRef.current = sourceId');
+    expect(src).toContain("artistBioPickRef.current = d['artist_bio_source']");
+    const store = fs.readFileSync(path.join(__dirname, '../../main-process/ipc/store.js'), 'utf8');
+    expect(store).toContain("'artist_bio_source'");
+    const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/artist-page.js'), 'utf8');
+    expect(page).toContain('onChange: pickArtistBioSource');
+  });
 });
