@@ -306,7 +306,11 @@ module.exports = {
     const url = 'https://ws.audioscrobbler.com/2.0/?method=' + method + '&user=' + encodeURIComponent(user) +
       '&period=' + period + '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
     const response = await fetch(url);
-    if (!response.ok) throw new Error('Last.fm history failed: ' + response.status);
+    if (!response.ok) {
+      const error = new Error('Last.fm history failed: ' + response.status);
+      error.status = response.status;
+      throw error;
+    }
     const data = await response.json();
     if (data && data.error !== undefined) {
       if (Number(data.error) === 6) return [];
@@ -356,11 +360,27 @@ module.exports = {
     const url = 'https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=' + encodeURIComponent(user) +
       '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
     const response = await fetch(url);
-    if (!response.ok) throw new Error('Last.fm recent listens failed: ' + response.status);
+    if (!response.ok) {
+      // A profile with "Hide recent listening information" on answers 403
+      // with error 17 ("Login: User required to be logged in") to everyone
+      // but its owner. Signing the request with the viewer's own session
+      // doesn't get past it (checked 2026-10-27), while the same profile's
+      // top tracks and artists still answer. So it isn't a broken account:
+      // the error says so (hidesListening), and the friend UI shows
+      // "Listening hidden". It also carries the status for the friend
+      // poll's backoff.
+      const body = response.status === 403 ? await response.json().catch(() => null) : null;
+      const error = new Error('Last.fm recent listens failed: ' + response.status);
+      error.status = response.status;
+      if (body && Number(body.error) === 17) error.hidesListening = true;
+      throw error;
+    }
     const data = await response.json();
     if (data && data.error !== undefined) {
       if (Number(data.error) === 6) return [];
-      throw new Error('Last.fm recent listens failed: error ' + data.error);
+      const error = new Error('Last.fm recent listens failed: error ' + data.error);
+      if (Number(data.error) === 17) error.hidesListening = true;
+      throw error;
     }
     const list = data && data.recenttracks && data.recenttracks.track;
     const rows = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
@@ -381,6 +401,18 @@ module.exports = {
       });
     }
     return out;
+  },
+
+  // listeningHistory, optional: what a user is playing right now (the newest
+  // of user.getrecenttracks, when Last.fm marks it now playing), for a
+  // friend's radio (#1539 step 5). query: { user }. Answers { title, artist,
+  // album? } or null; a failure THROWS, with the same `status` and
+  // `hidesListening` as getRecentListens.
+  getNowPlaying: async function (query, config) {
+    const listens = await this.getRecentListens({ user: query && query.user, limit: 1 }, config);
+    const newest = listens && listens[0];
+    if (!newest || !newest.nowPlaying) return null;
+    return { title: newest.title, artist: newest.artist, album: newest.album };
   },
 
   // The charts capability (#1539 step 3): Last.fm's top tracks, worldwide
