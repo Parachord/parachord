@@ -282,5 +282,43 @@ module.exports = {
       });
     }
     return out;
+  },
+
+  // The artistTopTracks capability (#1539 step 2): artist.gettoptracks, moved
+  // out of app.js (getArtistTopTracks). artist: { name, limit? }. Answers
+  // [{ title, artist, duration (ms) or undefined, mbid?, listens }], most
+  // played first. Same miss and failure rules as getSimilarArtists: error 6
+  // is [], anything else that goes wrong THROWS.
+  getArtistTopTracks: async function (artist, config) {
+    const name = artist && typeof artist.name === 'string' ? artist.name.trim() : '';
+    if (!name) return [];
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm top tracks: no API key yet');
+    const limit = Math.max(1, Math.min(100, Number(artist.limit) || 10));
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist=' + encodeURIComponent(name) +
+      '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm top tracks failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return [];
+      throw new Error('Last.fm top tracks failed: error ' + data.error);
+    }
+    const list = data && data.toptracks && data.toptracks.track;
+    const rows = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
+    const out = [];
+    for (const t of rows) {
+      if (!t || typeof t.name !== 'string' || !t.name.trim()) continue;
+      const seconds = parseInt(t.duration, 10);
+      const listens = parseInt(t.playcount, 10);
+      out.push({
+        title: t.name,
+        artist: (t.artist && t.artist.name) || name,
+        duration: seconds > 0 ? seconds * 1000 : undefined,
+        mbid: t.mbid || undefined,
+        listens: Number.isFinite(listens) ? listens : undefined
+      });
+    }
+    return out.slice(0, limit);
   }
 };

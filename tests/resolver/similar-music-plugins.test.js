@@ -11,7 +11,7 @@ const path = require('path');
 const load = (id) => {
   const axe = JSON.parse(fs.readFileSync(path.join(__dirname, `../../plugins/${id}.axe`), 'utf8'));
   const fns = {};
-  for (const name of ['getSimilarArtists', 'getSimilarTracks']) {
+  for (const name of ['getSimilarArtists', 'getSimilarTracks', 'getArtistTopTracks']) {
     if (axe.implementation[name]) fns[name] = new Function('return ' + axe.implementation[name])();
   }
   return { axe, ...fns };
@@ -41,6 +41,13 @@ describe('manifests', () => {
     expect(typeof lastfm.getSimilarArtists).toBe('function');
     expect(typeof lastfm.getSimilarTracks).toBe('function');
     expect(typeof listenbrainz.getSimilarArtists).toBe('function');
+  });
+
+  test('both declare artistTopTracks (#1539 step 2)', () => {
+    expect(lastfm.axe.capabilities.artistTopTracks).toBe(true);
+    expect(listenbrainz.axe.capabilities.artistTopTracks).toBe(true);
+    expect(typeof lastfm.getArtistTopTracks).toBe('function');
+    expect(typeof listenbrainz.getArtistTopTracks).toBe('function');
   });
 });
 
@@ -169,5 +176,83 @@ describe('ListenBrainz getSimilarArtists', () => {
     await expect(listenbrainz.getSimilarArtists({ name: 'R', mbid: RADIOHEAD }, {})).rejects.toThrow('503');
     mockFetch(() => reply({ error: 'nope' }));
     await expect(listenbrainz.getSimilarArtists({ name: 'R', mbid: RADIOHEAD }, {})).rejects.toThrow('unexpected');
+  });
+});
+
+describe('Last.fm getArtistTopTracks', () => {
+  test('asks artist.gettoptracks and answers most played first', async () => {
+    mockFetch(() => reply({ toptracks: { track: [
+      { name: 'Creep', playcount: '9000', duration: '238', mbid: 'r-1', artist: { name: 'Radiohead' } },
+      { name: 'Karma Police', playcount: '7000', duration: '0', artist: { name: 'Radiohead' } },
+      { name: '' },
+    ] } }));
+    const out = await lastfm.getArtistTopTracks({ name: 'Radiohead', limit: 5 }, { apiKey: KEY });
+    expect(out).toEqual([
+      { title: 'Creep', artist: 'Radiohead', duration: 238000, mbid: 'r-1', listens: 9000 },
+      { title: 'Karma Police', artist: 'Radiohead', duration: undefined, mbid: undefined, listens: 7000 },
+    ]);
+    const u = new URL(calls[0].url);
+    expect(u.searchParams.get('method')).toBe('artist.gettoptracks');
+    expect(u.searchParams.get('artist')).toBe('Radiohead');
+    expect(u.searchParams.get('limit')).toBe('5');
+  });
+
+  test('error 6 is a miss; a failure or no key throws', async () => {
+    mockFetch(() => reply({ error: 6, message: 'The artist you supplied could not be found' }));
+    await expect(lastfm.getArtistTopTracks({ name: 'Nobody' }, { apiKey: KEY })).resolves.toEqual([]);
+    mockFetch(() => reply(null, { ok: false, status: 500 }));
+    await expect(lastfm.getArtistTopTracks({ name: 'Radiohead' }, { apiKey: KEY })).rejects.toThrow('500');
+    mockFetch(() => reply({}));
+    await expect(lastfm.getArtistTopTracks({ name: 'Radiohead' }, {})).rejects.toThrow('no API key');
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('ListenBrainz getArtistTopTracks', () => {
+  const RADIOHEAD = 'a74b1b7f-71a5-4011-9441-d0b5e4122711';
+  const TOKEN = 'lb-token-xyz';
+  // The documented answer of /1/popularity/top-recordings-for-artist.
+  const answer = [
+    { artist_mbids: [RADIOHEAD], artist_name: 'Radiohead', recording_name: 'Creep', recording_mbid: 'rec-1', release_name: 'Pablo Honey', length: 238000, total_listen_count: 900 },
+    { artist_mbids: [RADIOHEAD], artist_name: 'Radiohead', recording_name: 'creep', recording_mbid: 'rec-2', release_name: 'Creep (single)', length: 236000, total_listen_count: 300 },
+    { artist_mbids: [RADIOHEAD], artist_name: 'Radiohead', recording_name: 'No Surprises', recording_mbid: 'rec-3', release_name: 'OK Computer', length: 0, total_listen_count: 800 },
+  ];
+
+  test('asks by MBID with the user’s token; one row per title, most played first', async () => {
+    mockFetch(() => reply(answer));
+    const out = await listenbrainz.getArtistTopTracks({ name: 'Radiohead', mbid: RADIOHEAD }, { userToken: TOKEN });
+    expect(out).toEqual([
+      { title: 'Creep', artist: 'Radiohead', album: 'Pablo Honey', duration: 238000, mbid: 'rec-1', listens: 900 },
+      { title: 'No Surprises', artist: 'Radiohead', album: 'OK Computer', duration: undefined, mbid: 'rec-3', listens: 800 },
+    ]);
+    expect(calls[0].url).toBe(`https://api.listenbrainz.org/1/popularity/top-recordings-for-artist/${RADIOHEAD}`);
+    expect(calls[0].options.headers.Authorization).toBe(`Token ${TOKEN}`);
+  });
+
+  test('honours the limit', async () => {
+    mockFetch(() => reply(answer));
+    const out = await listenbrainz.getArtistTopTracks({ name: 'Radiohead', mbid: RADIOHEAD, limit: 1 }, { userToken: TOKEN });
+    expect(out.map((t) => t.title)).toEqual(['Creep']);
+  });
+
+  test('no MBID is a miss with no request', async () => {
+    mockFetch(() => reply(answer));
+    await expect(listenbrainz.getArtistTopTracks({ name: 'Radiohead' }, { userToken: TOKEN })).resolves.toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('signed out, it throws without asking: ListenBrainz refuses anonymous requests', async () => {
+    mockFetch(() => reply(answer));
+    await expect(listenbrainz.getArtistTopTracks({ name: 'Radiohead', mbid: RADIOHEAD }, {})).rejects.toThrow('signed-in');
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a failed request or an unexpected answer throws, and never shows the token', async () => {
+    mockFetch(() => reply({ code: 401 }, { ok: false, status: 401 }));
+    const err = await listenbrainz.getArtistTopTracks({ name: 'R', mbid: RADIOHEAD }, { userToken: TOKEN }).catch((e) => e);
+    expect(err.message).toContain('401');
+    expect(err.message).not.toContain(TOKEN);
+    mockFetch(() => reply({ error: 'nope' }));
+    await expect(listenbrainz.getArtistTopTracks({ name: 'R', mbid: RADIOHEAD }, { userToken: TOKEN })).rejects.toThrow('unexpected');
   });
 });

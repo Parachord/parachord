@@ -1349,7 +1349,7 @@ const { pickTrackMatch } = require('../../sync-providers/track-match');
 // split store stamps every local_playlists write with the same module.
 const { stampPlaylist } = require('../../playlist-freshness');
 const { checkSpinoffAvailable } = require('./lib/spinoff-pool');
-const { similarProviders, askEach, mergeSimilarArtists, mergeSimilarTracks, sourcesIn } = require('./lib/similar-music');
+const { similarProviders, askEach, firstAnswer, mergeSimilarArtists, mergeSimilarTracks, sourcesIn } = require('./lib/similar-music');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistShareTarget, notSyncedSharePrompt, playlistListenbrainzMbid, lbMbidOf } = require('./lib/playlist-share');
 // A ListenBrainz user's Achordion profile (every ListenBrainz user has one).
@@ -6079,6 +6079,7 @@ const Parachord = () => {
   const refreshSpotifyTokenRef = useRef(null);
   const keyForSpinoffDedupRef = useRef(null);
   const getArtistTopTracksRef = useRef(null);
+  const findArtistTopTracksRef = useRef(null);
   // Spinoff's similar-music lookups (lib/similar-music.js, #1539), declared
   // far below the engine hook.
   const findSimilarTracksRef = useRef(null);
@@ -8832,6 +8833,8 @@ const Parachord = () => {
           // Related Artists and Spinoff (lib/similar-music.js, #1539).
           || (axe.capabilities?.similarArtists && axe.implementation?.getSimilarArtists)
           || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks)
+          // Artists' top tracks (#1539 step 2).
+          || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks)
         );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
@@ -8965,7 +8968,8 @@ const Parachord = () => {
           || (axe.capabilities?.similarUsers && axe.implementation?.getSimilarUsers)
           || (axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes)
           || (axe.capabilities?.similarArtists && axe.implementation?.getSimilarArtists)
-          || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks));
+          || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks)
+          || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks));
         const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -15189,11 +15193,11 @@ ${trackListXml}
           moveInQueueRef.current(data.from, data.to);
         } else if (data.action === 'queue-artist-top-tracks' && data.artist?.name) {
           const name = data.artist.name;
-          const tracks = await getArtistTopTracksRef.current(name);
+          const { tracks, failed } = await findArtistTopTracksRef.current(data.artist);
           if (tracks.length > 0) {
             addToQueue(tracks, { type: 'artist', name });
           } else {
-            showToast(`No top tracks found for ${name}`, 'error');
+            showToast(failed ? `Couldn’t load ${name}’s top tracks. Try again.` : `No top tracks found for ${name}`, 'error');
           }
         } else if (data.action === 'add-to-queue' && data.tracks) {
           // Build context from source info if available
@@ -16523,6 +16527,7 @@ ${trackListXml}
   useEffect(() => { refreshSpotifyTokenRef.current = refreshSpotifyToken; });
   useEffect(() => { keyForSpinoffDedupRef.current = keyForSpinoffDedup; });
   useEffect(() => { getArtistTopTracksRef.current = getArtistTopTracks; });
+  useEffect(() => { findArtistTopTracksRef.current = findArtistTopTracks; });
   useEffect(() => { findSimilarTracksRef.current = findSimilarTracks; });
   useEffect(() => { findSimilarArtistsRef.current = findSimilarArtists; });
   useEffect(() => { setSchedulerPlaybackIndexRef.current = setSchedulerPlaybackIndex; });
@@ -33592,7 +33597,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const name = typeof artist === 'string' ? artist : artist?.name;
     if (!name) return;
     setTrackLoading(true);
-    const tracks = await getArtistTopTracks(name);
+    const { tracks, failed } = await findArtistTopTracks(artist);
     if (tracks.length > 0) {
       const context = { type: 'artist', name };
       const [firstTrack, ...remainingTracks] = tracks;
@@ -33600,54 +33605,52 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       handlePlay({ ...firstTrack, _playbackContext: context });
     } else {
       setTrackLoading(false);
-      showToast(`No top tracks found for ${name}`, 'error');
+      showToast(failed ? `Couldn’t load ${name}’s top tracks. Try again.` : `No top tracks found for ${name}`, 'error');
     }
   };
 
-  const getArtistTopTracks = async (artistName, limit = 10) => {
-    if (!artistName) return [];
-
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) {
-      console.log('🎤 Last.fm artist top tracks skipped: no API key');
-      return [];
-    }
-
+  // An artist's top tracks from every plug-in that lists them
+  // (capabilities.artistTopTracks, #1539 step 2): the first non-empty list in
+  // the user's order, never a merge, since each is ranked by its own
+  // service's plays. `artist` is a name or { name, mbid }; without an MBID the
+  // MBID mapper's cache may know it (ListenBrainz asks by MBID).
+  // Resolves to { tracks, source, failed }: `failed` when no plug-in answered.
+  const findArtistTopTracks = async (artist, limit = 10) => {
+    const name = typeof artist === 'string' ? artist : artist?.name;
+    if (!name) return { tracks: [], source: null, failed: false };
+    const mbid = (typeof artist === 'object' && artist?.mbid) || getArtistMbidFromMapperCache(name) || undefined;
+    const loader = resolverLoaderRef.current;
     try {
-      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=${limit}`;
-
-      console.log(`🎤 Fetching top tracks for "${artistName}"`);
-      const response = await lastfmFetch(url);
-      if (!response.ok) {
-        console.error('Last.fm artist top tracks request failed:', response.status);
-        return [];
+      const { answers, failed } = await askEach(similarProvidersFor('artistTopTracks'),
+        async (p) => loader.getArtistTopTracks(p.id, { name, mbid, limit }, await configForSimilar(p.id)));
+      const first = firstAnswer(answers);
+      if (!first) {
+        console.log(`🎤 No top tracks for "${name}"${failed ? ': no plug-in answered' : ''}`);
+        return { tracks: [], source: null, failed };
       }
-
-      const data = await response.json();
-      if (data.toptracks?.track) {
-        const tracks = data.toptracks.track.map((t, index) => ({
-          // Generate unique ID from artist and title
-          id: `lastfm-${artistName.toLowerCase().replace(/[^a-z0-9]/g, '')}-${t.name.toLowerCase().replace(/[^a-z0-9]/g, '')}-${index}`,
-          title: t.name,
-          artist: artistName,
-          album: '', // Last.fm doesn't include album in this endpoint
-          duration: t.duration ? parseInt(t.duration) * 1000 : 0, // Convert to ms
-          playCount: parseInt(t.playcount) || 0,
-          position: index + 1,
-          sources: {} // Empty sources triggers on-demand resolution in handlePlay
-        }));
-        console.log(`🎤 Found ${tracks.length} top tracks for "${artistName}"`);
-        return tracks;
-      }
-
-      return [];
+      const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const tracks = first.items.slice(0, limit).map((t, index) => ({
+        id: `${first.id}-${slug(name)}-${slug(t.title)}-${index}`,
+        title: t.title,
+        artist: t.artist || name,
+        album: t.album || '',
+        duration: Number(t.duration) > 0 ? Number(t.duration) : 0, // ms
+        playCount: Number(t.listens) || 0,
+        position: index + 1,
+        ...(t.mbid ? { mbid: t.mbid } : {}),
+        sources: {} // Empty sources triggers on-demand resolution in handlePlay
+      }));
+      console.log(`🎤 ${tracks.length} top tracks for "${name}" from ${first.id}`);
+      return { tracks, source: first.id, failed: false };
     } catch (error) {
-      console.error('Failed to fetch top tracks from Last.fm:', error);
-      return [];
+      console.error('Failed to fetch artist top tracks:', error?.message || error);
+      return { tracks: [], source: null, failed: true };
     }
   };
 
-  // Fetch similar tracks from Last.fm API (for Spinoff feature)
+  // Just the tracks ([] when none or none could be had), for callers that
+  // don't tell the two apart: Spinoff's top-up and an artist-only radio seed.
+  const getArtistTopTracks = async (artist, limit = 10) => (await findArtistTopTracks(artist, limit)).tracks;
 
   // Check if similar tracks are available for spinoff (lightweight check)
   // The Spinoff button is enabled when a plug-in has any similar track, or
@@ -33685,7 +33688,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Turn an artist-only seed into an artist+title seed (parachord#1005).
   // Similar tracks need a track, so `parachord://play/radio?artist=X`
   // used to clear the queue and then bail in startSpinoff with "missing track
-  // info". Picks the artist's top Last.fm track. Returns { artist, title } or
+  // info". Picks the artist's top track (findArtistTopTracks: any plug-in
+  // with artistTopTracks, #1539). Returns { artist, title } or
   // null (after a toast) so callers can refuse before touching the queue.
 
 

@@ -11,7 +11,8 @@
 // the caller hands in the lookups:
 //   similarTracks({ artist, title, limit }) → { tracks: [{ artist, title, match }], failed }
 //   similarArtists({ name, limit })         → { artists: [{ name, match }], failed }
-//   topTracks(artistName, limit)            → [{ title, artist? }] ([] on failure)
+//   topTracks({ name, mbid? }, limit)       → [{ title, artist? }] ([] on failure;
+//                                             capabilities.artistTopTracks)
 // `failed` means no plug-in answered (none to ask, or every one failed).
 //
 // A failure is not the same as an empty answer. Only an empty answer falls
@@ -67,7 +68,7 @@ async function similarArtistGroups({ similarArtists, topTracks }, artist) {
   const found = await safely(() => similarArtists({ name: artist, limit: FALLBACK_ARTISTS }), null);
   if (!found || found.failed || !Array.isArray(found.artists) || !found.artists.length) return [];
   const picked = found.artists.filter((a) => a && a.name).slice(0, FALLBACK_ARTISTS);
-  const lists = await Promise.all(picked.map((a) => safely(() => topTracks(a.name, TOP_TRACKS_PER_ARTIST), [])));
+  const lists = await Promise.all(picked.map((a) => safely(() => topTracks({ name: a.name, mbid: a.mbid }, TOP_TRACKS_PER_ARTIST), [])));
   return picked.map((a, i) => ({
     artist: a.name,
     tracks: (Array.isArray(lists[i]) ? lists[i] : []).filter((t) => t && t.title).slice(0, TOP_TRACKS_PER_ARTIST).map((t) => ({

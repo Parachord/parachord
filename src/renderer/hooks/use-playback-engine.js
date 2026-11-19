@@ -4004,7 +4004,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const pool = await buildSpinoffPool({
         similarTracks: (q) => findSimilarTracksRef.current(q),
         similarArtists: (q) => findSimilarArtistsRef.current(q),
-        topTracks: (name, limit) => getArtistTopTracks(name, limit),
+        topTracks: (artist, limit) => getArtistTopTracks(artist, limit),
         artist: track.artist,
         title: track.title
       });
