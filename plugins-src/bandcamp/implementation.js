@@ -2,15 +2,26 @@
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
-// new Function) — no shared scope between them; helpers must be embedded per function.
+// new Function) — no shared scope between them; helpers must be embedded per function,
+// or be a method reached through `this` (isStreamable and noteStreamable, which
+// keep the session's streaming answers on the resolver object).
 module.exports = {
   // limit: how many results to keep (default 20, a page of search results).
   // resolve asks for every row the API returns (it returns up to 50): the
   // artist's own recording often ranks below 20 remixes and covers ("Radiohead
   // Nude": the In Rainbows track is row 31), and a 20-row cut left resolve
   // only rows the confidence gate rejects (#1532).
-  search: async function (query, config, limit) {
+  //
+  // Only tracks that stream are returned: an artist can make a track
+  // buy-only, and the search API doesn't say which. Each result is checked
+  // with isStreamable (below), five at a time, and one that doesn't stream is
+  // dropped; one whose check failed, or that has no band id to check with
+  // (the app_autocomplete fallback's rows can lack it), is kept. resolve
+  // passes options.streamCheck false and checks only the rows it picks.
+  search: async function (query, config, limit, options) {
     var maxResults = typeof limit === 'number' && limit > 0 ? limit : 20;
+    var checkStreams = !(options && options.streamCheck === false) && typeof this.isStreamable === 'function';
+    var self = this;
     // parachord#977: Bandcamp's HTML search page (bandcamp.com/search) now serves a
     // bot "Client Challenge" page, so scraping it returns nothing. Use the JSON API
     // that bandcamp.com's own search box calls (tracks only), falling back to the
@@ -48,6 +59,7 @@ module.exports = {
         purchaseUrl: url,
         bandcampTrackId: r.id || null,
         bandcampAlbumId: r.album_id || null,
+        bandcampBandId: r.band_id || null,
         albumArt: bandcampArtUrl(r),
       };
     };
@@ -97,6 +109,26 @@ module.exports = {
       for (var i = 0; i < items.length && results.length < maxResults; i++) {
         var t = toResult(items[i]);
         if (t) results.push(t);
+      }
+      if (checkStreams && results.length > 0) {
+        var verdicts = [];
+        var next = 0;
+        var checkNext = async function () {
+          while (next < results.length) {
+            var k = next++;
+            var row = results[k];
+            verdicts[k] =
+              row.bandcampBandId && row.bandcampTrackId
+                ? await self.isStreamable(row.bandcampBandId, row.bandcampTrackId, row.bandcampUrl)
+                : null;
+          }
+        };
+        var workers = [];
+        for (var w = 0; w < 5 && w < results.length; w++) workers.push(checkNext());
+        await Promise.all(workers);
+        results = results.filter(function (row, k) {
+          return verdicts[k] !== false;
+        });
       }
       console.log('Found ' + results.length + ' Bandcamp results');
       return results;
@@ -218,10 +250,18 @@ module.exports = {
     var isVariant = function (r) {
       return hasVariant(r.title, track) || hasVariant(r.artist, artist) || joinsSongs(r.title);
     };
+    var startedAt = Date.now();
     // Every row the search API returns, not the search page's 20: the
     // original often ranks below a page of remixes and covers (#1532).
-    var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config, 50);
+    // Unchecked: only the rows picked below are checked for streaming.
+    var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config, 50, {
+      streamCheck: false,
+    });
     if (results.length === 0) return null;
+    // The candidates, best first: exact matches, then the other matches the
+    // gate would accept that are not another version. With none of those, the
+    // results that are not another version (and the confidence gate decides).
+    var candidates = [];
     var i;
     if (targetArtist && targetTitle) {
       for (i = 0; i < results.length; i++) {
@@ -230,27 +270,135 @@ module.exports = {
         // Label accounts often title a track "Artist - Title".
         if (rt.indexOf(targetArtist) === 0 && rt !== targetArtist) rt = rt.slice(targetArtist.length);
         if ((ra === targetArtist || sameCredit(results[i].artist)) && rt === targetTitle && !isVariant(results[i]))
-          return results[i];
+          candidates.push(results[i]);
       }
     }
     for (i = 0; i < results.length; i++) {
-      if (!isVariant(results[i]) && matches(results[i])) return results[i];
+      if (candidates.indexOf(results[i]) === -1 && !isVariant(results[i]) && matches(results[i]))
+        candidates.push(results[i]);
     }
     // Nothing the gate would accept (and, on an engine without property escapes,
-    // any non-Latin name): hand back the top result that is not another version
-    // and let the confidence gate decide.
-    for (i = 0; i < results.length; i++) {
-      if (!isVariant(results[i])) return results[i];
+    // any non-Latin name): the results that are not another version, and the
+    // confidence gate decides.
+    if (candidates.length === 0) {
+      for (i = 0; i < results.length; i++) {
+        if (!isVariant(results[i])) candidates.push(results[i]);
+      }
+    }
+    // Only a track that streams is a source. An artist can make a track
+    // buy-only (Radiohead's own "Nude" and "Reckoner" on Bandcamp), and it
+    // would show a Bandcamp icon and fail when played. So the pick is checked,
+    // and if it doesn't stream the next candidate is, up to MAX_CHECKS of
+    // them; none that streams is no match. A check that failed keeps its
+    // candidate (playback still falls back), and so does one too late to check:
+    // the whole resolve has RESOLVE_BUDGET_MS (8s, resolver-limiter.js), and
+    // each check gives up after 2s.
+    //
+    // A buy-only track on the artist's own Bandcamp page (radiohead.bandcamp.com)
+    // ends the search: the artist turned streaming off, and another account's
+    // upload credited to them is a fan's copy (Radiohead's "Nude" has a
+    // "stripped mix" credited to Radiohead on someone else's page).
+    var MAX_CHECKS = 3;
+    var CHECK_DEADLINE_MS = 5000;
+    var canCheck = typeof this.isStreamable === 'function';
+    var bareArtist = targetArtist.indexOf('the') === 0 ? targetArtist.slice(3) : targetArtist;
+    var onArtistsPage = function (r) {
+      var m = /^https?:\/\/([^./]+)\.bandcamp\.com\//i.exec(r.bandcampUrl || '');
+      if (!m || !targetArtist) return false;
+      var account = norm(m[1]);
+      return account === targetArtist || (!!bareArtist && account === bareArtist);
+    };
+    var checks = 0;
+    for (i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      if (!canCheck || !c.bandcampBandId || !c.bandcampTrackId) return c;
+      if (checks >= MAX_CHECKS) return null;
+      if (Date.now() - startedAt > CHECK_DEADLINE_MS) return c;
+      checks++;
+      var streams = await this.isStreamable(c.bandcampBandId, c.bandcampTrackId, c.bandcampUrl);
+      if (streams !== false) return c;
+      if (onArtistsPage(c)) return null;
     }
     return null;
+  },
+  // Whether Bandcamp lets this track stream: true, false (the artist made it
+  // buy-only), or null when the check itself failed (a network or HTTP error,
+  // a reply of an unexpected shape, or no answer within 2s). One request to
+  // Bandcamp's mobile API, which lists a streamable track with its
+  // streaming_url and a buy-only one with no tracks, or a track without one.
+  // Answers are kept for the session by track id (and by page, for
+  // sourceFromUrl), so a track is checked once; a failed check is not kept.
+  isStreamable: async function (bandId, trackId, url) {
+    if (!bandId || !trackId) return null;
+    var key = String(trackId);
+    var known = this._bandcampStreams && this._bandcampStreams.byId[key];
+    if (typeof known === 'boolean') {
+      if (typeof this.noteStreamable === 'function') this.noteStreamable(key, url, known);
+      return known;
+    }
+    if (!this._bandcampPending) this._bandcampPending = Object.create(null);
+    var pending = this._bandcampPending;
+    if (!pending[key]) {
+      var ask = (async function () {
+        try {
+          var resp = await fetch(
+            'https://bandcamp.com/api/mobile/24/tralbum_details?band_id=' +
+              encodeURIComponent(bandId) +
+              '&tralbum_type=t&tralbum_id=' +
+              encodeURIComponent(key),
+          );
+          if (!resp || !resp.ok) return null;
+          var data = await resp.json();
+          if (!data || typeof data !== 'object' || !Array.isArray(data.tracks)) return null;
+          if (data.tracks.length === 0) return false;
+          var t = null;
+          for (var n = 0; n < data.tracks.length; n++) {
+            if (data.tracks[n] && String(data.tracks[n].track_id) === key) t = data.tracks[n];
+          }
+          if (!t) t = data.tracks[0];
+          if (!t || typeof t !== 'object') return null;
+          var su = t.streaming_url;
+          return !!(su && typeof su === 'object' && Object.keys(su).length > 0);
+        } catch (e) {
+          return null;
+        }
+      })();
+      var timer = null;
+      var giveUp = new Promise(function (resolve) {
+        if (typeof setTimeout === 'function') {
+          timer = setTimeout(function () {
+            resolve(null);
+          }, 2000);
+        }
+      });
+      pending[key] = Promise.race([ask, giveUp]).then(function (answer) {
+        if (timer !== null && typeof clearTimeout === 'function') clearTimeout(timer);
+        delete pending[key];
+        return answer;
+      });
+    }
+    var answer = await pending[key];
+    if (answer !== null && typeof this.noteStreamable === 'function') this.noteStreamable(key, url, answer);
+    return answer;
+  },
+  // Keeps a streaming answer for the session, by track id and by track page
+  // (isStreamable, and the album and track pages, which carry it for free).
+  noteStreamable: function (trackId, url, streams) {
+    if (typeof streams !== 'boolean') return;
+    if (!this._bandcampStreams) this._bandcampStreams = { byId: Object.create(null), byUrl: Object.create(null) };
+    if (trackId) this._bandcampStreams.byId[String(trackId)] = streams;
+    if (url) this._bandcampStreams.byUrl[url] = streams;
   },
   // A source for a track that already knows its Bandcamp track page (one
   // scraped from a playlist page keeps it), built from the link without a
   // fetch or a search. The app asks this during resolution when the
   // registry routes the track's link here as a track link
   // (src/renderer/lib/source-url-hint.js); track is { title, artist, album,
-  // duration } from the app's track.
+  // duration } from the app's track. A page already known not to stream
+  // this session gives none (null: the app falls back to resolve, which
+  // checks what it finds).
   sourceFromUrl: function (url, track) {
+    if (this._bandcampStreams && this._bandcampStreams.byUrl[url] === false) return null;
     return {
       id: 'bandcamp-' + Date.now(),
       title: track.title,
@@ -274,6 +422,27 @@ module.exports = {
       const html = await response.text();
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
+      // Whether the track streams, from the page's own player data (no
+      // extra request): data-tralbum's trackinfo carries the audio file, and
+      // a buy-only track's has none. A buy-only track comes back without a
+      // Bandcamp source (it plays from another service, or shows as
+      // unavailable); unreadable player data is unknown and keeps the source.
+      let streams = null;
+      try {
+        const el = doc.querySelector('[data-tralbum]');
+        const raw = el && el.getAttribute ? el.getAttribute('data-tralbum') : null;
+        const tralbum = raw ? JSON.parse(raw) : null;
+        const info =
+          tralbum && tralbum.item_type !== 'album' && Array.isArray(tralbum.trackinfo) ? tralbum.trackinfo[0] : null;
+        if (info && typeof info === 'object' && 'file' in info) {
+          streams = !!(info.file && typeof info.file === 'object' && Object.keys(info.file).length > 0);
+          if (typeof this.noteStreamable === 'function') this.noteStreamable(info.track_id || info.id, url, streams);
+        }
+      } catch (e) {}
+      const withSource = (t) =>
+        streams === false
+          ? Object.assign(t, { sources: [], purchaseUrl: url, streamable: false })
+          : Object.assign(t, { sources: ['bandcamp'], bandcampUrl: url, purchaseUrl: url });
       const ldScripts = doc.querySelectorAll('script[type="application/ld+json"]');
       for (const ldEl of ldScripts) {
         try {
@@ -291,17 +460,14 @@ module.exports = {
             const album = ld.inAlbum?.name || '';
             const albumArt =
               doc.querySelector('meta[property="og:image"]')?.content || ld.image || '';
-            return {
+            return withSource({
               id: `bandcamp-${Date.now()}`,
               title: ld.name,
               artist: artist,
               album: album,
               duration: duration > 0 ? duration : null,
-              sources: ['bandcamp'],
-              bandcampUrl: url,
-              purchaseUrl: url,
               albumArt: albumArt,
-            };
+            });
           }
         } catch (e) {}
       }
@@ -309,17 +475,14 @@ module.exports = {
       const artist = doc.querySelector('meta[property="og:site_name"]')?.content;
       const albumArt = doc.querySelector('meta[property="og:image"]')?.content;
       if (!title || !artist) return null;
-      return {
+      return withSource({
         id: `bandcamp-${Date.now()}`,
         title: title,
         artist: artist,
         album: '',
         duration: null,
-        sources: ['bandcamp'],
-        bandcampUrl: url,
-        purchaseUrl: url,
         albumArt: albumArt,
-      };
+      });
     } catch (error) {
       console.error('Bandcamp URL lookup error:', error);
       return null;
@@ -425,6 +588,33 @@ module.exports = {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       const albumArt = doc.querySelector('meta[property="og:image"]')?.content || '';
+      // Which tracks stream, from the page's own player data (no extra
+      // request): each of data-tralbum's trackinfo entries carries its audio
+      // file, and a buy-only track's has none. Every track stays in the list
+      // (an album page shows them all), but a buy-only one carries no
+      // Bandcamp source: it plays from another service or shows as
+      // unavailable. Unreadable player data is unknown and keeps every source.
+      const streamsByPath = {};
+      let trackinfo = [];
+      try {
+        const el = doc.querySelector('[data-tralbum]');
+        const raw = el && el.getAttribute ? el.getAttribute('data-tralbum') : null;
+        const tralbum = raw ? JSON.parse(raw) : null;
+        if (tralbum && Array.isArray(tralbum.trackinfo)) trackinfo = tralbum.trackinfo;
+      } catch (e) {}
+      const pagePath = (u) => (typeof u === 'string' ? u.replace(/^https?:\/\/[^/]+/i, '').split('?')[0] : '');
+      const fileStreams = (info) =>
+        info && typeof info === 'object' && 'file' in info
+          ? !!(info.file && typeof info.file === 'object' && Object.keys(info.file).length > 0)
+          : null;
+      for (const info of trackinfo) {
+        if (info && info.title_link) streamsByPath[pagePath(info.title_link)] = fileStreams(info);
+      }
+      const streamsFor = (trackUrl, i) => {
+        const byPath = streamsByPath[pagePath(trackUrl)];
+        if (typeof byPath === 'boolean') return byPath;
+        return trackinfo.length > 0 && trackinfo[i] ? fileStreams(trackinfo[i]) : null;
+      };
       let albumName = '';
       let artist = '';
       let tracks = [];
@@ -450,7 +640,12 @@ module.exports = {
                 if (m) duration = parseInt(m[1]) * 60 + parseInt(m[2]);
               }
               const trackUrl = t['@id'] || t.mainEntityOfPage || url;
-              return {
+              const streams = streamsFor(trackUrl, i);
+              if (typeof streams === 'boolean' && typeof this.noteStreamable === 'function') {
+                const info = trackinfo.find((x) => x && pagePath(x.title_link) === pagePath(trackUrl)) || trackinfo[i];
+                this.noteStreamable(info && (info.track_id || info.id), trackUrl, streams);
+              }
+              const entry = {
                 id: `bandcamp-${Date.now()}-${i}`,
                 title: t.name,
                 artist: artist,
@@ -461,6 +656,12 @@ module.exports = {
                 purchaseUrl: trackUrl,
                 trackNumber: item.position || i + 1,
               };
+              if (streams === false) {
+                entry.sources = [];
+                delete entry.bandcampUrl;
+                entry.streamable = false;
+              }
+              return entry;
             });
             break;
           }
