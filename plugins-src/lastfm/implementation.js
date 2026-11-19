@@ -284,6 +284,105 @@ module.exports = {
     return out;
   },
 
+  // The listeningHistory capability (#1539 step 4): a Last.fm user's own
+  // stats, moved out of app.js (the History page's top lists and recent
+  // listens, the AI's listening context, Fresh Drops' and Concerts' seeds).
+  // query: { user?, kind: 'tracks' | 'albums' | 'artists', period, limit? };
+  // user defaults to the signed-in username (config.username); period is
+  // 'week' | 'month' | 'quarter' | 'half_year' | 'year' | 'all'. Answers
+  // tracks [{ title, artist, plays, mbid? }], albums [{ title, artist, plays,
+  // mbid?, albumArt? }] or artists [{ name, plays, mbid? }], most played
+  // first. No user is null; error 6 (no such user) is []; a failure THROWS.
+  getTopItems: async function (query, config) {
+    const user = String((query && query.user) || (config && config.username) || '').trim();
+    if (!user) return null;
+    const kind = query && query.kind;
+    const method = { tracks: 'user.gettoptracks', albums: 'user.gettopalbums', artists: 'user.gettopartists' }[kind];
+    if (!method) return null;
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm history: no API key yet');
+    const period = { week: '7day', month: '1month', quarter: '3month', half_year: '6month', year: '12month', all: 'overall' }[query.period] || 'overall';
+    const limit = Math.max(1, Math.min(200, Number(query.limit) || 50));
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=' + method + '&user=' + encodeURIComponent(user) +
+      '&period=' + period + '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm history failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return [];
+      throw new Error('Last.fm history failed: error ' + data.error);
+    }
+    const key = { tracks: ['toptracks', 'track'], albums: ['topalbums', 'album'], artists: ['topartists', 'artist'] }[kind];
+    const list = data && data[key[0]] && data[key[0]][key[1]];
+    const rows = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
+    const plays = (r) => { const n = parseInt(r.playcount, 10); return Number.isFinite(n) ? n : 0; };
+    const out = [];
+    for (const r of rows) {
+      if (!r || typeof r.name !== 'string' || !r.name.trim()) continue;
+      if (kind === 'artists') {
+        out.push({ name: r.name, plays: plays(r), mbid: r.mbid || undefined });
+        continue;
+      }
+      const artist = (r.artist && (r.artist.name || r.artist['#text'])) || 'Unknown Artist';
+      if (kind === 'tracks') {
+        // A track's image is Last.fm's grey star: never sent; the app's
+        // album-art pipeline finds the cover.
+        out.push({ title: r.name, artist: artist, plays: plays(r), mbid: r.mbid || undefined });
+        continue;
+      }
+      const images = Array.isArray(r.image) ? r.image : [];
+      const art = (images[3] && images[3]['#text']) || (images[2] && images[2]['#text']) || '';
+      out.push({
+        title: r.name,
+        artist: artist,
+        plays: plays(r),
+        mbid: r.mbid || undefined,
+        albumArt: art && art.indexOf('/2a96cbd8b46e442fc41c2b86b821562f.png') === -1 ? art : undefined
+      });
+    }
+    return out;
+  },
+
+  // listeningHistory: a user's recent listens (user.getrecenttracks), newest
+  // first. query: { user?, limit? }. Answers [{ title, artist, album?,
+  // albumArt?, playedAt (ms) or null while playing, nowPlaying, mbid? }].
+  // Same rules as getTopItems.
+  getRecentListens: async function (query, config) {
+    const user = String((query && query.user) || (config && config.username) || '').trim();
+    if (!user) return null;
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm history: no API key yet');
+    const limit = Math.max(1, Math.min(200, Number(query && query.limit) || 50));
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=' + encodeURIComponent(user) +
+      '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm recent listens failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return [];
+      throw new Error('Last.fm recent listens failed: error ' + data.error);
+    }
+    const list = data && data.recenttracks && data.recenttracks.track;
+    const rows = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
+    const out = [];
+    for (const t of rows) {
+      if (!t || typeof t.name !== 'string' || !t.name.trim()) continue;
+      const images = Array.isArray(t.image) ? t.image : [];
+      const art = images[2] && images[2]['#text'];
+      const uts = t.date && parseInt(t.date.uts, 10);
+      out.push({
+        title: t.name,
+        artist: (t.artist && (t.artist['#text'] || t.artist.name)) || 'Unknown Artist',
+        album: (t.album && t.album['#text']) || undefined,
+        albumArt: art && art.indexOf('/2a96cbd8b46e442fc41c2b86b821562f.png') === -1 ? art : undefined,
+        playedAt: Number.isFinite(uts) ? uts * 1000 : null,
+        nowPlaying: !!(t['@attr'] && t['@attr'].nowplaying === 'true'),
+        mbid: t.mbid || undefined
+      });
+    }
+    return out;
+  },
+
   // The charts capability (#1539 step 3): Last.fm's top tracks, worldwide
   // (chart.gettoptracks) or for a country (geo.gettoptracks), moved out of
   // app.js (loadLastfmCharts). query: { kind: 'tracks', country?, countryName?,

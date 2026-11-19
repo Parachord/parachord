@@ -3,7 +3,7 @@
     "id": "lastfm",
     "name": "Last.fm",
     "type": "meta-service",
-    "version": "1.2.12",
+    "version": "1.2.13",
     "author": "Parachord Team",
     "description": "Scrobble what you play to Last.fm, and get recommendations from your listening history.",
     "requirement": "Needs your Last.fm username.",
@@ -20,6 +20,7 @@
     "artistTopTracks": true,
     "artistReleases": true,
     "charts": true,
+    "listeningHistory": true,
     "biography": true,
     "metadata": true,
     "lovedTracks": true

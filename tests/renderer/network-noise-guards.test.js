@@ -37,21 +37,19 @@ describe('Spotify pause on track change', () => {
 
 describe('listening context', () => {
   const start = app.indexOf('const fetchListeningContext = async () => {');
-  const body = app.slice(start, app.indexOf('// Merge data from both sources with deduplication', start));
+  const body = app.slice(start, app.indexOf('// Merge data from every source with deduplication', start));
 
   test('each period request settles to null instead of rejecting', () => {
-    const periodBlocks = body.split('const periodPromises = periods.map(async (period) => {').slice(1);
-    expect(periodBlocks).toHaveLength(2);
-    for (const block of periodBlocks) {
-      expect(block).toMatch(/^\s*try \{/);
-      const end = block.indexOf('});');
-      expect(block.slice(0, end)).toMatch(/\} catch \{\s*return null;\s*\}\s*$/);
-    }
+    // One source loop for every plug-in (#1539 step 4); every top-items
+    // request goes through `ask`, which settles to null.
+    expect(body).toContain('const ask = (kind, period, limit) => askTopItems(source.id, { kind, period, limit }).catch(() => null);');
+    expect(body.match(/askTopItems\(/g)).toHaveLength(1);
   });
 
   test('a failed recently-played request does not throw away the periods', () => {
-    expect(body.match(/listens\?count=50`\)\.catch\(\(\) => null\)/g)).toHaveLength(1);
-    expect(body.match(/limit=50`\)\.catch\(\(\) => null\)/g)).toHaveLength(1);
+    expect(body).toContain('const recent = await askRecentListens(source.id, { limit: 50 }).catch(() => null);');
+    // And a source that throws anyway is left out, not the whole context.
+    expect(body).toMatch(/\} catch \(err\) \{\s*console\.error\(`Failed to fetch \$\{pluginName\(source\.id\)\} context:`, err\);\s*return null;/);
   });
 });
 

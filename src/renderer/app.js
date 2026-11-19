@@ -2024,6 +2024,7 @@ const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertRemembered, rememberOrde
 // Charts page country options (lib/charts-countries.js).
 const { CHARTS_COUNTRIES } = require('./lib/charts-countries');
 const { chartKind, chartProviders, regionOptions, pickRegion, chartItems, chartCacheKey } = require('./lib/charts');
+const { historyPeriodFor, signedInSources, mergeRecentListens, mergeArtistNames } = require('./lib/listening-history');
 // History's and a friend's history's sort and period menus (lib/history-options.js).
 const { historySortOptions, historyPeriodOptions } = require('./lib/history-options');
 // The Playlists page's and Add to playlist's sort menu (lib/playlists-sort.js).
@@ -5072,6 +5073,12 @@ const Parachord = () => {
   const [pendingPlaylistLoad, setPendingPlaylistLoad] = useState(null); // Track pending playlist load from view restore
   const [pendingFriendLoad, setPendingFriendLoad] = useState(null); // Track pending friend load from view restore
   const [historyPeriod, setHistoryPeriod] = useState('7day'); // 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
+  // The History page's top lists come from one plug-in that keeps your
+  // listening history (lib/listening-history.js, #1539 step 4): the picked
+  // one, or null for the first you're signed in to, in your order.
+  const [historySource, setHistorySource] = useState(null);
+  const historySourceRef = useRef(null);
+  historySourceRef.current = historySource;
   const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
@@ -8844,6 +8851,8 @@ const Parachord = () => {
           || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases)
           // Pop of the Tops' charts (#1539 step 3).
           || (axe.capabilities?.charts && axe.implementation?.getCharts)
+          // Your listening history (#1539 step 4).
+          || (axe.capabilities?.listeningHistory && axe.implementation?.getTopItems)
           // Artist bios (#1539 step 6).
           || (axe.capabilities?.biography && axe.implementation?.getArtistBio)
         );
@@ -8983,6 +8992,7 @@ const Parachord = () => {
           || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks)
           || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases)
           || (axe.capabilities?.charts && axe.implementation?.getCharts)
+          || (axe.capabilities?.listeningHistory && axe.implementation?.getTopItems)
           || (axe.capabilities?.biography && axe.implementation?.getArtistBio));
         const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
@@ -9570,7 +9580,7 @@ const Parachord = () => {
   // The token-based error state (cards.js ErrorState pattern): role=alert,
   // CSS variables, the accent button.
   const historyErrorState = (error, onRetry, services) => {
-    const notConnected = /^No (listening history service|Last\.fm account) connected/.test(error || '');
+    const notConnected = /^No listening history service connected/.test(error || '');
     // Not connected isn't a failure: an empty state that offers to connect.
     return notConnected
       ? React.createElement(EmptyState, {
@@ -16744,8 +16754,6 @@ ${trackListXml}
 
   // Fetch listening context from Last.fm or ListenBrainz for AI prompt enrichment
   const fetchListeningContext = async () => {
-    const lastfmConfig = metaServiceConfigs.lastfm;
-    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
 
     // Check if we have cached recently played data (from History page)
     const now = Date.now();
@@ -16760,12 +16768,12 @@ ${trackListXml}
       : null;
 
     // Time periods to fetch for richer context (fetch more than needed, will dedupe)
-    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit, albumLimit }
+    // Each period: { label, period (the plug-ins' period), artistLimit, trackLimit, albumLimit }
     const periods = [
-      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
-      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
-      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
-      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15, albumLimit: 10 }
+      { label: 'last_7_days', period: 'week', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_month', period: 'month', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_6_months', period: 'half_year', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'all_time', period: 'all', artistLimit: 10, trackLimit: 15, albumLimit: 10 }
     ];
 
     // Deduplicate results across time periods for maximum variety
@@ -16806,173 +16814,58 @@ ${trackListXml}
       }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0 || period.top_albums.length > 0);
     };
 
-    // Fetch from Last.fm (store in variable, don't return yet)
-    let lastfmData = null;
-    if (lastfmConfig?.username) {
-      const apiKey = getLastfmApiKey();
-      if (apiKey) {
-        try {
-          console.log('🎵 Fetching listening context from Last.fm (multiple time periods)...');
-
-          // Fetch all periods in parallel (artists, tracks, albums). Each
-          // period settles to null on failure: these start before the
-          // recently-played request below, and if that one throws, the jump
-          // to the catch leaves them unawaited (an "Uncaught (in promise)"
-          // per period whenever the service is unreachable).
-          const periodPromises = periods.map(async (period) => {
-            try {
-              const [artistsRes, tracksRes, albumsRes] = await Promise.all([
-                lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
-                lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
-                lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
-              ]);
-
-              if (artistsRes.ok && tracksRes.ok && albumsRes.ok) {
-                const [artistsData, tracksData, albumsData] = await Promise.all([artistsRes.json(), tracksRes.json(), albumsRes.json()]);
-                return {
-                  window: period.label,
-                  top_artists: (artistsData.topartists?.artist || []).map(a => a.name),
-                  top_tracks: (tracksData.toptracks?.track || []).map(t => ({
-                    artist: t.artist?.name || 'Unknown',
-                    title: t.name
-                  })),
-                  top_albums: (albumsData.topalbums?.album || []).map(a => ({
-                    artist: a.artist?.name || 'Unknown',
-                    title: a.name
-                  }))
-                };
-              }
-              return null;
-            } catch {
-              return null;
-            }
-          });
-
-          // Use cached recently played if available, otherwise fetch
-          let recentlyPlayed = cachedRecentlyPlayed || [];
-          if (!cachedRecentlyPlayed) {
-            const recentRes = await lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`).catch(() => null);
-            if (recentRes?.ok) {
-              const recentData = await recentRes.json();
-              recentlyPlayed = (recentData.recenttracks?.track || [])
-                .filter(t => !t['@attr']?.nowplaying) // Exclude currently playing
-                .map(t => ({
-                  artist: t.artist?.['#text'] || t.artist?.name || 'Unknown',
-                  title: t.name,
-                  album: t.album?.['#text'] || ''
-                }));
-            }
-          }
-
-          const results = await Promise.all(periodPromises);
-          const validResults = results.filter(r => r !== null);
-
-          if (validResults.length > 0 || recentlyPlayed.length > 0) {
-            const deduped = deduplicateResults(validResults);
-            const allArtists = deduped.flatMap(p => p.top_artists);
-            const allTracks = deduped.flatMap(p => p.top_tracks);
-            const allAlbums = deduped.flatMap(p => p.top_albums || []);
-            console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${recentlyPlayed.length} recently played from Last.fm`);
-
-            lastfmData = {
-              source: 'Last.fm',
-              top_artists: allArtists,
-              top_tracks: allTracks,
-              top_albums: allAlbums,
-              recently_played: recentlyPlayed,
-              periods: deduped
-            };
-          }
-        } catch (err) {
-          console.error('Failed to fetch Last.fm context:', err);
-        }
-      }
-    }
-
-    // Also fetch from ListenBrainz (not just fallback - merge both sources)
-    let listenbrainzData = null;
-    if (listenbrainzConfig?.username) {
+    // Every source you're signed in to (plug-ins with listeningHistory,
+    // #1539 step 4), each asked for every period's top artists, tracks and
+    // albums, plus its recent listens unless the History page's are fresh.
+    // A request that fails is left out; a source with nothing is skipped.
+    const contextFrom = async (source) => {
       try {
-        console.log('🎵 Fetching listening context from ListenBrainz (multiple time periods)...');
-
-        // Fetch all periods in parallel (artists, tracks, releases/albums).
-        // Each settles to null on failure (see the Last.fm branch above).
+        const name = pluginName(source.id);
+        console.log(`🎵 Fetching listening context from ${name} (multiple time periods)...`);
+        const ask = (kind, period, limit) => askTopItems(source.id, { kind, period, limit }).catch(() => null);
         const periodPromises = periods.map(async (period) => {
-          try {
-            const [artistsRes, tracksRes, releasesRes] = await Promise.all([
-              fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=${period.listenbrainz}&count=${period.artistLimit}`),
-              fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`),
-              fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/releases?range=${period.listenbrainz}&count=${period.albumLimit}`)
-            ]);
-
-            // Handle 204 No Content for any
-            const artistsOk = artistsRes.ok && artistsRes.status !== 204;
-            const tracksOk = tracksRes.ok && tracksRes.status !== 204;
-            const releasesOk = releasesRes.ok && releasesRes.status !== 204;
-
-            if (!artistsOk && !tracksOk && !releasesOk) return null;
-
-            const artistsData = artistsOk ? await artistsRes.json() : { payload: { artists: [] } };
-            const tracksData = tracksOk ? await tracksRes.json() : { payload: { recordings: [] } };
-            const releasesData = releasesOk ? await releasesRes.json() : { payload: { releases: [] } };
-
-            return {
-              window: period.label,
-              top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
-              top_tracks: (tracksData.payload?.recordings || []).map(t => ({
-                artist: t.artist_name || 'Unknown',
-                title: t.track_name
-              })),
-              top_albums: (releasesData.payload?.releases || []).map(r => ({
-                artist: r.artist_name || 'Unknown',
-                title: r.release_name
-              }))
-            };
-          } catch {
-            return null;
-          }
-        });
-
-        // Use cached recently played if available, otherwise fetch
-        let lbRecentlyPlayed = cachedRecentlyPlayed || [];
-        if (!cachedRecentlyPlayed) {
-          const recentRes = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/listens?count=50`).catch(() => null);
-          if (recentRes?.ok) {
-            const recentData = await recentRes.json();
-            lbRecentlyPlayed = (recentData.payload?.listens || []).map(l => ({
-              artist: l.track_metadata?.artist_name || 'Unknown',
-              title: l.track_metadata?.track_name || 'Unknown',
-              album: l.track_metadata?.release_name || ''
-            }));
-          }
-        }
-
-        const results = await Promise.all(periodPromises);
-        const validResults = results.filter(r => r !== null);
-
-        if (validResults.length > 0 || lbRecentlyPlayed.length > 0) {
-          const deduped = deduplicateResults(validResults);
-          const allArtists = deduped.flatMap(p => p.top_artists);
-          const allTracks = deduped.flatMap(p => p.top_tracks);
-          const allAlbums = deduped.flatMap(p => p.top_albums || []);
-          console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${lbRecentlyPlayed.length} recently played from ListenBrainz`);
-
-          listenbrainzData = {
-            source: 'ListenBrainz',
-            top_artists: allArtists,
-            top_tracks: allTracks,
-            top_albums: allAlbums,
-            recently_played: lbRecentlyPlayed,
-            periods: deduped
+          const [artists, tracks, albums] = await Promise.all([
+            ask('artists', period.period, period.artistLimit),
+            ask('tracks', period.period, period.trackLimit),
+            ask('albums', period.period, period.albumLimit)
+          ]);
+          if (!artists && !tracks && !albums) return null;
+          return {
+            window: period.label,
+            top_artists: (artists || []).map(a => a.name),
+            top_tracks: (tracks || []).map(t => ({ artist: t.artist || 'Unknown', title: t.title })),
+            top_albums: (albums || []).map(a => ({ artist: a.artist || 'Unknown', title: a.title }))
           };
+        });
+        let recentlyPlayed = cachedRecentlyPlayed || [];
+        if (!cachedRecentlyPlayed) {
+          const recent = await askRecentListens(source.id, { limit: 50 }).catch(() => null);
+          recentlyPlayed = (recent || [])
+            .filter(t => !t.nowPlaying) // Exclude currently playing
+            .map(t => ({ artist: t.artist || 'Unknown', title: t.title, album: t.album || '' }));
         }
+        const validResults = (await Promise.all(periodPromises)).filter(r => r !== null);
+        if (validResults.length === 0 && recentlyPlayed.length === 0) return null;
+        const deduped = deduplicateResults(validResults);
+        const data = {
+          source: name,
+          top_artists: deduped.flatMap(p => p.top_artists),
+          top_tracks: deduped.flatMap(p => p.top_tracks),
+          top_albums: deduped.flatMap(p => p.top_albums || []),
+          recently_played: recentlyPlayed,
+          periods: deduped
+        };
+        console.log(`🎵 Got ${data.top_artists.length} unique artists, ${data.top_tracks.length} unique tracks, ${data.top_albums.length} unique albums, and ${recentlyPlayed.length} recently played from ${name}`);
+        return data;
       } catch (err) {
-        console.error('Failed to fetch ListenBrainz context:', err);
+        console.error(`Failed to fetch ${pluginName(source.id)} context:`, err);
+        return null;
       }
-    }
+    };
+    const perSource = (await Promise.all(historySourcesFor().map(contextFrom))).filter(Boolean);
 
-    // Merge data from both sources with deduplication
-    if (lastfmData || listenbrainzData) {
+    // Merge data from every source with deduplication
+    if (perSource.length > 0) {
       // Helper to dedupe arrays by key function
       const dedupeArray = (arr, keyFn) => {
         const seen = new Set();
@@ -16983,37 +16876,14 @@ ${trackListXml}
           return true;
         });
       };
-
-      // Merge artists (simple strings, lowercase key)
-      const allArtists = dedupeArray(
-        [...(lastfmData?.top_artists || []), ...(listenbrainzData?.top_artists || [])],
-        a => a.toLowerCase()
-      );
-
-      // Merge tracks (objects with artist/title)
-      const allTracks = dedupeArray(
-        [...(lastfmData?.top_tracks || []), ...(listenbrainzData?.top_tracks || [])],
-        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
-      );
-
-      // Merge albums (objects with artist/title)
-      const allAlbums = dedupeArray(
-        [...(lastfmData?.top_albums || []), ...(listenbrainzData?.top_albums || [])],
-        a => `${a.artist.toLowerCase()}|${a.title.toLowerCase()}`
-      );
-
-      // Merge recently played (objects with artist/title), keeping order
-      const allRecent = dedupeArray(
-        [...(lastfmData?.recently_played || []), ...(listenbrainzData?.recently_played || [])],
-        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
-      );
-
-      // Merge periods (keep both sources' structured data)
-      const allPeriods = [...(lastfmData?.periods || []), ...(listenbrainzData?.periods || [])];
-
-      const sources = [lastfmData?.source, listenbrainzData?.source].filter(Boolean).join(' + ');
-      console.log(`🎵 Combined listening context from ${sources}: ${allArtists.length} artists, ${allTracks.length} tracks, ${allAlbums.length} albums, ${allRecent.length} recent plays`);
-
+      const all = (field) => perSource.flatMap(d => d[field] || []);
+      const allArtists = dedupeArray(all('top_artists'), a => a.toLowerCase());
+      const allTracks = dedupeArray(all('top_tracks'), t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`);
+      const allAlbums = dedupeArray(all('top_albums'), a => `${a.artist.toLowerCase()}|${a.title.toLowerCase()}`);
+      const allRecent = dedupeArray(all('recently_played'), t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`);
+      const allPeriods = all('periods');
+      const sources = perSource.map(d => d.source).join(' + ');
+      console.log(`🎵 Combined listening context from ${sources}: ${allArtists.length} artists, ${allTracks.length} tracks, ${allAlbums.length} albums, ${allRecent.length} recent`);
       return {
         source: sources,
         window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
@@ -17025,7 +16895,7 @@ ${trackListXml}
       };
     }
 
-    // No data from either source
+    // No data from any source
     return null;
   };
 
@@ -20309,13 +20179,13 @@ ${trackListXml}
     }
   }, [activeView, recommendations.sections, criticsPicks, charts, newReleases, concerts, generateDiscoveryHash, markDiscoverySeen]);
 
-  // Load pending history data once cache is fully loaded, and (for Last.fm)
-  // once its API key has loaded: the restored tab ran before the built-in key
+  // Load pending history data once the cache is loaded, a plug-in that keeps
+  // your history has a username and the plug-ins are loaded (#1539 step 4),
+  // and the Last.fm key has: the restored tab ran before the built-in key
   // arrived and said "Last.fm API key not configured".
   useEffect(() => {
-    const hasMetaService = metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username;
-    const lastfmReady = !metaServiceConfigs.lastfm?.username || !!metaServiceConfigs.lastfm?.apiKey || lastfmKeyLoaded;
-    if (cacheLoaded && pendingHistoryLoad.current && hasMetaService && lastfmReady) {
+    const hasHistoryAccount = Object.values(metaServiceConfigs || {}).some(c => c && c.username);
+    if (cacheLoaded && pendingHistoryLoad.current && hasHistoryAccount && metaServices.length > 0 && lastfmKeyLoaded) {
       const tab = pendingHistoryLoad.current;
       pendingHistoryLoad.current = null; // Clear pending load
       console.log(`📦 Loading history data for restored tab: ${tab}`);
@@ -20324,7 +20194,7 @@ ${trackListXml}
       else if (tab === 'topArtists') loadTopArtists();
       else if (tab === 'recent') loadListeningHistory();
     }
-  }, [cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.lastfm?.apiKey, metaServiceConfigs.listenbrainz?.username, lastfmKeyLoaded]);
+  }, [cacheLoaded, metaServiceConfigs, metaServices, lastfmKeyLoaded]);
 
   // Load pending release/album once artist data is available
   useEffect(() => {
@@ -26478,63 +26348,17 @@ ${tracks}
       });
     }
 
-    // Source 4: Top artists from listening history (Last.fm and/or ListenBrainz)
+    // Source 4: your top artists, from every plug-in that keeps your
+    // listening history (#1539 step 4); a source that fails is left out.
     let historyArtistData = topArtists.artists || [];
     if (historyArtistData.length === 0) {
-      const historyFetches = [];
-
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      const apiKey = getLastfmApiKey();
-      if (lastfmConfig?.username && apiKey) {
-        historyFetches.push((async () => {
-          try {
-            console.log('✨ Fetching Last.fm top artists for New Releases...');
-            const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=12month&limit=50`;
-            const response = await lastfmFetch(url);
-            if (response.ok) {
-              const data = await response.json();
-              return (data.topartists?.artist || []).map(a => ({ name: a.name }));
-            }
-          } catch (e) {
-            console.log('✨ Could not fetch Last.fm top artists:', e.message);
-          }
+      const lists = await Promise.all(historySourcesFor().map(source =>
+        askTopItems(source.id, { kind: 'artists', period: 'year', limit: 50 }).catch(e => {
+          console.log(`✨ Could not fetch ${pluginName(source.id)} top artists for New Releases:`, e.message);
           return [];
-        })());
-      }
-
-      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-      if (listenbrainzConfig?.username) {
-        historyFetches.push((async () => {
-          try {
-            console.log('✨ Fetching ListenBrainz top artists for New Releases...');
-            const response = await fetch(
-              `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=year&count=50`
-            );
-            if (response.ok && response.status !== 204) {
-              const data = await response.json();
-              return (data.payload?.artists || []).map(a => ({ name: a.artist_name }));
-            }
-          } catch (e) {
-            console.log('✨ Could not fetch ListenBrainz top artists:', e.message);
-          }
-          return [];
-        })());
-      }
-
-      if (historyFetches.length > 0) {
-        const results = await Promise.all(historyFetches);
-        const mergedNames = new Set();
-        historyArtistData = [];
-        for (const result of results) {
-          for (const a of result) {
-            const key = a.name.trim().toLowerCase();
-            if (!mergedNames.has(key)) {
-              mergedNames.add(key);
-              historyArtistData.push(a);
-            }
-          }
-        }
-      }
+        })
+      ));
+      historyArtistData = mergeArtistNames(lists);
     }
 
     if (historyArtistData.length > 0) {
@@ -27046,61 +26870,17 @@ ${tracks}
       });
     }
 
-    // Source 4: Top artists from listening history (Last.fm and/or ListenBrainz)
+    // Source 4: your top artists, from every plug-in that keeps your
+    // listening history (#1539 step 4); a source that fails is left out.
     let historyArtistData = topArtists.artists || [];
     if (historyArtistData.length === 0) {
-      const historyFetches = [];
-
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      const apiKey = getLastfmApiKey();
-      if (lastfmConfig?.username && apiKey) {
-        historyFetches.push((async () => {
-          try {
-            const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=6month&limit=40`;
-            const response = await lastfmFetch(url);
-            if (response.ok) {
-              const data = await response.json();
-              return (data.topartists?.artist || []).map(a => ({ name: a.name }));
-            }
-          } catch (e) {
-            console.log('🎤 Could not fetch Last.fm top artists for concerts:', e.message);
-          }
+      const lists = await Promise.all(historySourcesFor().map(source =>
+        askTopItems(source.id, { kind: 'artists', period: 'half_year', limit: 40 }).catch(e => {
+          console.log(`🎤 Could not fetch ${pluginName(source.id)} top artists for concerts:`, e.message);
           return [];
-        })());
-      }
-
-      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-      if (listenbrainzConfig?.username) {
-        historyFetches.push((async () => {
-          try {
-            const response = await fetch(
-              `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=half_yearly&count=40`
-            );
-            if (response.ok && response.status !== 204) {
-              const data = await response.json();
-              return (data.payload?.artists || []).map(a => ({ name: a.artist_name }));
-            }
-          } catch (e) {
-            console.log('🎤 Could not fetch ListenBrainz top artists for concerts:', e.message);
-          }
-          return [];
-        })());
-      }
-
-      if (historyFetches.length > 0) {
-        const results = await Promise.all(historyFetches);
-        const mergedNames = new Set();
-        historyArtistData = [];
-        for (const result of results) {
-          for (const a of result) {
-            const key = a.name.trim().toLowerCase();
-            if (!mergedNames.has(key)) {
-              mergedNames.add(key);
-              historyArtistData.push(a);
-            }
-          }
-        }
-      }
+        })
+      ));
+      historyArtistData = mergeArtistNames(lists);
     }
 
     if (historyArtistData.length > 0) {
@@ -29474,18 +29254,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Load Listening History from Last.fm and/or ListenBrainz (merged and de-duped)
+  // Recently Played: every source you're signed in to, merged
+  // (mergeRecentListens).
   const loadListeningHistory = async (forceRefresh = false) => {
-    // Get configs from metaServiceConfigs
-    const lastfmConfig = metaServiceConfigs.lastfm;
-    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-
-    // If no service is configured
-    if (!lastfmConfig?.username && !listenbrainzConfig?.username) {
-      setListeningHistory({
-        tracks: [],
-        loading: false,
-        error: 'No listening history service connected. Connect Last.fm or ListenBrainz in Settings › Plug-Ins.'
-      });
+    const sources = historySourcesFor();
+    if (sources.length === 0) {
+      setListeningHistory({ tracks: [], loading: false, error: historyNotConnected() });
       return;
     }
 
@@ -29509,58 +29283,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     console.log('📜 Loading Listening History...');
 
     try {
-      // Fetch from both services in parallel if both are configured
-      const fetchPromises = [];
-
-      if (listenbrainzConfig?.username) {
-        console.log(`📜 Loading history from ListenBrainz for ${listenbrainzConfig.username}...`);
-        fetchPromises.push(
-          loadListenbrainzHistory(listenbrainzConfig.username)
-            .catch(err => { console.error('ListenBrainz history error:', err); return []; })
-        );
-      } else {
-        fetchPromises.push(Promise.resolve([]));
-      }
-
-      if (lastfmConfig?.username) {
-        const apiKey = getLastfmApiKey();
-        if (apiKey) {
-          console.log(`📜 Loading history from Last.fm for ${lastfmConfig.username}...`);
-          fetchPromises.push(
-            loadLastfmHistory(lastfmConfig.username, apiKey)
-              .catch(err => { console.error('Last.fm history error:', err); return []; })
-          );
-        } else {
-          console.log('📜 Last.fm API key not configured, skipping Last.fm history');
-          fetchPromises.push(Promise.resolve([]));
-        }
-      } else {
-        fetchPromises.push(Promise.resolve([]));
-      }
-
-      const [listenbrainzTracks, lastfmTracks] = await Promise.all(fetchPromises);
-
-      // Merge and de-dupe tracks by artist+title+timestamp (within 5 min window)
-      // Sort by playedAt descending, keeping most recent plays
-      const allTracks = [
-        ...listenbrainzTracks.map(t => ({ ...t, source: 'listenbrainz' })),
-        ...lastfmTracks.map(t => ({ ...t, source: 'lastfm' }))
-      ].sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0));
-
-      const seenTracks = new Set();
-      const tracks = [];
-
-      for (const track of allTracks) {
-        // Create a key that considers artist+title and groups listens within 5 minutes
-        const timeWindow = track.playedAt ? Math.floor(track.playedAt / (5 * 60 * 1000)) : 'now';
-        const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}|${timeWindow}`;
-        if (!seenTracks.has(key)) {
-          seenTracks.add(key);
-          tracks.push(track);
-        }
-      }
-
-      console.log(`📜 Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm listens → ${tracks.length} unique listens`);
+      // Every source at once; one that fails is left out, and the load fails
+      // only when none answered.
+      const { answers, failed } = await askEach(sources, (p) => askRecentListens(p.id, { limit: 50 }));
+      if (failed) throw userError('Your listening history didn’t load. Try again in a moment.');
+      const tracks = mergeRecentListens(answers).map((t, index) => ({
+        id: t.msid || `history-${t.source}-${index}-${t.playedAt || 'now'}-${t.title}`.replace(/\s+/g, '-'),
+        title: t.title,
+        artist: t.artist,
+        album: t.album || null,
+        albumArt: t.albumArt || null, // null → filled via getAlbumArt
+        playedAt: t.playedAt,
+        nowPlaying: !!t.nowPlaying,
+        source: t.source,
+        sources: {}, // Will be populated by resolver pipeline
+        mbid: t.mbid || null
+      }));
+      console.log(`📜 ${answers.map(a => `${a.items.length} from ${pluginName(a.id)}`).join(' + ')} → ${tracks.length} unique listens`);
 
       // Cache the tracks
       listeningHistoryCache.current = { tracks, timestamp: Date.now() };
@@ -29577,124 +29316,87 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setListeningHistory({
         tracks: [],
         loading: false,
-        error: error.message || 'Failed to load listening history. Please try again.'
+        error: errorText(error, 'Your listening history didn’t load. Try again in a moment.')
       });
     }
   };
 
 
-  // Load Top Tracks from Last.fm
+  // The History page's top lists come from one source (historyTopSource:
+  // the Source menu's pick, else the first you're signed in to), for the
+  // picked period (lib/listening-history.js maps the menu's values).
+  const topListFailed = (source, what, error) => errorText(error, `${pluginName(source.id)} didn’t send your top ${what}. Try again in a moment.`);
+
   const loadTopTracks = async (period = historyPeriod, forceRefresh = false) => {
-    const lastfmConfig = metaServiceConfigs.lastfm;
-    if (!lastfmConfig?.username) {
-      setTopTracks({ tracks: [], loading: false, error: 'No Last.fm account connected.' });
+    const source = historyTopSource();
+    if (!source) {
+      setTopTracks({ tracks: [], loading: false, error: historyNotConnected() });
       return;
     }
 
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) {
-      setTopTracks({ tracks: [], loading: false, error: 'Last.fm API key not configured.' });
-      return;
-    }
-
-    // Check if we have valid cached data for this period (cache for 30 minutes)
+    // Check if we have valid cached data for this source and period (cache for 30 minutes)
     const now = Date.now();
-    const cachedEntry = topTracksCache.current[period];
+    const cacheKey = `${source.id}:${period}`;
+    const cachedEntry = topTracksCache.current[cacheKey];
     const cacheValid = !forceRefresh &&
                        cachedEntry?.tracks &&
                        (now - cachedEntry.timestamp) < (30 * 60 * 1000);
 
     if (cacheValid) {
-      console.log(`📊 Using cached top tracks for ${period} (${Math.round((now - cachedEntry.timestamp) / 60000)}m old)`);
-      setTopTracks({
-        tracks: cachedEntry.tracks,
-        loading: false,
-        error: null
-      });
+      console.log(`📊 Using cached top tracks for ${cacheKey} (${Math.round((now - cachedEntry.timestamp) / 60000)}m old)`);
+      setTopTracks({ tracks: cachedEntry.tracks, loading: false, error: null });
       return;
     }
 
     setTopTracks(prev => ({ ...prev, loading: true, error: null }));
-    console.log(`📊 Loading Top Tracks (${period})...`);
+    console.log(`📊 Loading top tracks from ${pluginName(source.id)} (${period})…`);
 
     try {
-      const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-      const response = await lastfmFetch(url);
-
-      if (!response.ok) throw new Error(`Failed to fetch top tracks: ${response.status}`);
-
-      const data = await response.json();
-      const topTracksList = data.toptracks?.track || [];
-
-      console.log(`📊 Received ${topTracksList.length} top tracks`);
-
-      const tracks = topTracksList.map((track, index) => ({
-        id: `top-track-${index}-${track.name}`.replace(/\s+/g, '-'),
-        title: track.name,
-        artist: track.artist?.name || 'Unknown Artist',
-        album: null,
-        // Never Last.fm's image: for a track it's the grey-star placeholder.
-        // The art pipeline (getAlbumArt / getTrackArt) fills it in.
-        albumArt: null,
-        playCount: parseInt(track.playcount) || 0,
+      const items = await askTopItems(source.id, { kind: 'tracks', period: historyPeriodFor(period), limit: 50 });
+      const tracks = (items || []).map((track, index) => ({
+        id: `top-track-${index}-${track.title}`.replace(/\s+/g, '-'),
+        title: track.title,
+        artist: track.artist || 'Unknown Artist',
+        album: track.album || null,
+        // Only a cover the source matched itself; the art pipeline
+        // (getAlbumArt / getTrackArt) fills in the rest.
+        albumArt: track.albumArt || null,
+        playCount: Number(track.plays) || 0,
         rank: index + 1,
-        sources: {}
+        sources: {},
+        mbid: track.mbid || null
       }));
-
-      // Cache the tracks for this period
-      topTracksCache.current[period] = { tracks, timestamp: Date.now() };
-
+      topTracksCache.current[cacheKey] = { tracks, timestamp: Date.now() };
       // Resolution handled by scheduler via IntersectionObserver
       setTopTracks({ tracks, loading: false, error: null });
     } catch (error) {
       console.error('Failed to load Top Tracks:', error);
-      setTopTracks({ tracks: [], loading: false, error: error.message });
+      setTopTracks({ tracks: [], loading: false, error: topListFailed(source, 'tracks', error) });
     }
   };
 
-  // Load Top Artists from Last.fm
   const loadTopArtists = async (period = historyPeriod) => {
+    const source = historyTopSource();
+    if (!source) {
+      setTopArtists({ artists: [], loading: false, error: historyNotConnected() });
+      return;
+    }
     setTopArtists(prev => ({ ...prev, loading: true, error: null }));
-    console.log(`📊 Loading Top Artists (${period})...`);
-
+    console.log(`📊 Loading top artists from ${pluginName(source.id)} (${period})…`);
     try {
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      if (!lastfmConfig?.username) {
-        setTopArtists({ artists: [], loading: false, error: 'No Last.fm account connected.' });
-        return;
-      }
-
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) {
-        setTopArtists({ artists: [], loading: false, error: 'Last.fm API key not configured.' });
-        return;
-      }
-
-      const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-      const response = await lastfmFetch(url);
-
-      if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
-
-      const data = await response.json();
-      const topArtistsList = data.topartists?.artist || [];
-
-      console.log(`📊 Received ${topArtistsList.length} top artists`);
-
-      const artists = topArtistsList.map((artist, index) => ({
+      const items = await askTopItems(source.id, { kind: 'artists', period: historyPeriodFor(period), limit: 50 });
+      const artists = (items || []).map((artist, index) => ({
         id: `top-artist-${index}-${artist.name}`.replace(/\s+/g, '-'),
         name: artist.name,
-        image: null, // Will be fetched from Spotify
-        playCount: parseInt(artist.playcount) || 0,
+        image: null, // Filled in by resolveTopArtistImages
+        playCount: Number(artist.plays) || 0,
         rank: index + 1
       }));
-
       setTopArtists({ artists, loading: false, error: null });
-
-      // Fetch artist images from Spotify in background
       resolveTopArtistImages(artists);
     } catch (error) {
       console.error('Failed to load Top Artists:', error);
-      setTopArtists({ artists: [], loading: false, error: error.message });
+      setTopArtists({ artists: [], loading: false, error: topListFailed(source, 'artists', error) });
     }
   };
 
@@ -29725,48 +29427,38 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     console.log(`📊 Finished fetching top artist images`);
   };
 
-  // Load Top Albums from Last.fm
   const loadTopAlbums = async (period = historyPeriod) => {
+    const source = historyTopSource();
+    if (!source) {
+      setTopAlbums({ albums: [], loading: false, error: historyNotConnected() });
+      return;
+    }
     setTopAlbums(prev => ({ ...prev, loading: true, error: null }));
-    console.log(`📊 Loading Top Albums (${period})...`);
-
+    console.log(`📊 Loading top albums from ${pluginName(source.id)} (${period})…`);
     try {
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      if (!lastfmConfig?.username) {
-        setTopAlbums({ albums: [], loading: false, error: 'No Last.fm account connected.' });
-        return;
-      }
-
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) {
-        setTopAlbums({ albums: [], loading: false, error: 'Last.fm API key not configured.' });
-        return;
-      }
-
-      const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-      const response = await lastfmFetch(url);
-
-      if (!response.ok) throw new Error(`Failed to fetch top albums: ${response.status}`);
-
-      const data = await response.json();
-      const topAlbumsList = data.topalbums?.album || [];
-
-      console.log(`📊 Received ${topAlbumsList.length} top albums`);
-
-      const albums = topAlbumsList.map((album, index) => ({
-        id: `top-album-${index}-${album.name}`.replace(/\s+/g, '-'),
-        name: album.name,
-        artist: album.artist?.name || 'Unknown Artist',
-        image: album.image?.[3]?.['#text'] || album.image?.[2]?.['#text'] || null,
-        playCount: parseInt(album.playcount) || 0,
+      const items = await askTopItems(source.id, { kind: 'albums', period: historyPeriodFor(period), limit: 50 });
+      const albums = (items || []).map((album, index) => ({
+        id: `top-album-${index}-${album.title}`.replace(/\s+/g, '-'),
+        name: album.title,
+        artist: album.artist || 'Unknown Artist',
+        image: album.albumArt || null,
+        playCount: Number(album.plays) || 0,
         rank: index + 1
       }));
-
       setTopAlbums({ albums, loading: false, error: null });
     } catch (error) {
       console.error('Failed to load Top Albums:', error);
-      setTopAlbums({ albums: [], loading: false, error: error.message });
+      setTopAlbums({ albums: [], loading: false, error: topListFailed(source, 'albums', error) });
     }
+  };
+
+  // Pick the source of the History page's top lists, and reload the open one.
+  const pickHistorySource = (id) => {
+    setHistorySource(id);
+    historySourceRef.current = id;
+    if (historyTab === 'topTracks') loadTopTracks(historyPeriod);
+    else if (historyTab === 'topArtists') loadTopArtists(historyPeriod);
+    else if (historyTab === 'topAlbums') loadTopAlbums(historyPeriod);
   };
 
   // Parse friend input to extract service and username
@@ -31433,57 +31125,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
   navigateToFriendRef.current = navigateToFriend;
 
-  // Load listening history from Last.fm
-  const loadLastfmHistory = async (username, apiKey) => {
-    const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json&limit=50`;
-    const response = await lastfmFetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Last.fm listening history: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const recentTracks = data.recenttracks?.track || [];
-
-    // Transform tracks to app format
-    return recentTracks.map((track, index) => ({
-      id: `history-${index}-${track.date?.uts || 'now'}-${track.name}`.replace(/\s+/g, '-'),
-      title: track.name,
-      artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
-      album: track.album?.['#text'] || null,
-      albumArt: track.image?.[2]?.['#text'] || null, // Medium size image
-      playedAt: track.date?.uts ? parseInt(track.date.uts) * 1000 : null, // Convert to ms
-      nowPlaying: track['@attr']?.nowplaying === 'true',
-      sources: {} // Will be populated by resolver pipeline
-    }));
-  };
-
-  // Load listening history from ListenBrainz
-  const loadListenbrainzHistory = async (username) => {
-    const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/listens?count=50`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ListenBrainz listening history: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const listens = data.payload?.listens || [];
-
-    // Transform listens to app format
-    return listens.map((listen, index) => ({
-      id: listen.recording_msid || `lb-history-${index}-${listen.listened_at}-${listen.track_metadata?.track_name}`.replace(/\s+/g, '-'),
-      title: listen.track_metadata?.track_name || 'Unknown Track',
-      artist: listen.track_metadata?.artist_name || 'Unknown Artist',
-      album: listen.track_metadata?.release_name || null,
-      albumArt: listenBrainzCoverUrl(listen.track_metadata?.mbid_mapping), // null → filled via getAlbumArt
-      playedAt: listen.listened_at ? listen.listened_at * 1000 : null, // Convert to ms
-      nowPlaying: listen.playing_now || false,
-      sources: {},
-      mbid: listen.track_metadata?.additional_info?.recording_mbid || null
-    }));
-  };
-
   // Helper function to search MusicBrainz with fallback for multi-artist names
   // If artist contains "&" or " and " and search fails, tries with just the first artist name
   // opts.background: queue in the MusicBrainz limiter's background lane
@@ -33020,6 +32661,25 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     metaIds: (metaServicesRef.current || []).map(s => s.id),
     isOff: pluginSwitchedOff
   });
+  // Your listening history (#1539 step 4): the plug-ins with
+  // capabilities.listeningHistory that you've signed in to (a username in
+  // their settings), in your order; and the one the History page's top lists
+  // show (the pick, else the first).
+  const historySourcesFor = () => signedInSources(similarProvidersFor('listeningHistory'), metaServiceConfigsRef.current || {});
+  const historyTopSource = () => {
+    const sources = historySourcesFor();
+    return sources.find(r => r.id === historySourceRef.current) || sources[0] || null;
+  };
+  // Every plug-in that could keep it, for "Add your … username" when none is
+  // set up.
+  const historyNotConnected = () => {
+    const names = similarProvidersFor('listeningHistory').map(r => pluginName(r.id));
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : (names[0] || 'a listening history plug-in');
+    return `No listening history service connected. Add your ${list} username in Settings › Plug-Ins.`;
+  };
+  const askTopItems = async (id, query) => resolverLoaderRef.current.getTopItems(id, query, await configForSimilar(id));
+  const askRecentListens = async (id, query) => resolverLoaderRef.current.getRecentListens(id, query, await configForSimilar(id));
+
   // A config whose key isn't ready yet (Last.fm before main's built-in pair
   // arrives) is a failure for this ask, never a keyless empty answer.
   const configForSimilar = async (id) => {
@@ -36535,10 +36195,25 @@ useEffect(() => {
     albumCardActions, copyParachordLink, fetchAlbumTracksByName, fetchArtistData, followRecommendedFriend, formatTimeAgo, isOnAir, loadFriendRecentTracks, loadFriendTopAlbums, loadFriendTopArtists, loadFriendTopTracks, observedRowRef, openTopAlbum, pinFriend, playArtistTopTracks, playTrackRow, prefetchTopAlbumTracks, retryBrokenListArt, trackRowDrag, unpinFriend,
   });
 
+  // The History page's sources (lib/listening-history.js, #1539 step 4):
+  // every plug-in that keeps listening history (for "Connect …" when none is
+  // set up), and the ones you're signed in to, in your order (its header and
+  // Source menu). Built from state so the page updates when one is set up.
+  const historySources = useMemo(() => {
+    const isOff = (id) => (metaServiceConfigs?.[id] || {}).enabled === false || (metadataOffResolvers || []).includes(id);
+    const all = similarProviders(resolverLoaderRef.current, 'listeningHistory', {
+      activeIds: activeResolvers, order: resolverOrder, metaIds: metaServices.map(m => m.id), isOff
+    });
+    return {
+      services: all.map(r => ({ id: r.id, name: pluginName(r.id) })),
+      signedIn: signedInSources(all, metaServiceConfigs || {}).map(r => ({ id: r.id, label: pluginName(r.id) }))
+    };
+  }, [loadedResolvers, metaServices, activeResolvers, resolverOrder, metaServiceConfigs, metadataOffResolvers]);
+
   // Stable function props for the memo'd HistoryPage (keys must
   // match HISTORY_PAGE_HANDLERS in history-page.js).
   const historyPageHandlers = useStableHandlers({
-    albumCardActions, copyParachordLink, fetchAlbumTracksByName, fetchArtistData, formatTimeAgo, historyErrorState, loadListeningHistory, loadTopAlbums, loadTopArtists, loadTopTracks, observedRowRef, openTopAlbum, playArtistTopTracks, playTrackRow, prefetchTopAlbumTracks, trackRowDrag,
+    albumCardActions, copyParachordLink, fetchAlbumTracksByName, fetchArtistData, formatTimeAgo, historyErrorState, loadListeningHistory, loadTopAlbums, loadTopArtists, loadTopTracks, observedRowRef, openTopAlbum, pickHistorySource, playArtistTopTracks, playTrackRow, prefetchTopAlbumTracks, trackRowDrag,
   });
 
   // Stable function props for the memo'd CriticsPicksPage (keys must
@@ -37320,6 +36995,8 @@ useEffect(() => {
           historyHeaderCollapsed,
           historyObserverRef,
           historyPeriod,
+          historySource,
+          historySources,
           historyScrollContainerReady,
           historyScrollContainerRef,
           historySearch,
@@ -37328,7 +37005,6 @@ useEffect(() => {
           historyTab,
           historyTrackRowRefs,
           listeningHistory,
-          metaServiceConfigs,
           playbackResolvers,
           resolverOrder,
           setHistoryPeriod,

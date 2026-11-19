@@ -43,6 +43,7 @@ const LOADER_LIST = {
   similarTracks: 'getSimilarTracksResolvers',
   artistTopTracks: 'getArtistTopTracksResolvers',
   artistReleases: 'getArtistReleasesResolvers',
+  listeningHistory: 'getListeningHistoryResolvers',
   biography: 'getBiographyResolvers',
 };
 

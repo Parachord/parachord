@@ -736,6 +736,68 @@ class ResolverLoader {
   }
 
   /**
+   * Plug-ins that keep a user's listening history, for the History page, the
+   * AI's listening context and the Fresh Drops and Concerts seeds: they
+   * declare capabilities.listeningHistory and implement getTopItems and
+   * getRecentListens (docs/architecture/plugins.md, "Listening history",
+   * #1539 step 4).
+   * @returns {object[]}
+   */
+  getListeningHistoryResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.listeningHistory &&
+      typeof r.getTopItems === 'function' &&
+      typeof r.getRecentListens === 'function'
+    );
+  }
+
+  /**
+   * A user's most played tracks, albums or artists on one plug-in.
+   * @param {string} resolverId
+   * @param {{ user?: string, kind: 'tracks'|'albums'|'artists', period: string, limit?: number }} query
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object[]|null>} most played first (rows without a
+   *          title, or a name for artists, dropped); null when the plug-in
+   *          lacks the capability or has no user to ask about. REJECTS when
+   *          it throws.
+   */
+  async getTopItems(resolverId, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.listeningHistory || typeof resolver.getTopItems !== 'function') return null;
+    try {
+      const items = await resolver.getTopItems(query || {}, configOverride || resolver.config || {});
+      if (items == null) return null;
+      const named = query?.kind === 'artists' ? (i => typeof i.name === 'string' && i.name.trim()) : (i => typeof i.title === 'string' && i.title.trim());
+      return Array.isArray(items) ? items.filter(i => i && named(i)) : [];
+    } catch (error) {
+      console.error(`Top items error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * A user's recent listens on one plug-in, newest first.
+   * @param {string} resolverId
+   * @param {{ user?: string, limit?: number }} query
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object[]|null>} [{ title, artist, album?, albumArt?,
+   *          playedAt, nowPlaying, mbid?, msid? }]; null as getTopItems.
+   *          REJECTS when the plug-in throws.
+   */
+  async getRecentListens(resolverId, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.listeningHistory || typeof resolver.getRecentListens !== 'function') return null;
+    try {
+      const listens = await resolver.getRecentListens(query || {}, configOverride || resolver.config || {});
+      if (listens == null) return null;
+      return Array.isArray(listens) ? listens.filter(l => l && typeof l.title === 'string' && l.title.trim()) : [];
+    } catch (error) {
+      console.error(`Recent listens error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
    * A manifest's top-level `charts`, cleaned: { period?, tracks?, albums? },
    * each kind { global: boolean, countries: ['us', ...] } (lowercase ISO
    * codes). A kind with neither is left out; null when nothing is left.
