@@ -21,9 +21,10 @@
 //   StartupRow       settings.startup: open the service's app at startup
 //   InstallCallout   settings.installCallout: software to install first
 //   WatchFolders     settings.watchFolders: folders the plug-in reads
-//   PluginSwitches   settings.switches: the plug-in's own on/off options,
-//                    nested under "Enable X" (Subsonic's "Report plays to
-//                    your server", #1546)
+//   PluginSwitches   settings.switches: the plug-in's own on/off options
+//                    that need its sign-in, nested under the account and
+//                    its keys (Subsonic's "Report plays to your server",
+//                    #1546)
 //
 // The layout is the dialog's one order (CLAUDE.md, "Every plug-in's settings
 // are one layout"): on/off, the account, the keys it signs in with, what
@@ -338,23 +339,29 @@ function switchesOf(plugin) {
 // manifest says true).
 const switchOn = (sw, config, key) => (config && typeof config[key] === 'boolean' ? config[key] : sw.default === true);
 
-// PluginSwitches: settings.switches, each a nested row with a small switch,
-// drawn under "Enable X" while it's on, like "Play from X" (#1505).
+// PluginSwitches: settings.switches, while the plug-in is on. They need
+// its sign-in (Subsonic's reports go to the server it signs in to), so the
+// dialog draws them in "what needs the sign-in": after the account and the
+// keys it signs in with, each a nested row with a small switch tying it to
+// the account above, the way "Play from X" sits under "Enable X" (#1505).
+// No line of their own: they belong to the section above.
 //   config  the plug-in's saved config
 //   onSet   (key, on) saves it
-//   first   it's the first nested row (the line above needs its space)
-function PluginSwitches({ plugin, config, onSet, first = false }) {
+function PluginSwitches({ plugin, config, onSet }) {
   const e = React.createElement;
   const rows = switchesOf(plugin);
   if (rows.length === 0) return null;
-  return e(React.Fragment, null, ...rows.map(([key, sw], i) => {
+  // Part of the section above: its 16px bottom padding is taken back, so
+  // the rows sit as close under the last field (a field keeps 12px under
+  // it) as "Play from X" sits under "Enable X", and the padding moves below.
+  return e('div', { 'data-section': 'plugin-switches', style: { marginTop: '-16px', paddingBottom: '16px' } }, ...rows.map(([key, sw]) => {
     const on = switchOn(sw, config, key);
     return e(SettingRow, {
       key,
       label: sw.label,
       hint: sw.hint || undefined,
       nested: true,
-      style: { padding: '6px 0', marginTop: first && i === 0 ? '12px' : '0' },
+      style: { padding: '6px 0' },
     }, e(Switch, { size: 'sm', checked: on, onToggle: () => onSet(key, !on) }));
   }));
 }

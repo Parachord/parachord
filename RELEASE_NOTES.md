@@ -9,7 +9,7 @@
 ## Services
 
 - **Bandcamp: only tracks you can play.** Some artists make their Bandcamp tracks buy-only, and Bandcamp's search doesn't say which. Parachord used to offer those as Bandcamp sources, then fail to play them. It now checks: a buy-only track never plays from Bandcamp, and Parachord doesn't swap in someone else's upload of the same song. Buy on Bandcamp still shows for it. This comes with the Bandcamp plug-in update, which installs itself.
-- **Subsonic: report plays to your server.** A new switch in the Subsonic plug-in's settings, "Report plays to your server", sends what you play from your server back to it: it shows as Now Playing there while it plays, and counts as a play once you've listened past the usual scrobble point. Only tracks that play from your server are reported. It's off by default, since a server that also scrobbles to Last.fm or ListenBrainz could count the same play twice. It needs this version of Parachord and the Subsonic plug-in update, which installs itself. Thanks to kiarie00 for the idea (#1546).
+- **Subsonic: report plays to your server.** A new switch in the Subsonic plug-in's settings, "Report plays to your server" (under your server and account), sends what you play from your server back to it: it shows as Now Playing there while it plays, and counts as a play once you've listened past the usual scrobble point. Only tracks that play from your server are reported. It's off by default, since a server that also scrobbles to Last.fm or ListenBrainz could count the same play twice. It needs this version of Parachord and the Subsonic plug-in update, which installs itself. Thanks to kiarie00 for the idea (#1546).
 
 ---
 

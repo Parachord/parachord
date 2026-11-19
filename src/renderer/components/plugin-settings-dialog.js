@@ -340,18 +340,7 @@ React.createElement('div', {
                 hint: recs.hint,
                 nested: true,
                 style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
-              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })),
-              // The plug-in's own on/off options (settings.switches: Subsonic's
-              // "Report plays to your server", #1546), saved in its config.
-              state.checked && React.createElement(PluginSwitches, {
-                plugin: selectedResolver,
-                config: metaServiceConfigs[id],
-                first: !(play.shown || meta.shown || recs.shown),
-                onSet: (key, on) => {
-                  saveMetaServiceConfig(id, { ...metaServiceConfigs[id], [key]: on });
-                  delete resolverConfigCache.current[id];
-                },
-              }));
+              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
           })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the
@@ -538,6 +527,19 @@ React.createElement('div', {
                 React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }), 'Credentials saved')
             );
           })(),
+
+          // The plug-in's own on/off options (settings.switches: Subsonic's
+          // "Report plays to your server", #1546), while it's on: what needs
+          // the sign-in, so after the account and its keys (the server and
+          // credentials above), nested under them. Saved in its config.
+          switchState.checked && React.createElement(PluginSwitches, {
+            plugin: selectedResolver,
+            config: metaServiceConfigs[selectedResolver.id],
+            onSet: (key, on) => {
+              saveMetaServiceConfig(selectedResolver.id, { ...metaServiceConfigs[selectedResolver.id], [key]: on });
+              delete resolverConfigCache.current[selectedResolver.id];
+            },
+          }),
 
           // Software the plug-in needs installed first (settings.installCallout: Ollama).
           settingsOf(selectedResolver).installCallout && React.createElement(InstallCallout, { plugin: selectedResolver }),

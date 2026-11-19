@@ -52,7 +52,7 @@
     "switches": {
       "reportPlays": {
         "label": "Report plays to your server",
-        "hint": "Shows what’s playing on your server and adds to its play counts. If your server also scrobbles to Last.fm or ListenBrainz, a play Parachord scrobbles too may count twice.",
+        "hint": "Shows what’s playing on your server and adds to its play counts. If it also scrobbles, a play may count twice.",
         "default": false
       }
     }

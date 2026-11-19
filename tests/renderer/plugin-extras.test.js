@@ -166,12 +166,12 @@ describe('each extra section shows for its signal and not otherwise', () => {
     expect(local).not.toContain('API Configuration');
   });
 
-  test('its own switches: settings.switches, nested under Enable while it is on (#1546)', () => {
+  test('its own switches: settings.switches, nested rows while it is on (#1546)', () => {
     const plugin = base({ settings: { switches: { tellServer: { label: 'Tell the server', hint: 'It counts your plays.', default: false } } } });
     const on = render(plugin, { activeResolvers: ['newservice'] });
     expect(on).toContain('Tell the server');
     expect(on).toContain('It counts your plays.');
-    // A nested row with a small switch, after Enable, like Play from.
+    // A nested row with a small switch, like Play from.
     const row = on.slice(on.indexOf('Tell the server') - 600, on.indexOf('Tell the server'));
     expect(row).toContain('border-l-2 border-line');
     expect(on.indexOf('Enable New Service')).toBeLessThan(on.indexOf('Tell the server'));
@@ -183,6 +183,22 @@ describe('each extra section shows for its signal and not otherwise', () => {
     // Enable off: not drawn. No switches declared: nothing.
     expect(render(plugin)).not.toContain('Tell the server');
     expect(render(base(), { activeResolvers: ['newservice'] })).not.toContain('Tell the server');
+  });
+
+  test('Subsonic: the switch is what needs the sign-in, after the server and credentials (CLAUDE.md one layout)', () => {
+    const m = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins-src/subsonic/manifest.json'), 'utf8'));
+    const subsonic = { id: m.manifest.id, name: m.manifest.name, version: m.manifest.version, color: m.manifest.color,
+      description: m.manifest.description, capabilities: m.capabilities, settings: m.settings, configurable: m.settings.configurable,
+      requiresAuth: m.settings.requiresAuth, authType: m.settings.authType };
+    const html = render(subsonic, { activeResolvers: ['subsonic'] });
+    const at = (text) => { const i = html.indexOf(text); expect([text, i >= 0]).toEqual([text, true]); return i; };
+    const sw = at('Report plays to your server');
+    expect(at('Enable Subsonic')).toBeLessThan(at('Server URL'));
+    for (const field of ['Server URL', 'Username', 'Password']) expect(at(field)).toBeLessThan(sw);
+    // Its own nested row with a small switch, off by default.
+    expect(html.slice(sw)).toMatch(/role="switch" aria-checked="false"[^>]*class="[^"]*w-9 h-5/);
+    // Off while Subsonic is.
+    expect(render(subsonic)).not.toContain('Report plays to your server');
   });
 
   test('a switch is never drawn as a text field, and the userpass fields stay as they were', () => {
