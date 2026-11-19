@@ -10,9 +10,8 @@
 // useCallback/useMemo results (artistSortOptions and resolvers were literals
 // rebuilt on every render and are useMemo now), primitives, and Parachord's
 // plain functions as stable wrappers (useStableHandlers in app.js; the list
-// is ARTIST_PAGE_HANDLERS). `_metaServiceConfigs` is not read here:
-// getLastfmApiKey() reads it during this render through its stable wrapper,
-// so it is passed only to invalidate the memo. The refs used here are only
+// is ARTIST_PAGE_HANDLERS). `_metaServiceConfigs` is not read here; it is
+// passed only to invalidate the memo when a plug-in's settings change. The refs used here are only
 // touched inside callback refs and handlers, never read to decide what
 // renders. tests/renderer/page-memo.test.js checks the call site.
 //
@@ -28,6 +27,8 @@ const Icons = require('./icons');
 const { CardSkeleton } = require('./home-skeletons');
 const { RELEASE_TYPE_COLORS } = require('../lib/release-types');
 const { FilterBox, StickyBar } = require('./filter-box');
+const { pluginName } = require('../lib/plugin-names');
+const { sourcesIn } = require('../lib/similar-music');
 const { Button, buttonClassName } = require('./button');
 const { PAGE_COLORS } = require('../lib/page-colors');
 const { EmptyState, ErrorState } = require('./states');
@@ -57,7 +58,6 @@ const ARTIST_PAGE_HANDLERS = [
   'getArtistBio',
   'getArtistTopTracks',
   'playArtistTopTracks',
-  'getLastfmApiKey',
   'getRelatedArtists',
   'getServiceColor',
   'handlePlay',
@@ -109,7 +109,6 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     getArtistBio,
     getArtistTopTracks,
     playArtistTopTracks,
-    getLastfmApiKey,
     getRelatedArtists,
     getServiceColor,
     handleArtistPageScroll,
@@ -1448,50 +1447,42 @@ const ArtistPage = React.memo(function ArtistPage(props) {
 
           // RELATED ARTISTS TAB
           artistPageTab === 'related' && (() => {
-            // Compute source counts for filter pills
-            const listenbrainzCount = relatedArtists.filter(a => a.source === 'listenbrainz').length;
-            const lastfmCount = relatedArtists.filter(a => a.source === 'lastfm').length;
-            const bothCount = relatedArtists.filter(a => a.source === 'both').length;
-            // Show filter bar when both services have data OR when configured (MBID available for ListenBrainz, API key for Last.fm)
-            const hasBothServicesConfigured = !!currentArtist?.mbid && !!getLastfmApiKey();
-            // The chips shown: All, and each source with artists.
-            // Each source in its plugin's colour (resolver.color), never a copy.
-            // Every plugin, metadata ones included (the page's resolvers list
-            // only has playback plugins, so these fell back to the accent).
+            // One chip per plug-in that listed artists (each entry's
+            // `sources`, lib/similar-music.js, #1539), named and coloured from
+            // the plug-in registry, never a per-service copy. The bar shows
+            // once two or more plug-ins answered.
+            const relatedSources = sourcesIn(relatedArtists);
+            const showSourceChips = relatedSources.length > 1;
             const serviceColor = (id) => getServiceColor(id) || 'var(--accent-primary)';
-            const lbColor = serviceColor('listenbrainz');
-            const lfmColor = serviceColor('lastfm');
             const sourceChips = [
               { value: 'all', label: 'All', count: relatedArtists.length },
-              { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: lbColor },
-              // No "Both" chip: no other filter row has one, and an artist both
-              // sources found already shows under each.
-              { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: lfmColor }
-            ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color, gradient }) => (
-              { id: value, label: loadingRelated ? label : `${label} (${count})`, color, gradient }
+              // No "Both" chip: an artist several plug-ins found shows under each.
+              ...relatedSources.map(id => ({
+                value: id,
+                label: pluginName(id),
+                count: relatedArtists.filter(a => (a.sources || []).includes(id)).length,
+                color: serviceColor(id)
+              }))
+            ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color }) => (
+              { id: value, label: loadingRelated ? label : `${label} (${count})`, color }
             ));
             // A picked chip that isn't shown (the bar hidden, or its count 0)
             // filters as All, so the page never shows an empty source with no
             // chip to switch back.
-            const sourceFilter = hasBothServicesConfigured && sourceChips.some(c => c.id === relatedArtistsSourceFilter)
+            const sourceFilter = showSourceChips && sourceChips.some(c => c.id === relatedArtistsSourceFilter)
               ? relatedArtistsSourceFilter
               : 'all';
 
             // Filter artists based on source filter
             const filteredArtists = sourceFilter === 'all'
               ? relatedArtists
-              : relatedArtists.filter(a =>
-                  sourceFilter === 'both'
-                    ? a.source === 'both'
-                    : a.source === sourceFilter || a.source === 'both'
-                );
+              : relatedArtists.filter(a => (a.sources || []).includes(sourceFilter));
 
             return React.createElement(React.Fragment, null,
-              // Sticky filter bar - show when both services are configured
-              hasBothServicesConfigured && React.createElement(StickyBar, null,
-                // The app's filter chips (FilterChips): All neutral, each source
-                // in the colour it had (orange-500, red-600, and Both the two
-                // as a gradient).
+              // Sticky filter bar: once two or more plug-ins listed artists.
+              showSourceChips && React.createElement(StickyBar, null,
+                // The app's filter chips (FilterChips): All neutral, each
+                // plug-in in its own colour.
                 React.createElement(FilterChips, {
                   chips: sourceChips,
                   value: sourceFilter,
@@ -1526,8 +1517,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 }, Array.from({ length: 12 }).map((_, i) => React.createElement(ArtistCardSkeleton, { key: i, index: i }))),
                 // None found (or filtered to none): the shared empty state.
                 !loadingRelated && filteredArtists.length === 0 && React.createElement(EmptyState, relatedArtists.length === 0
-                  ? { title: 'No related artists yet', body: 'ListenBrainz and Last.fm don’t list any for this artist.' }
-                  : { title: `No related artists from ${sourceFilter === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`, body: 'Pick All to see the rest.' })
+                  ? { title: 'No related artists yet', body: 'None of your plug-ins list any for this artist.' }
+                  : { title: `No related artists from ${pluginName(sourceFilter)}`, body: 'Pick All to see the rest.' })
               )
             );
           })(),

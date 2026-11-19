@@ -148,13 +148,15 @@ describe('Artist page: the related-artists source filter', () => {
   test('a picked chip that is not shown filters as All', () => {
     const at = artistPage.indexOf("artistPageTab === 'related' && (() => {");
     const tab = artistPage.slice(at, artistPage.indexOf('// Content with padding', at));
-    expect(tab).toMatch(/const sourceFilter = hasBothServicesConfigured && sourceChips\.some\(c => c\.id === relatedArtistsSourceFilter\)\s*\? relatedArtistsSourceFilter\s*: 'all';/);
+    expect(tab).toMatch(/const sourceFilter = showSourceChips && sourceChips\.some\(c => c\.id === relatedArtistsSourceFilter\)\s*\? relatedArtistsSourceFilter\s*: 'all';/);
     expect(tab).toMatch(/const filteredArtists = sourceFilter === 'all'/);
     expect(tab).toMatch(/value: sourceFilter,/);
     expect(tab).not.toMatch(/relatedArtistsSourceFilter === 'both'/);
-    // The empty state (the shared EmptyState) names the picked source.
+    // The empty state (the shared EmptyState) names the picked plug-in from
+    // the registry (pluginName), never a per-service ternary (#1539).
     const emptyAt = artistPage.indexOf("title: 'No related artists yet'");
     expect(emptyAt).toBeGreaterThan(-1);
-    expect(artistPage.slice(emptyAt, emptyAt + 400)).toMatch(/sourceFilter === 'listenbrainz'/);
+    expect(artistPage.slice(emptyAt, emptyAt + 400)).toMatch(/pluginName\(sourceFilter\)/);
+    expect(tab).not.toMatch(/'listenbrainz'|'lastfm'/);
   });
 });

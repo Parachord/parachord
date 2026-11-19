@@ -610,6 +610,82 @@ class ResolverLoader {
   }
 
   /**
+   * Plug-ins that name artists like a given one, for the artist page's
+   * Related Artists and Spinoff's top-up: they declare
+   * capabilities.similarArtists and implement getSimilarArtists
+   * (docs/architecture/plugins.md, "Similar artists and tracks", #1539).
+   * @returns {object[]}
+   */
+  getSimilarArtistsResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.similarArtists &&
+      typeof r.getSimilarArtists === 'function'
+    );
+  }
+
+  /**
+   * Ask one plug-in for artists like this one.
+   * @param {string} resolverId
+   * @param {{ name: string, mbid?: string, limit?: number }} artist
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object[]>} [{ name, mbid?, match (0-100), url? }], most
+   *          similar first; [] when the plug-in lacks the capability or has
+   *          none. REJECTS when the plug-in throws (a failed or refused
+   *          request), so a failure never reads as "no similar artists".
+   */
+  async getSimilarArtists(resolverId, artist, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.similarArtists || typeof resolver.getSimilarArtists !== 'function') {
+      return [];
+    }
+    try {
+      const artists = await resolver.getSimilarArtists(artist || {}, configOverride || resolver.config || {});
+      return Array.isArray(artists) ? artists.filter(a => a && typeof a.name === 'string' && a.name.trim()) : [];
+    } catch (error) {
+      // The message only: a config can carry an API key.
+      console.error(`Similar artists error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * Plug-ins that name tracks like a given one, for Spinoff: they declare
+   * capabilities.similarTracks and implement getSimilarTracks (#1539).
+   * @returns {object[]}
+   */
+  getSimilarTracksResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.similarTracks &&
+      typeof r.getSimilarTracks === 'function'
+    );
+  }
+
+  /**
+   * Ask one plug-in for tracks like this one.
+   * @param {string} resolverId
+   * @param {{ artist: string, title: string, mbid?: string, limit?: number }} track
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object[]>} [{ artist, title, mbid?, match (0-100) }],
+   *          most similar first; [] when the plug-in lacks the capability or
+   *          has none. REJECTS when the plug-in throws.
+   */
+  async getSimilarTracks(resolverId, track, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.similarTracks || typeof resolver.getSimilarTracks !== 'function') {
+      return [];
+    }
+    try {
+      const tracks = await resolver.getSimilarTracks(track || {}, configOverride || resolver.config || {});
+      return Array.isArray(tracks)
+        ? tracks.filter(t => t && typeof t.artist === 'string' && t.artist.trim() && typeof t.title === 'string' && t.title.trim())
+        : [];
+    } catch (error) {
+      console.error(`Similar tracks error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
    * Ask one provider for the next page of an expandable recommendation
    * section (the provider's expandRecommendationSection). Providers that do
    * not paginate do not implement it and answer null.

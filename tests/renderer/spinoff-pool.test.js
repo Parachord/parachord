@@ -1,6 +1,8 @@
-// Spinoff's pool (#1281). Last.fm has no similar tracks for some of the most
-// played songs ("Shape of You" answers an empty list), so below a threshold the
-// pool is topped up from the seed artist's similar artists' top tracks.
+// Spinoff's pool (#1281). Some of the most played songs have no similar tracks
+// ("Shape of You" answers an empty list on Last.fm), so below a threshold the
+// pool is topped up from the seed artist's similar artists' top tracks. The
+// lookups ask every plug-in that names similar music (#1539); their parsing is
+// tested with the plug-ins (tests/resolver/similar-music-plugins.test.js).
 
 const {
   MIN_SIMILAR_TRACKS,
@@ -11,34 +13,30 @@ const {
   checkSpinoffAvailable,
 } = require('../../src/renderer/lib/spinoff-pool');
 
-const NOT_FOUND = { error: 6, message: 'Track not found', links: [] };
-
-// A fake Last.fm: answers by method, records every URL it was asked for.
-function fakeLastfm({ similarTracks = [], similarArtists = [], topTracks = {}, fail = [] } = {}) {
+// Fake plug-in lookups (lib/similar-music.js shapes): answer from tables and
+// record every call. `fail` names a lookup that no plug-in answered.
+function fakePlugins({ similarTracks = [], similarArtists = [], topTracks = {}, fail = [] } = {}) {
   const calls = [];
-  const fetchJson = async (url) => {
-    calls.push(url);
-    const u = new URL(url);
-    const method = u.searchParams.get('method');
-    if (fail.includes(method)) return null;
-    if (method === 'track.getsimilar') {
-      if (similarTracks === 'not-found') return NOT_FOUND;
-      const limit = Number(u.searchParams.get('limit'));
-      return { similartracks: { track: similarTracks.slice(0, limit).map(([artist, name]) => ({ name, match: '0.5', artist: { name: artist } })) } };
-    }
-    if (method === 'artist.getsimilar') {
-      const limit = Number(u.searchParams.get('limit'));
-      return { similarartists: { artist: similarArtists.slice(0, limit).map((name, i) => ({ name, match: String(1 - i / 10) })) } };
-    }
-    if (method === 'artist.gettoptracks') {
-      const artist = u.searchParams.get('artist');
-      const names = topTracks[artist];
-      if (names === undefined) return { error: 6, message: 'The artist you supplied could not be found' };
-      return { toptracks: { track: names.slice(0, Number(u.searchParams.get('limit'))).map((name) => ({ name, artist: { name: artist } })) } };
-    }
-    throw new Error(`unexpected ${method}`);
+  return {
+    calls,
+    names: () => calls.map((c) => c.name),
+    similarTracks: async (q) => {
+      calls.push({ name: 'similarTracks', q });
+      if (fail.includes('similarTracks')) return { tracks: [], failed: true };
+      return { tracks: similarTracks.slice(0, q.limit).map(([artist, title]) => ({ artist, title, match: 50 })), failed: false };
+    },
+    similarArtists: async (q) => {
+      calls.push({ name: 'similarArtists', q });
+      if (fail.includes('similarArtists')) return { artists: [], failed: true };
+      return { artists: similarArtists.slice(0, q.limit).map((name, i) => ({ name, match: 100 - i * 10 })), failed: false };
+    },
+    // Like app.js's getArtistTopTracks: [] when it fails or the artist is unknown.
+    topTracks: async (name, limit) => {
+      calls.push({ name: 'topTracks', q: { name, limit } });
+      const titles = topTracks[name];
+      return titles === undefined ? [] : titles.slice(0, limit).map((title) => ({ title, artist: name }));
+    },
   };
-  return { fetchJson, calls, methods: () => calls.map((c) => new URL(c).searchParams.get('method')) };
 }
 
 const seed = { artist: 'Ed Sheeran', title: 'Shape of You' };
@@ -77,79 +75,85 @@ describe('dealRoundRobin', () => {
 });
 
 describe('buildSpinoffPool', () => {
-  test('enough similar tracks: one request, no fallback', async () => {
-    const lf = fakeLastfm({ similarTracks: twenty });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.failed).toBe(false);
-    expect(pool.usedFallback).toBe(false);
-    expect(pool.tracks).toHaveLength(20);
-    expect(lf.methods()).toEqual(['track.getsimilar']);
+  const pool = (fp, extra = {}) => buildSpinoffPool({ similarTracks: fp.similarTracks, similarArtists: fp.similarArtists, topTracks: fp.topTracks, ...seed, rng, ...extra });
+
+  test('enough similar tracks: one lookup, no fallback', async () => {
+    const fp = fakePlugins({ similarTracks: twenty });
+    const out = await pool(fp);
+    expect(out.failed).toBe(false);
+    expect(out.usedFallback).toBe(false);
+    expect(out.tracks).toHaveLength(20);
+    expect(fp.calls).toEqual([{ name: 'similarTracks', q: { artist: seed.artist, title: seed.title, limit: 20 } }]);
   });
 
   test('no similar tracks: the pool comes from 8 similar artists, 3 top tracks each', async () => {
-    const lf = fakeLastfm({ similarTracks: [], similarArtists: artists, topTracks: tops });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.usedFallback).toBe(true);
-    expect(pool.tracks).toHaveLength(24);
-    expect(new Set(pool.tracks.map((t) => t.artist)).size).toBe(8);
-    expect(pool.tracks.some((t) => t.artist === 'Ninth')).toBe(false);
-    expect(noRunsBySameArtist(pool.tracks)).toBe(true);
-    expect(lf.methods().filter((m) => m === 'artist.gettoptracks')).toHaveLength(8);
-    const topCall = lf.calls.find((c) => c.includes('artist.gettoptracks'));
-    expect(new URL(topCall).searchParams.get('limit')).toBe('3');
+    const fp = fakePlugins({ similarTracks: [], similarArtists: artists, topTracks: tops });
+    const out = await pool(fp);
+    expect(out.usedFallback).toBe(true);
+    expect(out.tracks).toHaveLength(24);
+    expect(new Set(out.tracks.map((t) => t.artist)).size).toBe(8);
+    expect(out.tracks.some((t) => t.artist === 'Ninth')).toBe(false);
+    expect(noRunsBySameArtist(out.tracks)).toBe(true);
+    expect(fp.calls.find((c) => c.name === 'similarArtists').q).toEqual({ name: seed.artist, limit: 8 });
+    const tops8 = fp.calls.filter((c) => c.name === 'topTracks');
+    expect(tops8).toHaveLength(8);
+    expect(tops8[0].q.limit).toBe(3);
   });
 
   test('a few similar tracks come first, then the top-up', async () => {
-    const lf = fakeLastfm({ similarTracks: [['Rag n Bone Man', 'Human'], ['Passenger', 'Let Her Go']], similarArtists: artists, topTracks: tops });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.usedFallback).toBe(true);
-    expect(pool.tracks.slice(0, 2).map((t) => t.title).sort()).toEqual(['Human', 'Let Her Go']);
-    expect(pool.tracks).toHaveLength(26);
+    const fp = fakePlugins({ similarTracks: [['Rag n Bone Man', 'Human'], ['Passenger', 'Let Her Go']], similarArtists: artists, topTracks: tops });
+    const out = await pool(fp);
+    expect(out.usedFallback).toBe(true);
+    expect(out.tracks.slice(0, 2).map((t) => t.title).sort()).toEqual(['Human', 'Let Her Go']);
+    expect(out.tracks).toHaveLength(26);
   });
 
   test('exactly the threshold does not fall back', async () => {
-    const lf = fakeLastfm({ similarTracks: twenty.slice(0, 5), similarArtists: artists, topTracks: tops });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.usedFallback).toBe(false);
-    expect(lf.methods()).toEqual(['track.getsimilar']);
+    const fp = fakePlugins({ similarTracks: twenty.slice(0, 5), similarArtists: artists, topTracks: tops });
+    const out = await pool(fp);
+    expect(out.usedFallback).toBe(false);
+    expect(fp.names()).toEqual(['similarTracks']);
   });
 
-  test('a track Last.fm does not know counts as empty, not as a failure', async () => {
-    const lf = fakeLastfm({ similarTracks: 'not-found', similarArtists: artists, topTracks: tops });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.failed).toBe(false);
-    expect(pool.tracks).toHaveLength(24);
+  test('no plug-in answering similar tracks fails the pool without asking anything else', async () => {
+    const fp = fakePlugins({ fail: ['similarTracks'], similarArtists: artists, topTracks: tops });
+    expect(await pool(fp)).toEqual({ tracks: [], failed: true, usedFallback: false });
+    expect(fp.names()).toEqual(['similarTracks']);
   });
 
-  test('a failed similar-tracks request fails the pool without asking anything else', async () => {
-    const lf = fakeLastfm({ fail: ['track.getsimilar'], similarArtists: artists, topTracks: tops });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool).toEqual({ tracks: [], failed: true, usedFallback: false });
-    expect(lf.methods()).toEqual(['track.getsimilar']);
+  test('a lookup that throws counts as a failure', async () => {
+    const out = await buildSpinoffPool({ similarTracks: async () => { throw new Error('down'); }, ...seed, rng });
+    expect(out).toEqual({ tracks: [], failed: true, usedFallback: false });
   });
 
-  test('a failed similar-artists request keeps the similar tracks it had', async () => {
-    const lf = fakeLastfm({ similarTracks: [['Passenger', 'Let Her Go']], fail: ['artist.getsimilar'] });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.failed).toBe(false);
-    expect(pool.tracks.map((t) => t.title)).toEqual(['Let Her Go']);
+  test('no similar-artists answer keeps the similar tracks it had', async () => {
+    const fp = fakePlugins({ similarTracks: [['Passenger', 'Let Her Go']], fail: ['similarArtists'] });
+    const out = await pool(fp);
+    expect(out.failed).toBe(false);
+    expect(out.tracks.map((t) => t.title)).toEqual(['Let Her Go']);
   });
 
   test('one artist\'s top tracks failing leaves the others', async () => {
-    const lf = fakeLastfm({ similarTracks: [], similarArtists: artists, topTracks: { ...tops, 'James Arthur': undefined } });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.tracks).toHaveLength(21);
-    expect(pool.tracks.some((t) => t.artist === 'James Arthur')).toBe(false);
+    const fp = fakePlugins({ similarTracks: [], similarArtists: artists, topTracks: { ...tops, 'James Arthur': undefined } });
+    const out = await pool(fp);
+    expect(out.tracks).toHaveLength(21);
+    expect(out.tracks.some((t) => t.artist === 'James Arthur')).toBe(false);
+  });
+
+  test('a top-tracks lookup that throws is one empty group', async () => {
+    const fp = fakePlugins({ similarTracks: [], similarArtists: artists, topTracks: tops });
+    const out = await pool(fp, { topTracks: async (name, limit) => { if (name === 'James Arthur') throw new Error('x'); return fp.topTracks(name, limit); } });
+    expect(out.tracks).toHaveLength(21);
   });
 
   test('leaves out the seed track and duplicates, however they are spelled', async () => {
-    const lf = fakeLastfm({
+    const fp = fakePlugins({
       similarTracks: [['ed sheeran', 'Shape Of You'], ['Passenger', 'Let Her Go']],
       similarArtists: ['Passenger', 'Ed Sheeran'],
       topTracks: { Passenger: ['Let Her Go', 'Holes'], 'Ed Sheeran': ['Shape of You!', 'Perfect'] },
     });
-    const pool = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
-    const keys = pool.tracks.map((t) => `${t.artist}|${t.title}`);
+    const out = await pool(fp);
+    const keys = out.tracks.map((t) => `${t.artist}|${t.title}`);
     expect(keys).not.toContain('ed sheeran|Shape Of You');
     expect(keys).not.toContain('Ed Sheeran|Shape of You!');
     expect(keys.filter((k) => k.endsWith('Let Her Go'))).toHaveLength(1);
@@ -157,66 +161,54 @@ describe('buildSpinoffPool', () => {
   });
 
   test('every track has the shape the spinoff queue uses', async () => {
-    const lf = fakeLastfm({ similarTracks: [], similarArtists: artists, topTracks: tops });
-    const { tracks } = await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed, rng });
+    const fp = fakePlugins({ similarTracks: [], similarArtists: artists, topTracks: tops });
+    const { tracks } = await pool(fp);
     for (const t of tracks) {
       expect(typeof t.title).toBe('string');
       expect(typeof t.artist).toBe('string');
       expect(Number.isInteger(t.match)).toBe(true);
-      expect(t.source).toBe('lastfm-similar-artist');
+      expect(t.source).toBe('similar-artist');
     }
   });
 
-  test('a single track instead of a list still parses', async () => {
-    const fetchJson = async (url) => (new URL(url).searchParams.get('method') === 'track.getsimilar'
-      ? { similartracks: { track: { name: 'Holes', match: '1', artist: { name: 'Passenger' } } } }
-      : { similarartists: { artist: [] } });
-    const pool = await buildSpinoffPool({ fetchJson, apiKey: 'k', ...seed, rng });
-    expect(pool.tracks.map((t) => t.title)).toEqual(['Holes']);
-  });
-
-  test('sends the key and encodes names', async () => {
-    const lf = fakeLastfm({ similarTracks: twenty });
-    await buildSpinoffPool({ fetchJson: lf.fetchJson, apiKey: 'KEY', artist: 'AC/DC', title: 'T.N.T. & more', rng });
-    const u = new URL(lf.calls[0]);
-    expect(u.searchParams.get('api_key')).toBe('KEY');
-    expect(u.searchParams.get('artist')).toBe('AC/DC');
-    expect(u.searchParams.get('track')).toBe('T.N.T. & more');
-    expect(u.searchParams.get('format')).toBe('json');
+  test('no lookup or no names: failed, nothing asked', async () => {
+    const fp = fakePlugins({ similarTracks: twenty });
+    expect((await buildSpinoffPool({ ...seed, rng })).failed).toBe(true);
+    expect((await pool(fp, { title: '' })).failed).toBe(true);
+    expect(fp.calls).toHaveLength(0);
   });
 });
 
 describe('checkSpinoffAvailable', () => {
-  test('a song with similar tracks: one request', async () => {
-    const lf = fakeLastfm({ similarTracks: twenty });
-    expect(await checkSpinoffAvailable({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed })).toBe(true);
-    expect(lf.methods()).toEqual(['track.getsimilar']);
-    expect(new URL(lf.calls[0]).searchParams.get('limit')).toBe('1');
+  const check = (fp, extra = {}) => checkSpinoffAvailable({ similarTracks: fp.similarTracks, similarArtists: fp.similarArtists, ...seed, ...extra });
+
+  test('a song with similar tracks: one lookup, limit 1', async () => {
+    const fp = fakePlugins({ similarTracks: twenty });
+    expect(await check(fp)).toBe(true);
+    expect(fp.calls).toEqual([{ name: 'similarTracks', q: { artist: seed.artist, title: seed.title, limit: 1 } }]);
   });
 
   test('no similar tracks but similar artists: available', async () => {
-    const lf = fakeLastfm({ similarTracks: [], similarArtists: artists });
-    expect(await checkSpinoffAvailable({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed })).toBe(true);
-    expect(lf.methods()).toEqual(['track.getsimilar', 'artist.getsimilar']);
-    expect(new URL(lf.calls[1]).searchParams.get('limit')).toBe('1');
+    const fp = fakePlugins({ similarTracks: [], similarArtists: artists });
+    expect(await check(fp)).toBe(true);
+    expect(fp.names()).toEqual(['similarTracks', 'similarArtists']);
+    expect(fp.calls[1].q.limit).toBe(1);
   });
 
   test('neither: unavailable', async () => {
-    const lf = fakeLastfm({ similarTracks: [], similarArtists: [] });
-    expect(await checkSpinoffAvailable({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed })).toBe(false);
+    expect(await check(fakePlugins({ similarTracks: [], similarArtists: [] }))).toBe(false);
   });
 
-  test('a failed request is unavailable and asks nothing more', async () => {
-    const lf = fakeLastfm({ fail: ['track.getsimilar'], similarArtists: artists });
-    expect(await checkSpinoffAvailable({ fetchJson: lf.fetchJson, apiKey: 'k', ...seed })).toBe(false);
-    expect(lf.methods()).toEqual(['track.getsimilar']);
+  test('no plug-in answering is unavailable and asks nothing more', async () => {
+    const fp = fakePlugins({ fail: ['similarTracks'], similarArtists: artists });
+    expect(await check(fp)).toBe(false);
+    expect(fp.names()).toEqual(['similarTracks']);
   });
 
-  test('no key or no names: unavailable, no requests', async () => {
-    const lf = fakeLastfm({ similarTracks: twenty });
-    expect(await checkSpinoffAvailable({ fetchJson: lf.fetchJson, apiKey: '', ...seed })).toBe(false);
-    expect(await checkSpinoffAvailable({ fetchJson: lf.fetchJson, apiKey: 'k', artist: 'A', title: '' })).toBe(false);
-    expect(lf.calls).toHaveLength(0);
+  test('no names: unavailable, no lookups', async () => {
+    const fp = fakePlugins({ similarTracks: twenty });
+    expect(await check(fp, { title: '' })).toBe(false);
+    expect(fp.calls).toHaveLength(0);
   });
 });
 
@@ -226,8 +218,10 @@ describe('wiring', () => {
   const engine = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
-  test('startSpinoff builds its pool here, and nothing else asks track.getsimilar', () => {
+  test('startSpinoff builds its pool from the plug-ins, and nothing else asks track.getsimilar', () => {
     expect(engine).toContain('const pool = await buildSpinoffPool({');
+    expect(engine).toContain('similarTracks: (q) => findSimilarTracksRef.current(q),');
+    expect(engine).toContain('topTracks: (name, limit) => getArtistTopTracks(name, limit),');
     expect(engine).toContain('if (pool.failed) {');
     expect(engine).not.toContain('method=track.getsimilar');
     expect(app).not.toContain('method=track.getsimilar');
@@ -235,5 +229,6 @@ describe('wiring', () => {
 
   test('the Spinoff button asks checkSpinoffAvailable', () => {
     expect(app).toContain('const available = await checkSpinoffAvailable({');
+    expect(app).toContain('similarTracks: findSimilarTracks,');
   });
 });

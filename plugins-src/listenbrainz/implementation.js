@@ -402,5 +402,47 @@ module.exports = {
       active.push(user);
     }
     return active;
+  },
+
+  // The similarArtists capability (#1539): ListenBrainz's similar-artists data
+  // (the labs API, by MusicBrainz artist id), for the artist page's Related
+  // Artists and Spinoff's top-up. It moved here from app.js
+  // (getListenBrainzSimilarArtists). No account needed.
+  // artist: { name, mbid?, limit? }. Without an MBID there is nothing to ask:
+  // a miss ([]), not a failure. Answers [{ name, mbid, match }], most similar
+  // first. `score` is a raw count (11156 for Radiohead's top match on
+  // 2026-11-19), so match is each score against the top one, 0-100; without
+  // scores, a falling rank. The answer doesn't start with the artist itself
+  // (app.js used to drop its first row, which was the closest match); a row
+  // for it is dropped by id. A failed request THROWS, so an outage never
+  // reads as "no similar artists".
+  getSimilarArtists: async function (artist, _config) {
+    const mbid = artist && typeof artist.mbid === 'string' ? artist.mbid.trim() : '';
+    if (!mbid) return [];
+    const limit = Math.max(1, Math.min(100, Number(artist.limit) || 20));
+    const response = await fetch('https://labs.api.listenbrainz.org/similar-artists/json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([{
+        artist_mbids: [mbid],
+        algorithm: 'session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30'
+      }])
+    });
+    if (!response.ok) throw new Error('ListenBrainz similar artists failed: ' + response.status);
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error('ListenBrainz similar artists: unexpected answer');
+    const rows = data.filter((a) => a && (a.artist_mbid || '').toLowerCase() !== mbid.toLowerCase()
+      && typeof (a.name || a.artist_name) === 'string' && (a.name || a.artist_name).trim());
+    const top = rows.reduce((m, a) => {
+      const n = Number(a.score);
+      return Number.isFinite(n) && n > m ? n : m;
+    }, 0);
+    return rows.slice(0, limit).map((a, index) => {
+      const n = Number(a.score);
+      const match = top > 0 && Number.isFinite(n) && n > 0
+        ? Math.max(1, Math.round((n / top) * 100))
+        : Math.max(95 - (index * 4), 20);
+      return { name: a.name || a.artist_name, mbid: a.artist_mbid || undefined, match: match };
+    });
   }
 };

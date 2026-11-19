@@ -12,11 +12,11 @@ Related: [METADATA_SOURCES.md](../architecture/METADATA_SOURCES.md) (artist imag
 | Weekly Jams / Weekly Exploration | Weekly Exploration: Recommendations page, first in the Playlists section. Weekly Jams and Daily Jams: Home's "Made from your listening" (apps older than ListenBrainz 1.5.0 plugin support still show Weekly Jams here) | ListenBrainz `createdfor` playlists, through the plugin's `getRecommendations` | ListenBrainz's own weekly generation | Track playlists | ListenBrainz username |
 | Shuffleupagus suggestions | Home's "Albums you might love" row (albums only, "Shuffleupagus · <reason>" on each card, with the Refresh icon); Recommendations page, blended into the Albums and Artists sections | AI chat plugin, one prompt per visit (either page) | Listening history, collection, prior suggestions | Albums and artists (with reasons) | AI chat plugin + "Share my data" |
 | Shuffleupagus chat | Playbar AI button; Home; `parachord://chat` | AI chat plugin with tools | Listening history, collection, queue, playlists, friends | Anything the model plays, queues or saves | AI chat plugin |
-| Related Artists | Artist page tab | Last.fm `artist.getsimilar` merged with ListenBrainz labs `similar-artists` | The artist | Artists | Nothing |
+| Related Artists | Artist page tab | Plug-ins with the `similarArtists` capability (Last.fm `artist.getsimilar`, ListenBrainz labs `similar-artists`), merged | The artist | Artists | Nothing |
 | Fresh Drops | Sidebar; Home "New from artists you love" | MusicBrainz release groups per artist | Collection, library, listening history | Release groups (albums, EPs, singles) | Nothing (empty with no collection or scrobbler) |
 | Critical Darlings | Sidebar; Home "Acclaimed by critics" | Achordion critics feed | Not personalized | Albums | Nothing |
 | Pop of the Tops | Sidebar | Apple Music RSS charts; Last.fm charts | Not personalized | Albums, tracks | Nothing |
-| Spinoff | Playbar button | Last.fm `track.getsimilar`, topped up from `artist.getsimilar` + `artist.gettoptracks` | The playing track | Tracks | Nothing |
+| Spinoff | Playbar button | Plug-ins with the `similarTracks` capability (Last.fm `track.getsimilar`), topped up from `similarArtists` plug-ins + Last.fm `artist.gettoptracks` | The playing track | Tracks | Nothing |
 | Collection Radio | Home "Play Collection Radio"; Collection page; menu; `parachord://collection-radio` | Shuffle of the user's own tracks | Collection + local library | Tracks | Nothing |
 | Protocol radio | `parachord://play/radio` | External pool (JSPF / XSPF / JSON), e.g. ListenBrainz lb-radio | Publisher-supplied | Tracks | ListenBrainz token for lb-radio URLs |
 | Concerts | Sidebar "Concerts"; artist page "On Tour" | Bandsintown, Songkick, SeatGeek, Ticketmaster plugins | Collection, listening history | Events | At least one concert plugin with a key |
@@ -112,11 +112,14 @@ The one-shot AI Playlist prompt panel (a prompt sent to a plugin's `generate`, i
 
 ## Related Artists (artist page)
 
-Code: `getRelatedArtists`, `getLastfmSimilarArtists`, `getListenBrainzSimilarArtists`. Loaded when the tab opens.
+Code: `getRelatedArtists` and `findSimilarArtists` (app.js), `src/renderer/lib/similar-music.js`. Loaded when the tab opens.
 
-- Last.fm `artist.getsimilar&limit=20`; `match` becomes a percentage.
-- ListenBrainz: `POST https://labs.api.listenbrainz.org/similar-artists/json` with the artist's MBID and the `session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30` algorithm. The first row (the artist itself) is dropped and the next 20 kept. Skipped when the artist has no MBID.
-- Merge: keyed by lowercase name, Last.fm first. Duplicates keep the higher match, prefer the ListenBrainz MBID, and are tagged `source: 'both'`. Sorted by match descending, with All / ListenBrainz / Last.fm / Both filter chips (`FilterChips`; Both is the orange-to-red gradient).
+Every plug-in with the `similarArtists` capability is asked at once, 20 each, in the user's order: active plug-ins and meta-services, minus one whose Enable switch is off (#1539, [plugins.md](../architecture/plugins.md) "Similar artists and tracks"). Today that is:
+
+- **Last.fm**: `artist.getsimilar&limit=20`; `match` becomes a percentage.
+- **ListenBrainz**: `POST https://labs.api.listenbrainz.org/similar-artists/json` with the artist's MBID and the `session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30` algorithm, the first 20 kept. `score` is a raw count, so `match` is each score against the top one. Skipped when the artist has no MBID. (Until #1539 the app dropped the first row as "the artist itself"; it isn't, it is the closest match, and the raw score times 100 put every ListenBrainz artist above every Last.fm one.)
+
+Merge (`mergeSimilarArtists`): keyed by lowercase name, in the plug-ins' order. A duplicate keeps the higher match and the first MBID, and `sources` lists every plug-in that named it. Sorted by match descending. When two or more plug-ins answered, the tab shows All plus one filter chip per plug-in (`FilterChips`), named by `pluginName` and coloured by the plug-in's `color`; an artist several plug-ins named counts under each. A plug-in that fails is left out of the merge; the others still show.
 
 Needs nothing from the user. Results are kept in React state and reset when the artist changes.
 
@@ -149,9 +152,9 @@ Not personalized. No other chart sources exist. `src/charts-utils.js` is a copy 
 
 Code: `startSpinoff` (playback hook), the pool and availability rules in `src/renderer/lib/spinoff-pool.js`, availability check `checkSpinoffAvailability` (app.js).
 
-The playbar Spinoff button seeds from the playing track with Last.fm `track.getsimilar&limit=20`, shuffled. The availability check calls `track.getsimilar&limit=1` on every track change. The pool lives in `spinoffTracksRef`; the next five tracks are resolved ahead. When the pool runs out, spinoff exits and playback returns to the queue. Seed spinoff has no refill. No ListenBrainz or Achordion source is used.
+The playbar Spinoff button seeds from the playing track's similar tracks, 20 from each plug-in with the `similarTracks` capability (`findSimilarTracks` in app.js, merged by `mergeSimilarTracks`; today Last.fm's `track.getsimilar`), shuffled. The availability check asks the same plug-ins for 1 on every track change. The pool lives in `spinoffTracksRef`; the next five tracks are resolved ahead. When the pool runs out, spinoff exits and playback returns to the queue. Seed spinoff has no refill. No Achordion source is used.
 
-**Few similar tracks (#1281).** Last.fm has no similar-track data for some of the most played songs ("Shape of You" answers an empty list). When `track.getsimilar` returns fewer than 5 tracks, the pool is topped up from the seed artist's similar artists: `artist.getsimilar` (top 8), then `artist.gettoptracks&limit=3` for each, dealt round-robin with the artist order shuffled every round so no two tracks in a row share an artist. Last.fm's own similar tracks come first, and the seed track and duplicates are left out. Only an empty answer or Last.fm's error 6 ("not found") falls back; a failed request stops there, so an outage costs one request, not ten. The availability check asks `artist.getsimilar&limit=1` only when `track.getsimilar&limit=1` is empty, so the button is disabled only when both are.
+**Few similar tracks (#1281).** Last.fm has no similar-track data for some of the most played songs ("Shape of You" answers an empty list). When the plug-ins return fewer than 5 similar tracks, the pool is topped up from the seed artist's similar artists: the top 8 from the `similarArtists` plug-ins, then each one's top 3 tracks (`getArtistTopTracks`, Last.fm `artist.gettoptracks&limit=3` until #1539's step 2), dealt round-robin with the artist order shuffled every round so no two tracks in a row share an artist. The similar tracks come first, and the seed track and duplicates are left out. Only an empty answer (a plug-in's "not found" is one) falls back; when no plug-in answers it stops there, so an outage costs one round, not ten. The availability check asks for one similar artist only when no similar track came back, so the button is disabled only when both are empty.
 
 ## Collection Radio
 

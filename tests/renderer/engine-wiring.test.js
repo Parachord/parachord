@@ -69,7 +69,7 @@ describe('engine ctx literal ordering (TDZ guards)', () => {
     resolvers: [
       'loadedResolversRef', 'activeResolversRef', 'resolverOrderRef', 'resolverBlocklistRef',
       'resolverConfigCache', 'isHtml5StreamResolver', 'findLoadedResolver', 'usesSharedAudio',
-      'resolveTracksInBackground', 'buildProtocolFetchHeaders', 'lastfmFetch', 'getLastfmApiKey',
+      'resolveTracksInBackground', 'buildProtocolFetchHeaders',
     ],
     enrichment: [
       'trackSources', 'queueTrackSources', 'lookupMbidMapper', 'enrichTrackWithMbid',
@@ -96,7 +96,7 @@ describe('engine ctx literal ordering (TDZ guards)', () => {
     'getAlbumArtRef', 'getCachedAlbumArtRef', 'showExternalTrackPromptUIRef',
     'showToastRef', 'updateSchedulerVisibilityRef', 'abortSchedulerContextRef',
     'registerPoolContextRef', 'setSchedulerPlaybackIndexRef',
-    'getArtistTopTracksRef', 'keyForSpinoffDedupRef', 'refreshSpotifyTokenRef', 'startAutoAdvancePollingRef',
+    'getArtistTopTracksRef', 'findSimilarTracksRef', 'findSimilarArtistsRef', 'keyForSpinoffDedupRef', 'refreshSpotifyTokenRef', 'startAutoAdvancePollingRef',
   ]);
   test.each(ALL_SLOTS.map((n) => [n]))('%s is present in the ctx literal', (name) => {
     // Shorthand `name,`, or an alias `name: other,` whose value must then be
@@ -117,7 +117,7 @@ describe('engine ctx literal ordering (TDZ guards)', () => {
     'getAlbumArtRef', 'getCachedAlbumArtRef', 'showExternalTrackPromptUIRef',
     'showToastRef', 'updateSchedulerVisibilityRef', 'abortSchedulerContextRef',
     'registerPoolContextRef', 'setSchedulerPlaybackIndexRef',
-    'getArtistTopTracksRef', 'keyForSpinoffDedupRef', 'refreshSpotifyTokenRef', 'startAutoAdvancePollingRef',
+    'getArtistTopTracksRef', 'findSimilarTracksRef', 'findSimilarArtistsRef', 'keyForSpinoffDedupRef', 'refreshSpotifyTokenRef', 'startAutoAdvancePollingRef',
   ];
   test.each(REF_SLOTS)('%s has a useRef declaration and a per-render sync', (name) => {
     expect(appSrc).toMatch(new RegExp(`const ${name} = useRef\\(null\\);`));
