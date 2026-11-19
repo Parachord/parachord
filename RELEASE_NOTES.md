@@ -2,7 +2,7 @@
 
 **Release date:** not yet released
 
-> Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists, top tracks, discographies and charts come from every plug-in that has them.
+> Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists, top tracks, discographies, charts and your listening history come from every plug-in that has them.
 
 ---
 
@@ -17,6 +17,7 @@
 - **An artist's top tracks from more than Last.fm.** Playing an artist, Add Top 10 to Queue, Spinoff and an artist radio now ask every plug-in that knows an artist's most played songs: Last.fm, and ListenBrainz when you're signed in to it. If none of them can answer, Parachord says it couldn't load the tracks instead of saying the artist has none. This also comes with the plug-in updates and needs this version of Parachord.
 - **Artist pages when MusicBrainz can't help.** When MusicBrainz is slow or doesn't know an artist, the artist page fills in their albums from your plug-ins: Spotify, Apple Music, Last.fm or Discogs, in your source order. A plug-in whose "Use metadata from" switch is off isn't asked. This comes with updates to those four plug-ins and needs this version of Parachord.
 - **Pop of the Tops: pick the chart.** Both tabs now have a Source and a Region menu. Albums and tracks come from Apple Music (by country), Last.fm (tracks, worldwide or by country) and, new, ListenBrainz (what everyone on ListenBrainz played this week). The Albums tab can show other countries than the US now too. Apple Music's charts show whether or not you've turned the plug-in on, as before. When the first source in your order can't load its chart, the next one's shows. This comes with the Apple Music, Last.fm and ListenBrainz plug-in updates and needs this version of Parachord.
+- **History works with ListenBrainz alone.** Top Tracks, Top Albums and Top Artists used to need a Last.fm account; they now come from whichever service you're signed in to, Last.fm or ListenBrainz, with a Source menu to switch when you use both. Recently Played still combines both. This comes with the Last.fm and ListenBrainz plug-in updates and needs this version of Parachord.
 
 ---
 

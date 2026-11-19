@@ -240,6 +240,7 @@ Bridge between MusicBrainz and Wikipedia.
 | Artist discography fallback | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `fetchArtistFromPlugins()` (`askInTurn`); the plug-ins' `getArtistReleases` (Spotify, Apple Music, Last.fm `artist.gettopalbums`, Discogs) |
 | Album art | `src/renderer/app.js` | `getAlbumArt()` |
 | Charts | `src/renderer/app.js`, `src/renderer/lib/charts.js` | `loadCharts()`, `loadSongsCharts()`, `loadChartFor()`; the plug-ins' `getCharts` |
+| Your listening history (History page, listening context, Fresh Drops and Concerts seeds) | `src/renderer/app.js`, `src/renderer/lib/listening-history.js` | `historySourcesFor()`, `loadListeningHistory()`, `loadTopTracks()` / `loadTopAlbums()` / `loadTopArtists()`, `fetchListeningContext()`; the plug-ins' `getTopItems` and `getRecentListens` (Last.fm `user.gettop*` / `user.getrecenttracks`, ListenBrainz `/1/stats/user/{user}/…` and `/1/user/{user}/listens`) |
 | MusicKit artist images | `musickit-web.js` | `getArtistImage()` |
 | Scrobblers | `scrobbler-loader.js` | `ScrobbleManager`, `LastFmScrobbler`, `ListenBrainzScrobbler`, `LibreFmScrobbler` |
 | Library sync | `sync-providers/spotify.js`, `sync-providers/applemusic.js`, `sync-providers/listenbrainz.js` | One provider per service |

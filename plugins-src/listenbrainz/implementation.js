@@ -446,6 +446,85 @@ module.exports = {
     });
   },
 
+  // The listeningHistory capability (#1539 step 4): a ListenBrainz user's
+  // own stats (/1/stats/user/<user>/{recordings,releases,artists}), moved out
+  // of app.js. query: { user?, kind: 'tracks' | 'albums' | 'artists', period,
+  // limit? }; user defaults to the signed-in username (config.username);
+  // period is 'week' | 'month' | 'quarter' | 'half_year' | 'year' | 'all'
+  // (ListenBrainz's week, month, quarter, half_yearly, year and all_time: the
+  // last full week, month and so on). The user's token goes along when there
+  // is one. Answers tracks [{ title, artist, album?, plays, mbid?, albumArt? }],
+  // albums [{ title, artist, plays, mbid?, albumArt? }] or artists [{ name,
+  // plays, mbid? }], most played first. A cover is ListenBrainz's own match,
+  // only when the archive has a front image (caa_id; lib/listenbrainz-cover.js).
+  // No user is null; 204 (not calculated yet) is []; a failure THROWS.
+  getTopItems: async function (query, config) {
+    var user = String((query && query.user) || (config && config.username) || '').trim();
+    if (!user) return null;
+    var kind = query && query.kind;
+    var entity = { tracks: 'recordings', albums: 'releases', artists: 'artists' }[kind];
+    if (!entity) return null;
+    var range = { week: 'week', month: 'month', quarter: 'quarter', half_year: 'half_yearly', year: 'year', all: 'all_time' }[query.period] || 'all_time';
+    var limit = Math.max(1, Math.min(100, Number(query.limit) || 50));
+    var headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    var response = await fetch('https://api.listenbrainz.org/1/stats/user/' + encodeURIComponent(user) + '/' + entity +
+      '?range=' + range + '&count=' + limit, { headers: headers });
+    if (response.status === 204) return [];
+    if (!response.ok) throw new Error('ListenBrainz history failed: ' + response.status);
+    var data = await response.json();
+    var list = data && data.payload && data.payload[entity];
+    if (!Array.isArray(list)) throw new Error('ListenBrainz history: unexpected answer');
+    var cover = function (r) {
+      return r.caa_id && r.caa_release_mbid ? 'https://coverartarchive.org/release/' + r.caa_release_mbid + '/front-250' : undefined;
+    };
+    var out = [];
+    list.forEach(function (r) {
+      if (!r) return;
+      var plays = Number(r.listen_count) || 0;
+      if (kind === 'artists') {
+        if (r.artist_name) out.push({ name: r.artist_name, plays: plays, mbid: r.artist_mbid || undefined });
+      } else if (kind === 'tracks') {
+        if (r.track_name) out.push({ title: r.track_name, artist: r.artist_name || 'Unknown Artist', album: r.release_name || undefined, plays: plays, mbid: r.recording_mbid || undefined, albumArt: cover(r) });
+      } else if (r.release_name) {
+        out.push({ title: r.release_name, artist: r.artist_name || 'Unknown Artist', plays: plays, mbid: r.release_mbid || undefined, albumArt: cover(r) });
+      }
+    });
+    return out;
+  },
+
+  // listeningHistory: a user's recent listens (/1/user/<user>/listens),
+  // newest first. query: { user?, limit? }. Answers [{ title, artist,
+  // album?, albumArt?, playedAt (ms) or null while playing, nowPlaying,
+  // mbid?, msid? }]. Same rules as getTopItems.
+  getRecentListens: async function (query, config) {
+    var user = String((query && query.user) || (config && config.username) || '').trim();
+    if (!user) return null;
+    var limit = Math.max(1, Math.min(100, Number(query && query.limit) || 50));
+    var headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    var response = await fetch('https://api.listenbrainz.org/1/user/' + encodeURIComponent(user) + '/listens?count=' + limit, { headers: headers });
+    if (!response.ok) throw new Error('ListenBrainz recent listens failed: ' + response.status);
+    var data = await response.json();
+    var listens = data && data.payload && data.payload.listens;
+    if (!Array.isArray(listens)) throw new Error('ListenBrainz recent listens: unexpected answer');
+    return listens.filter(function (l) {
+      return l && l.track_metadata && l.track_metadata.track_name;
+    }).map(function (l) {
+      var meta = l.track_metadata;
+      var map = meta.mbid_mapping || {};
+      var info = meta.additional_info || {};
+      return {
+        title: meta.track_name,
+        artist: meta.artist_name || 'Unknown Artist',
+        album: meta.release_name || undefined,
+        albumArt: map.caa_id && map.caa_release_mbid ? 'https://coverartarchive.org/release/' + map.caa_release_mbid + '/front-250' : undefined,
+        playedAt: l.listened_at ? l.listened_at * 1000 : null,
+        nowPlaying: !!l.playing_now,
+        mbid: info.recording_mbid || map.recording_mbid || undefined,
+        msid: l.recording_msid || undefined
+      };
+    });
+  },
+
   // The charts capability (#1539 step 3): what everyone on ListenBrainz
   // played this week, from its sitewide statistics (/1/stats/sitewide/
   // recordings and /release-groups). query: { kind: 'tracks' | 'albums',

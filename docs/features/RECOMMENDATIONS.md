@@ -100,7 +100,7 @@ Tools offered to the model (the inline `djTools` list in src/renderer/app.js): p
 
 Context injected when sharing is on: now playing, the next 10 queue items, shuffle state, 10 collection artists, 8 albums and 10 tracks, listening history per period (5 each) and 10 recently played, a "do not recommend" list of up to 30 artists the user already knows, 15 playlists with sample tracks, time of day, 8 recent session items, 5 recent searches, up to 5 friends' weekly favourites, and whether local files are enabled. With sharing off the model gets a minimal prompt that asks it to suggest enabling sharing once.
 
-Listening context (`fetchListeningContext`) is shared with the Home suggestions and the one-shot generator. It pulls Last.fm `user.gettopartists`, `gettoptracks` and `gettopalbums` for 7day, 1month, 6month and overall plus `user.getrecenttracks&limit=50`, and ListenBrainz `/1/stats/user/{u}/artists|recordings|releases` for this_week, this_month, half_yearly and all_time plus `/1/user/{u}/listens?count=50`, deduplicated across periods and merged across services. Recently played is reused from the History cache if it is under 10 minutes old.
+Listening context (`fetchListeningContext`) is shared with the Home suggestions and the one-shot generator. It asks every plug-in that keeps your listening history and that you've signed in to (`listeningHistory`, #1539 step 4; Last.fm and ListenBrainz today) for its top artists, tracks and albums for the last week, month, six months and all time (`getTopItems`), plus your 50 most recent listens (`getRecentListens`), deduplicated across periods and merged across sources. Recently played is reused from the History cache if it is under 10 minutes old. (ListenBrainz's periods are its last full week, month and so on; before #1539 they were the current week and month.)
 
 ## MCP server
 
@@ -127,7 +127,7 @@ Needs nothing from the user. Results are kept in React state and reset when the 
 
 Code: `gatherNewReleasesArtists`, `fetchReleasesForArtists`, `loadNewReleases`. Preloaded in the background once the store cache is ready.
 
-Seed artists, each group shuffled then interleaved, capped at 50: collection artists, artists of collection tracks, artists of collection albums, and listening history (the History page's top artists if loaded, otherwise Last.fm `user.gettopartists&period=12month&limit=50` and ListenBrainz `/1/stats/user/{u}/artists?range=year&count=50`).
+Seed artists, each group shuffled then interleaved, capped at 50: collection artists, artists of collection tracks, artists of collection albums, and listening history (the History page's top artists if loaded, otherwise your top 50 artists of the last year from every plug-in that keeps your listening history, merged; `getTopItems`).
 
 For each artist: resolve an MBID (artist cache, then the MBID mapper cache, then MusicBrainz artist search), then `GET /ws/2/release-group?artist={mbid}&limit=100`. Keep release groups dated from three months ago to 14 days ahead, dropping broadcast, compilation and live. MusicBrainz calls run at one per 1.1s, which is why the artist cap exists. A refresh within 24 hours of the last full scan only looks for releases newer than the newest cached one; results merge with earlier runs so the whole library is covered over several sessions. The window (`freshDropsWindow` / `withinFreshDropsWindow` in `src/renderer/lib/fresh-drops-releases.js`) applies to everything kept, not only to what a scan fetches: the cache load, the full scan's merge and the incremental refresh all drop releases that have aged out, and an undated release is dropped. Until 2026-11 only new results were checked, so the list only grew (one library reached 436 releases, 312 of them over six months old).
 
@@ -171,11 +171,11 @@ Pinned and saved friends are polled every two minutes (15 seconds during listen-
 
 ## Meta-service plugin capabilities
 
-From the manifests in `plugins/*.axe`. The app reads `generate`, `chat`, `concerts`, `playbackTelemetry` and `recommendations`; `metadata` and `listeningHistory` are declared but not consulted.
+From the manifests in `plugins/*.axe`. The app reads `generate`, `chat`, `concerts`, `playbackTelemetry`, `recommendations` and `listeningHistory` (the History page, the listening context and the Fresh Drops and Concerts seeds); `metadata` is declared but not consulted.
 
 | Plugin | Capabilities | Auth |
 |---|---|---|
-| lastfm | recommendations, similarUsers, metadata | username, optional API key and secret |
+| lastfm | recommendations, similarUsers, metadata, listeningHistory | username, optional API key and secret |
 | listenbrainz | recommendations, similarUsers, metadata, listeningHistory | username, optional user token |
 | librefm | scrobbling | OAuth |
 | achordion | playbackTelemetry | none |

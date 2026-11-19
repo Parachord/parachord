@@ -55,10 +55,14 @@ describe('app.js wiring', () => {
     expect(body).not.toMatch(/albumArt: null/);
   });
 
-  test('your own ListenBrainz History takes each listen\'s cover', () => {
-    const body = sliceFrom('const loadListenbrainzHistory = async', '\n  };\n');
-    expect(body).toMatch(LISTEN_COVER);
-    expect(body).not.toMatch(/albumArt: null/);
+  test('your own ListenBrainz History takes each listen\'s cover (the plug-in\'s getRecentListens, #1539)', () => {
+    const plugin = require('fs').readFileSync(require('path').join(__dirname, '../../plugins-src/listenbrainz/implementation.js'), 'utf8');
+    const body = plugin.slice(plugin.indexOf('getRecentListens: async function'), plugin.indexOf('// The charts capability'));
+    // The same rule as listenBrainzCoverUrl: caa_id gates the archive URL.
+    expect(body).toMatch(/map\.caa_id && map\.caa_release_mbid \? 'https:\/\/coverartarchive\.org\/release\/' \+ map\.caa_release_mbid \+ '\/front-250'/);
+    // And the History page keeps it.
+    const load = sliceFrom('const loadListeningHistory = async', 'const topListFailed = ');
+    expect(load).toMatch(/albumArt: t\.albumArt \|\| null/);
   });
 
   test('weekly playlists gate on caa_id through the same helper', () => {
