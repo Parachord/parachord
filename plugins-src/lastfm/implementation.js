@@ -203,5 +203,84 @@ module.exports = {
       active.push(user);
     }
     return active;
+  },
+
+  // The similarArtists capability (#1539): artist.getsimilar, for the artist
+  // page's Related Artists and Spinoff's top-up. It moved here from app.js
+  // (getLastfmSimilarArtists) and spinoff-pool.js, so the app asks every
+  // plug-in that can answer instead of Last.fm by name.
+  // artist: { name, mbid?, limit? }. Answers [{ name, mbid?, match, url }],
+  // match 0-100. Last.fm's error 6 ("not found") is a miss ([]); a failed
+  // request, any other error body or a missing key THROWS, so an outage is
+  // never read or cached as "no similar artists".
+  // config.apiKey is the app's choice (lib/lastfm-key.js); the request goes
+  // through the app's ws.audioscrobbler.com fetch interceptor (#1538). The key
+  // is only ever encoded into the URL, never into a message.
+  getSimilarArtists: async function (artist, config) {
+    const name = artist && typeof artist.name === 'string' ? artist.name.trim() : '';
+    if (!name) return [];
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm similar artists: no API key yet');
+    const limit = Math.max(1, Math.min(100, Number(artist.limit) || 20));
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=' + encodeURIComponent(name) +
+      '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm similar artists failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return [];
+      throw new Error('Last.fm similar artists failed: error ' + data.error);
+    }
+    const list = data && data.similarartists && data.similarartists.artist;
+    const rows = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
+    const out = [];
+    for (const a of rows) {
+      if (!a || typeof a.name !== 'string' || !a.name.trim()) continue;
+      const pct = Math.round(parseFloat(a.match) * 100);
+      out.push({
+        name: a.name,
+        mbid: a.mbid || undefined,
+        match: Number.isFinite(pct) ? pct : 0,
+        url: a.url || undefined
+      });
+    }
+    return out;
+  },
+
+  // The similarTracks capability (#1539): track.getsimilar, for Spinoff.
+  // track: { artist, title, limit? }. Answers [{ artist, title, mbid?, match }],
+  // match 0-100. Same miss and failure rules as getSimilarArtists: error 6 is
+  // [], anything else that goes wrong THROWS.
+  getSimilarTracks: async function (track, config) {
+    const artist = track && typeof track.artist === 'string' ? track.artist.trim() : '';
+    const title = track && typeof track.title === 'string' ? track.title.trim() : '';
+    if (!artist || !title) return [];
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm similar tracks: no API key yet');
+    const limit = Math.max(1, Math.min(100, Number(track.limit) || 20));
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=' + encodeURIComponent(artist) +
+      '&track=' + encodeURIComponent(title) + '&limit=' + limit +
+      '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm similar tracks failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return [];
+      throw new Error('Last.fm similar tracks failed: error ' + data.error);
+    }
+    const list = data && data.similartracks && data.similartracks.track;
+    const rows = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
+    const out = [];
+    for (const t of rows) {
+      if (!t || typeof t.name !== 'string' || !t.name.trim()) continue;
+      const pct = Math.round(parseFloat(t.match) * 100);
+      out.push({
+        artist: (t.artist && t.artist.name) || 'Unknown Artist',
+        title: t.name,
+        mbid: t.mbid || undefined,
+        match: Number.isFinite(pct) ? pct : 0
+      });
+    }
+    return out;
   }
 };

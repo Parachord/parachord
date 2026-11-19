@@ -2,7 +2,7 @@
 
 **Release date:** not yet released
 
-> Bandcamp only offers tracks you can play, and Subsonic can report your plays to your server.
+> Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists come from every plug-in that knows them.
 
 ---
 
@@ -10,6 +10,10 @@
 
 - **Bandcamp: only tracks you can play.** Some artists make their Bandcamp tracks buy-only, and Bandcamp's search doesn't say which. Parachord used to offer those as Bandcamp sources, then fail to play them. It now checks: a buy-only track never plays from Bandcamp, and Parachord doesn't swap in someone else's upload of the same song. Buy on Bandcamp still shows for it. This comes with the Bandcamp plug-in update, which installs itself.
 - **Subsonic: report plays to your server.** A new switch in the Subsonic plug-in's settings, "Report plays to your server" (under your server and account), sends what you play from your server back to it: it shows as Now Playing there while it plays, and counts as a play once you've listened past the usual scrobble point. Only tracks that play from your server are reported. It's off by default, since a server that also scrobbles to Last.fm or ListenBrainz could count the same play twice. It needs this version of Parachord and the Subsonic plug-in update, which installs itself. Thanks to kiarie00 for the idea (#1546).
+
+## Discovery
+
+- **Related artists and Spinoff ask every plug-in that can answer.** An artist's Related Artists tab and Spinoff now ask each plug-in that knows similar artists or tracks (Last.fm and ListenBrainz today), and still show what the others found when one of them is down. ListenBrainz's closest match is no longer left out, and its matches now rank fairly against Last.fm's. This comes with the Last.fm and ListenBrainz plug-in updates, which install themselves, and needs this version of Parachord.
 
 ---
 

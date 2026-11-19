@@ -54,7 +54,7 @@ if (typeof window !== 'undefined') window.__parachordWidevine = __widevinePlayer
 // volume.
 const { embedPlayer, embedLinkFor, stopAllEmbedPlayers } = require('../lib/embed-players');
 // Spinoff's pool: similar tracks, topped up from similar artists (#1281).
-const { buildSpinoffPool, lastfmJsonFetcher } = require('../lib/spinoff-pool');
+const { buildSpinoffPool } = require('../lib/spinoff-pool');
 if (typeof window !== 'undefined') window.__parachordEmbedPlayer = embedPlayer;
 
 // The measured-bitrate meter behind the shared players' streamQuality
@@ -181,8 +181,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     embedPlayerKind,
     resolveTracksInBackground,
     buildProtocolFetchHeaders,
-    lastfmFetch,
-    getLastfmApiKey,
+    findSimilarTracksRef,
+    findSimilarArtistsRef,
     getArtistTopTracksRef,
     keyForSpinoffDedupRef,
     refreshSpotifyTokenRef,
@@ -3998,11 +3998,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     console.log(`🔀 Starting spinoff from "${track.title}" by ${track.artist}`);
 
     try {
-      // Similar tracks, topped up from the seed artist's similar artists when
-      // Last.fm has fewer than a handful (lib/spinoff-pool.js, #1281).
+      // Similar tracks from every plug-in that names them, topped up from the
+      // seed artist's similar artists' top tracks when there are fewer than a
+      // handful (lib/spinoff-pool.js, #1281; lib/similar-music.js, #1539).
       const pool = await buildSpinoffPool({
-        fetchJson: lastfmJsonFetcher(lastfmFetch),
-        apiKey: getLastfmApiKey(),
+        similarTracks: (q) => findSimilarTracksRef.current(q),
+        similarArtists: (q) => findSimilarArtistsRef.current(q),
+        topTracks: (name, limit) => getArtistTopTracks(name, limit),
         artist: track.artist,
         title: track.title
       });

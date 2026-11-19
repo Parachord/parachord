@@ -30,6 +30,9 @@ const LABELS = {
   biography: 'Biographies',
   historyMixes: 'History mixes',
   similarUsers: 'Similar listeners',
+  // Related Artists and Spinoff ask every plug-in with these (#1539).
+  similarArtists: 'Similar artists',
+  similarTracks: 'Similar tracks',
   listeningHistory: 'Listening history',
   lovedTracks: 'Loved tracks',
   playlistSync: 'Playlist sync',

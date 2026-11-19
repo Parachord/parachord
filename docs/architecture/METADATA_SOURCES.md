@@ -71,18 +71,18 @@ Wikidata comes first so a MusicBrainz outage doesn't take the Wikipedia bio with
 
 ## Related Artists
 
-Displayed on artist pages in the "Similar Artists" section. Results from multiple sources are merged and deduplicated.
+Displayed on artist pages in the "Related Artists" tab. Every plug-in with the `similarArtists` capability is asked (#1539), and the answers are merged and deduplicated.
 
-| Provider | Endpoint | Auth Required | Notes |
+| Plug-in | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
 | Last.fm | `ws.audioscrobbler.com/2.0/?method=artist.getsimilar` | API key | Match scores 0-1, limit 20 |
-| ListenBrainz | `labs.api.listenbrainz.org/similar-artists/json` | No | ML-based, requires MBID |
+| ListenBrainz | `labs.api.listenbrainz.org/similar-artists/json` | No | ML-based, requires MBID; raw-count scores, scaled against the top one |
 
-**Code Location:** `src/renderer/app.js` → `getRelatedArtists()`
+**Code Location:** `plugins-src/lastfm/` and `plugins-src/listenbrainz/` (`getSimilarArtists`), `src/renderer/lib/similar-music.js`, `src/renderer/app.js` → `getRelatedArtists()`
 
 **Merging Logic:**
-- Fetch from both sources in parallel
-- Deduplicate by normalized artist name
+- Ask every similar-artists plug-in in parallel; one that fails is left out
+- Deduplicate by normalized artist name, recording every plug-in that named it (`sources`)
 - Keep higher match score when duplicate found
 - Sort by match score descending
 
@@ -243,7 +243,7 @@ Bridge between MusicBrainz and Wikipedia.
 |---------|------|----------|
 | Artist images | `src/renderer/app.js` | `getArtistImage()` |
 | Artist bios | `src/renderer/app.js` | `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()` |
-| Related artists | `src/renderer/app.js` | `getRelatedArtists()`, `getLastfmSimilarArtists()`, `getListenBrainzSimilarArtists()` |
+| Related artists | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `getRelatedArtists()`, `findSimilarArtists()`; the plug-ins' `getSimilarArtists` |
 | Album art | `src/renderer/app.js` | `getAlbumArt()` |
 | Charts | `src/renderer/app.js` | `loadCharts()`, `loadAppleMusicSongsCharts()`, `loadLastfmCharts()` |
 | MusicKit artist images | `musickit-web.js` | `getArtistImage()` |

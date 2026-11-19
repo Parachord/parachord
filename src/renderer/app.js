@@ -1348,7 +1348,8 @@ const { pickTrackMatch } = require('../../sync-providers/track-match');
 // Playlist freshness stamps (tracksChangedAt, lastChangeAdded) for Home; the
 // split store stamps every local_playlists write with the same module.
 const { stampPlaylist } = require('../../playlist-freshness');
-const { checkSpinoffAvailable, lastfmJsonFetcher } = require('./lib/spinoff-pool');
+const { checkSpinoffAvailable } = require('./lib/spinoff-pool');
+const { similarProviders, askEach, mergeSimilarArtists, mergeSimilarTracks, sourcesIn } = require('./lib/similar-music');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistShareTarget, notSyncedSharePrompt, playlistListenbrainzMbid, lbMbidOf } = require('./lib/playlist-share');
 // A ListenBrainz user's Achordion profile (every ListenBrainz user has one).
@@ -6078,6 +6079,10 @@ const Parachord = () => {
   const refreshSpotifyTokenRef = useRef(null);
   const keyForSpinoffDedupRef = useRef(null);
   const getArtistTopTracksRef = useRef(null);
+  // Spinoff's similar-music lookups (lib/similar-music.js, #1539), declared
+  // far below the engine hook.
+  const findSimilarTracksRef = useRef(null);
+  const findSimilarArtistsRef = useRef(null);
   const setSchedulerPlaybackIndexRef = useRef(null);
   const registerPoolContextRef = useRef(null);
   const abortSchedulerContextRef = useRef(null);
@@ -8415,8 +8420,8 @@ const Parachord = () => {
       embedPlayerKind,
       resolveTracksInBackground,
       buildProtocolFetchHeaders,
-      lastfmFetch,
-      getLastfmApiKey,
+      findSimilarTracksRef,
+      findSimilarArtistsRef,
       getArtistTopTracksRef,
       keyForSpinoffDedupRef,
       refreshSpotifyTokenRef,
@@ -8824,6 +8829,9 @@ const Parachord = () => {
           (axe.capabilities?.recommendations && axe.implementation?.getRecommendations)
           || (axe.capabilities?.similarUsers && axe.implementation?.getSimilarUsers)
           || (axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes)
+          // Related Artists and Spinoff (lib/similar-music.js, #1539).
+          || (axe.capabilities?.similarArtists && axe.implementation?.getSimilarArtists)
+          || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks)
         );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
@@ -8955,7 +8963,9 @@ const Parachord = () => {
         const withRecommendations = visibleAxes.filter(axe =>
           (axe.capabilities?.recommendations && axe.implementation?.getRecommendations)
           || (axe.capabilities?.similarUsers && axe.implementation?.getSimilarUsers)
-          || (axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes));
+          || (axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes)
+          || (axe.capabilities?.similarArtists && axe.implementation?.getSimilarArtists)
+          || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks));
         const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -16513,6 +16523,8 @@ ${trackListXml}
   useEffect(() => { refreshSpotifyTokenRef.current = refreshSpotifyToken; });
   useEffect(() => { keyForSpinoffDedupRef.current = keyForSpinoffDedup; });
   useEffect(() => { getArtistTopTracksRef.current = getArtistTopTracks; });
+  useEffect(() => { findSimilarTracksRef.current = findSimilarTracks; });
+  useEffect(() => { findSimilarArtistsRef.current = findSimilarArtists; });
   useEffect(() => { setSchedulerPlaybackIndexRef.current = setSchedulerPlaybackIndex; });
   useEffect(() => { registerPoolContextRef.current = registerPoolContext; });
   useEffect(() => { abortSchedulerContextRef.current = abortSchedulerContext; });
@@ -33472,98 +33484,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Fetch similar artists from ListenBrainz Labs API
-  const getListenBrainzSimilarArtists = async (artistMbid) => {
-    if (!artistMbid) {
-      console.log('🎸 ListenBrainz similar artists skipped: no MBID');
-      return [];
-    }
-
-    try {
-      const url = 'https://labs.api.listenbrainz.org/similar-artists/json';
-      const payload = [
-        {
-          artist_mbids: [artistMbid],
-          algorithm: 'session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30'
-        }
-      ];
-
-      console.log(`🎸 Fetching ListenBrainz similar artists for MBID: ${artistMbid}`);
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        console.error('ListenBrainz similar artists request failed:', response.status);
-        return [];
-      }
-
-      const data = await response.json();
-      console.log(`🎸 ListenBrainz returned ${data?.length || 0} results`);
-
-      // Filter out the reference artist (first result) and map to our format
-      // ListenBrainz returns results with score field, higher is more similar
-      if (data && Array.isArray(data) && data.length > 1) {
-        // Skip first result (reference artist) and take next 20
-        const similarArtists = data.slice(1, 21).map((a, index) => ({
-          name: a.name || a.artist_name,
-          mbid: a.artist_mbid,
-          match: Math.round(a.score * 100) || Math.max(95 - (index * 4), 20), // Convert score to percentage
-          source: 'listenbrainz',
-          imageLoaded: false
-        }));
-        console.log(`🎸 Returning ${similarArtists.length} ListenBrainz similar artists:`, similarArtists.map(a => a.name));
-        return similarArtists;
-      }
-
-      return [];
-    } catch (error) {
-      console.error('Failed to fetch similar artists from ListenBrainz:', error);
-      return [];
-    }
-  };
-
-  // Fetch similar artists from Last.fm API
-  const getLastfmSimilarArtists = async (artistName) => {
-    if (!artistName) return [];
-
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) {
-      console.log('🎸 Last.fm similar artists skipped: no API key');
-      return [];
-    }
-
-    try {
-      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=20`;
-
-      const response = await lastfmFetch(url);
-      if (!response.ok) {
-        console.error('Last.fm similar artists request failed:', response.status);
-        return [];
-      }
-
-      const data = await response.json();
-      if (data.similarartists?.artist) {
-        const artists = data.similarartists.artist.map(a => ({
-          name: a.name,
-          match: Math.round(parseFloat(a.match) * 100), // Convert 0-1 to percentage
-          url: a.url,
-          source: 'lastfm',
-          imageLoaded: false
-        }));
-        console.log(`🎸 Returning ${artists.length} Last.fm similar artists`);
-        return artists;
-      }
-
-      return [];
-    } catch (error) {
-      console.error('Failed to fetch similar artists from Last.fm:', error);
-      return [];
-    }
-  };
-
   // Fetch top tracks for an artist from Last.fm API
   // An artist card's Play (components/artist-card.js): their top 10, with
   // the rest queued after the first, in the artist's context.
@@ -33730,13 +33650,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch similar tracks from Last.fm API (for Spinoff feature)
 
   // Check if similar tracks are available for spinoff (lightweight check)
-  // The Spinoff button is enabled when Last.fm has any similar track, or failing
-  // that any similar artist: spinoff tops the pool up from those (#1281).
+  // The Spinoff button is enabled when a plug-in has any similar track, or
+  // failing that any similar artist: spinoff tops the pool up from those
+  // (#1281, #1539).
   const checkSpinoffAvailability = async (artistName, trackName) => {
     try {
       const available = await checkSpinoffAvailable({
-        fetchJson: lastfmJsonFetcher(lastfmFetch),
-        apiKey: getLastfmApiKey(),
+        similarTracks: findSimilarTracks,
+        similarArtists: findSimilarArtists,
         artist: artistName,
         title: trackName
       });
@@ -33762,7 +33683,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Start spinoff mode - play similar tracks based on current track,
   // OR play from a pre-resolved pool when called with { pool, displayName, refillUrl }.
   // Turn an artist-only seed into an artist+title seed (parachord#1005).
-  // Last.fm track.getsimilar needs a track, so `parachord://play/radio?artist=X`
+  // Similar tracks need a track, so `parachord://play/radio?artist=X`
   // used to clear the queue and then bail in startSpinoff with "missing track
   // info". Picks the artist's top Last.fm track. Returns { artist, title } or
   // null (after a toast) so callers can refuse before touching the queue.
@@ -33770,50 +33691,50 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Exit spinoff mode - return to normal queue playback
 
-  // Fetch related artists from both Last.fm and ListenBrainz (merged and de-duped)
+  // Similar artists and tracks come from every plug-in that can name them
+  // (capabilities.similarArtists / similarTracks, lib/similar-music.js,
+  // #1539): Related Artists and Spinoff ask them all in the user's order and
+  // merge the answers, so one service failing never empties either.
+  const similarProvidersFor = (capability) => similarProviders(resolverLoaderRef.current, capability, {
+    activeIds: activeResolversRef.current || [],
+    order: resolverOrderRef.current || [],
+    metaIds: (metaServicesRef.current || []).map(s => s.id),
+    isOff: (id) => (metaServiceConfigsRef.current?.[id] || {}).enabled === false
+  });
+  // A config whose key isn't ready yet (Last.fm before main's built-in pair
+  // arrives) is a failure for this ask, never a keyless empty answer.
+  const configForSimilar = async (id) => {
+    const config = await getResolverConfig(id);
+    if (config?.credentialsPending) throw new Error('credentials not ready');
+    return config;
+  };
+  // { artists: [{ name, mbid?, url?, match, sources }], failed }
+  const findSimilarArtists = async ({ name, mbid, limit = 20 }) => {
+    const loader = resolverLoaderRef.current;
+    const { answers, failed } = await askEach(similarProvidersFor('similarArtists'),
+      async (p) => loader.getSimilarArtists(p.id, { name, mbid, limit }, await configForSimilar(p.id)));
+    return { artists: mergeSimilarArtists(answers), failed };
+  };
+  // { tracks: [{ artist, title, mbid?, match, sources }], failed }
+  const findSimilarTracks = async ({ artist, title, mbid, limit = 20 }) => {
+    const loader = resolverLoaderRef.current;
+    const { answers, failed } = await askEach(similarProvidersFor('similarTracks'),
+      async (p) => loader.getSimilarTracks(p.id, { artist, title, mbid, limit }, await configForSimilar(p.id)));
+    return { tracks: mergeSimilarTracks(answers), failed };
+  };
+
+  // Related Artists: every similar-artists plug-in's answer, merged by name
+  // (each entry's `sources` names the plug-ins that listed it, for the tab's
+  // filter chips). [] when none is found or no plug-in answered.
   const getRelatedArtists = async (artistName, artistMbid) => {
     if (!artistName) return [];
 
     setLoadingRelated(true);
     try {
-      // Fetch from both sources in parallel
-      const [lastfmArtists, listenbrainzArtists] = await Promise.all([
-        getLastfmSimilarArtists(artistName),
-        getListenBrainzSimilarArtists(artistMbid)
-      ]);
-
-      console.log(`🎸 Fetched ${lastfmArtists.length} from Last.fm, ${listenbrainzArtists.length} from ListenBrainz`);
-
-      // Merge and de-dupe by artist name (case-insensitive)
-      const artistMap = new Map();
-
-      // Add Last.fm artists first
-      for (const artist of lastfmArtists) {
-        const key = artist.name.toLowerCase().trim();
-        artistMap.set(key, { ...artist });
-      }
-
-      // Merge ListenBrainz artists, combining data for duplicates
-      for (const artist of listenbrainzArtists) {
-        const key = artist.name.toLowerCase().trim();
-        if (artistMap.has(key)) {
-          const existing = artistMap.get(key);
-          // Keep the higher match score and add ListenBrainz MBID
-          artistMap.set(key, {
-            ...existing,
-            match: Math.max(existing.match, artist.match),
-            mbid: artist.mbid || existing.mbid,
-            source: 'both' // Mark as appearing in both sources
-          });
-        } else {
-          artistMap.set(key, { ...artist });
-        }
-      }
-
-      const merged = Array.from(artistMap.values());
-      console.log(`🎸 Merged to ${merged.length} unique related artists`);
-
-      return merged;
+      const { artists, failed } = await findSimilarArtists({ name: artistName, mbid: artistMbid });
+      if (failed) console.warn(`🎸 No similar-artists plug-in answered for "${artistName}"`);
+      console.log(`🎸 ${artists.length} related artists for "${artistName}" from ${sourcesIn(artists).join(', ') || 'no plug-in'}`);
+      return artists.map(a => ({ ...a, imageLoaded: false }));
     } catch (error) {
       console.error('Failed to fetch related artists:', error);
       return [];
@@ -36927,7 +36848,7 @@ useEffect(() => {
   // ARTIST_PAGE_HANDLERS in artist-page.js).
   const artistPageHandlers = useStableHandlers({
     addToQueue, copyParachordLink, fetchArtistData, fetchReleaseData, getArtistBio,
-    getArtistTopTracks, getLastfmApiKey, getRelatedArtists, handlePlay,
+    getArtistTopTracks, getRelatedArtists, handlePlay,
     handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, openAlbumVersions,
     playArtistTopTracks, prefetchReleaseTracks, getServiceColor, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
     retryReleaseLoad, selectAlbumVersion, setQueueWithContext,
