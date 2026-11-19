@@ -2,7 +2,7 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.21.3",
+    "version": "1.21.4",
     "minAppVersion": {
       "desktop": "0.9.13"
     },
