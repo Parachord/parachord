@@ -34,6 +34,7 @@ const LABELS = {
   similarArtists: 'Similar artists',
   similarTracks: 'Similar tracks',
   artistTopTracks: 'Artists’ top tracks',
+  artistReleases: 'Discographies',
   listeningHistory: 'Listening history',
   lovedTracks: 'Loved tracks',
   playlistSync: 'Playlist sync',

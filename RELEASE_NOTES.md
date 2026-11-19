@@ -15,6 +15,7 @@
 
 - **Related artists and Spinoff ask every plug-in that can answer.** An artist's Related Artists tab and Spinoff now ask each plug-in that knows similar artists or tracks (Last.fm and ListenBrainz today), and still show what the others found when one of them is down. ListenBrainz's closest match is no longer left out, and its matches now rank fairly against Last.fm's. This comes with the Last.fm and ListenBrainz plug-in updates, which install themselves, and needs this version of Parachord.
 - **An artist's top tracks from more than Last.fm.** Playing an artist, Add Top 10 to Queue, Spinoff and an artist radio now ask every plug-in that knows an artist's most played songs: Last.fm, and ListenBrainz when you're signed in to it. If none of them can answer, Parachord says it couldn't load the tracks instead of saying the artist has none. This also comes with the plug-in updates and needs this version of Parachord.
+- **Artist pages when MusicBrainz can't help.** When MusicBrainz is slow or doesn't know an artist, the artist page fills in their albums from your plug-ins: Spotify, Apple Music, Last.fm or Discogs, in your source order. A plug-in whose "Use metadata from" switch is off isn't asked. This comes with updates to those four plug-ins and needs this version of Parachord.
 
 ---
 

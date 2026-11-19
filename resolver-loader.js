@@ -725,6 +725,50 @@ class ResolverLoader {
   }
 
   /**
+   * Plug-ins that list an artist's releases, for the artist page when
+   * MusicBrainz is slow or doesn't know the artist: they declare
+   * capabilities.artistReleases and implement getArtistReleases
+   * (docs/architecture/plugins.md, "Similar artists and tracks", #1539).
+   * @returns {object[]}
+   */
+  getArtistReleasesResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.artistReleases &&
+      typeof r.getArtistReleases === 'function'
+    );
+  }
+
+  /**
+   * Ask one plug-in for an artist and their releases.
+   * @param {string} resolverId
+   * @param {{ name: string, mbid?: string, limit?: number }} artist
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object|null>} { artist: { name, mbid? }, releases:
+   *          [{ id, title, date?, releaseType?, albumArt? }] } with the
+   *          plug-in's own release ids; null when it lacks the capability or
+   *          doesn't know the artist. REJECTS when the plug-in throws.
+   */
+  async getArtistReleases(resolverId, artist, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.artistReleases || typeof resolver.getArtistReleases !== 'function') {
+      return null;
+    }
+    try {
+      const found = await resolver.getArtistReleases(artist || {}, configOverride || resolver.config || {});
+      const name = found?.artist?.name;
+      if (typeof name !== 'string' || !name.trim()) return null;
+      const releases = Array.isArray(found.releases)
+        ? found.releases.filter(r => r && (typeof r.id === 'string' || typeof r.id === 'number') && String(r.id).trim()
+          && typeof r.title === 'string' && r.title.trim())
+        : [];
+      return { artist: found.artist, releases };
+    } catch (error) {
+      console.error(`Artist releases error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
    * Ask one provider for the next page of an expandable recommendation
    * section (the provider's expandRecommendationSection). Providers that do
    * not paginate do not implement it and answer null.

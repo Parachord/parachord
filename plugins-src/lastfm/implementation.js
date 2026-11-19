@@ -284,6 +284,48 @@ module.exports = {
     return out;
   },
 
+  // The artistReleases capability (#1539 step 2): artist.gettopalbums, the
+  // artist page's discography when MusicBrainz is slow or doesn't know the
+  // artist, moved out of app.js (fetchArtistFromLastfm). artist: { name }.
+  // Answers { artist: { name, mbid? }, releases: [{ id, title, date: null,
+  // releaseType: 'album', albumArt }] }, most played first (Last.fm gives no
+  // dates or types); a release's id is its MBID or its title as a slug (the
+  // app prefixes it "lastfm-"). Error 6 or no albums is null; a failure
+  // THROWS.
+  getArtistReleases: async function (artist, config) {
+    const name = artist && typeof artist.name === 'string' ? artist.name.trim() : '';
+    if (!name) return null;
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm artist releases: no API key yet');
+    const limit = Math.max(1, Math.min(100, Number(artist.limit) || 100));
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=artist.gettopalbums&artist=' + encodeURIComponent(name) +
+      '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm artist releases failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return null;
+      throw new Error('Last.fm artist releases failed: error ' + data.error);
+    }
+    const list = data && data.topalbums && data.topalbums.album;
+    const albums = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
+    if (albums.length === 0) return null;
+    const credited = (albums[0] && albums[0].artist) || {};
+    const releases = [];
+    for (const a of albums) {
+      if (!a || typeof a.name !== 'string' || !a.name.trim() || a.name === '(null)') continue;
+      const image = Array.isArray(a.image) ? a.image.find((img) => img && img.size === 'extralarge') : null;
+      releases.push({
+        id: a.mbid || a.name.toLowerCase().replace(/\s+/g, '-'),
+        title: a.name,
+        date: null,
+        releaseType: 'album',
+        albumArt: (image && image['#text']) || null
+      });
+    }
+    return { artist: { name: credited.name || name, mbid: credited.mbid || undefined }, releases: releases };
+  },
+
   // The artistTopTracks capability (#1539 step 2): artist.gettoptracks, moved
   // out of app.js (getArtistTopTracks). artist: { name, limit? }. Answers
   // [{ title, artist, duration (ms) or undefined, mbid?, listens }], most

@@ -685,6 +685,64 @@ module.exports = {
     console.log('[AppleMusic] All playback methods failed, returning false to try next source');
     return false;
   },
+  // The artistReleases capability (#1539 step 2): the artist page's
+  // discography from Apple's catalog when MusicBrainz is slow or doesn't know
+  // the artist, moved out of app.js (fetchArtistFromMusicKit). Needs the
+  // host's MusicKit instance (the developer token, not a sign-in). artist:
+  // { name }. Answers { artist: { name }, releases: [{ id, title, date,
+  // releaseType, albumArt }] } with Apple's album ids (the app prefixes them
+  // "applemusic-"), or null when Apple doesn't know the artist. MusicKit not
+  // ready, or a failed request, THROWS.
+  getArtistReleases: async function (artist, config) {
+    var name = artist && typeof artist.name === 'string' ? artist.name.trim() : '';
+    if (!name) return null;
+    var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (!musicKitWeb || !musicKitWeb.isConfigured || !musicKitWeb.musicKit) {
+      throw new Error('Apple Music artist releases: MusicKit not ready');
+    }
+    var storefront = (config && config.storefront) || 'us';
+    // The result whose name is the asked one: the same name ignoring case,
+    // else every word of the shorter name in the longer, else the first. The
+    // app checks the name again, so this only chooses among the results.
+    var lower = function (s) { return String(s || '').trim().toLowerCase(); };
+    var words = function (s) {
+      var out = lower(s);
+      try { out = out.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch (_e) { /* old engines */ }
+      return out.replace(/\s*\(\d+\)$/, '').replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+    };
+    var sameWords = function (a, b) {
+      var x = words(a);
+      var y = words(b);
+      var shorter = x.length <= y.length ? x : y;
+      var longer = x.length <= y.length ? y : x;
+      return shorter.length > 0 && shorter.every(function (w) { return longer.indexOf(w) !== -1; });
+    };
+    var pickArtist = function (list, nameOf) {
+      return list.find(function (a) { return lower(nameOf(a)) === lower(name); })
+        || list.find(function (a) { return sameWords(nameOf(a), name); })
+        || list[0] || null;
+    };
+    var api = musicKitWeb.musicKit.api;
+    var search = await api.music('/v1/catalog/' + storefront + '/search', { term: name, types: 'artists', limit: 5 });
+    var artists = (search && search.data && search.data.results && search.data.results.artists && search.data.results.artists.data) || [];
+    var found = pickArtist(artists, function (a) { return a && a.attributes && a.attributes.name; });
+    if (!found || !found.id) return null;
+    var albums = await api.music('/v1/catalog/' + storefront + '/artists/' + found.id + '/albums', { limit: 100 });
+    var releases = ((albums && albums.data && albums.data.data) || []).filter(function (a) {
+      return a && a.id && a.attributes && a.attributes.name;
+    }).map(function (a) {
+      var attrs = a.attributes;
+      var art = attrs.artwork && attrs.artwork.url;
+      return {
+        id: a.id,
+        title: attrs.name,
+        date: attrs.releaseDate || null,
+        releaseType: attrs.isSingle ? 'single' : (attrs.isCompilation ? 'compilation' : 'album'),
+        albumArt: art ? art.replace('{w}', '500').replace('{h}', '500') : null
+      };
+    });
+    return { artist: { name: found.attributes.name }, releases: releases };
+  },
   init: async function (config) {
     console.log('Apple Music resolver initialized');
     if (config.developerToken && window.getMusicKitWeb) {

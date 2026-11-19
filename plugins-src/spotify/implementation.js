@@ -611,6 +611,70 @@ module.exports = {
       return false;
     }
   },
+  // The artistReleases capability (#1539 step 2): the artist page's
+  // discography when MusicBrainz is slow or doesn't know the artist, moved
+  // out of app.js (fetchArtistFromSpotify). artist: { name }. Answers
+  // { artist: { name }, releases: [{ id, title, date, releaseType, albumArt }] }
+  // with Spotify's own album ids (the app prefixes them "spotify-"), or null
+  // when Spotify doesn't know the artist. Signed out, or a failed request,
+  // THROWS.
+  getArtistReleases: async function (artist, config) {
+    var name = artist && typeof artist.name === 'string' ? artist.name.trim() : '';
+    if (!name) return null;
+    if (!config || !config.token) throw new Error('Spotify artist releases: not signed in');
+    var g = this;
+    if (Date.now() < (g.__parachordSpotifyRetryAt || 0)) throw new Error('Spotify artist releases: rate limited');
+    // The result whose name is the asked one: the same name ignoring case,
+    // else every word of the shorter name in the longer, else the first. The
+    // app checks the name again, so this only chooses among the results.
+    var lower = function (s) { return String(s || '').trim().toLowerCase(); };
+    var words = function (s) {
+      var out = lower(s);
+      try { out = out.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch (_e) { /* old engines */ }
+      return out.replace(/\s*\(\d+\)$/, '').replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+    };
+    var sameWords = function (a, b) {
+      var x = words(a);
+      var y = words(b);
+      var shorter = x.length <= y.length ? x : y;
+      var longer = x.length <= y.length ? y : x;
+      return shorter.length > 0 && shorter.every(function (w) { return longer.indexOf(w) !== -1; });
+    };
+    var pickArtist = function (list, nameOf) {
+      return list.find(function (a) { return lower(nameOf(a)) === lower(name); })
+        || list.find(function (a) { return sameWords(nameOf(a), name); })
+        || list[0] || null;
+    };
+    var get = async function (url) {
+      var ask = function (token) { return fetch(url, { headers: { Authorization: 'Bearer ' + token } }); };
+      var response = await ask(config.token);
+      if (response.status === 401 && config.refreshToken) {
+        var newToken = await config.refreshToken();
+        if (newToken && newToken !== config.token) response = await ask(newToken);
+      }
+      if (response.status === 429) {
+        var seconds = parseInt((response.headers && response.headers.get('Retry-After')) || '5', 10) || 5;
+        g.__parachordSpotifyRetryAt = Math.max(g.__parachordSpotifyRetryAt || 0, Date.now() + seconds * 1000);
+      }
+      if (!response.ok) throw new Error('Spotify artist releases failed: ' + response.status);
+      return response.json();
+    };
+    var search = await get('https://api.spotify.com/v1/search?q=' + encodeURIComponent('artist:"' + name.replace(/"/g, '') + '"') + '&type=artist&limit=5');
+    var found = pickArtist((search && search.artists && search.artists.items) || [], function (a) { return a && a.name; });
+    if (!found || !found.id) return null;
+    var albums = await get('https://api.spotify.com/v1/artists/' + encodeURIComponent(found.id) + '/albums?include_groups=album,single&limit=50&market=US');
+    var releases = ((albums && albums.items) || []).filter(function (a) { return a && a.id && a.name; }).map(function (a) {
+      var type = a.album_group || a.album_type || 'album';
+      return {
+        id: a.id,
+        title: a.name,
+        date: a.release_date || null,
+        releaseType: type === 'single' ? 'single' : (type === 'compilation' ? 'compilation' : 'album'),
+        albumArt: (a.images && a.images[0] && a.images[0].url) || null
+      };
+    });
+    return { artist: { name: found.name }, releases: releases };
+  },
   init: async function (config) {
     console.log('Spotify resolver initialized');
   },
