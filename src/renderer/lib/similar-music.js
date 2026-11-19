@@ -38,6 +38,7 @@ const LOADER_LIST = {
   similarTracks: 'getSimilarTracksResolvers',
   artistTopTracks: 'getArtistTopTracksResolvers',
   artistReleases: 'getArtistReleasesResolvers',
+  listeningHistory: 'getListeningHistoryResolvers',
 };
 
 // The plug-ins to ask for one capability, in the user's order.

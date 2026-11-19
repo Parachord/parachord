@@ -35,6 +35,7 @@ const HISTORY_PAGE_HANDLERS = [
   'loadTopTracks',
   'observedRowRef',
   'openTopAlbum',
+  'pickHistorySource',
   'playArtistTopTracks',
   'playTrackRow',
   'prefetchTopAlbumTracks',
@@ -58,6 +59,8 @@ const HistoryPage = React.memo(function HistoryPage(props) {
     historyScrollContainerReady,
     historyScrollContainerRef,
     historySearch,
+    historySource,
+    historySources,
     historySearchOpen,
     historySort,
     historyTab,
@@ -67,9 +70,9 @@ const HistoryPage = React.memo(function HistoryPage(props) {
     loadTopAlbums,
     loadTopArtists,
     loadTopTracks,
-    metaServiceConfigs,
     observedRowRef,
     openTopAlbum,
+    pickHistorySource,
     playArtistTopTracks,
     playTrackRow,
     playbackResolvers,
@@ -94,6 +97,11 @@ const HistoryPage = React.memo(function HistoryPage(props) {
     trackRowDrag,
     trackSources,
   } = props;
+  // The plug-ins that keep your listening history and that you're signed in
+  // to (#1539 step 4); the top lists show one, picked in the Source menu.
+  const signedIn = (historySources && historySources.signedIn) || [];
+  const services = (historySources && historySources.services) || [];
+  const topSource = signedIn.find(c => c.id === historySource) || signedIn[0] || null;
   return React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
@@ -124,12 +132,9 @@ React.createElement('div', {
               ),
 React.createElement('p', {
                 className: 'mt-4 text-white/80 text-sm'
-              }, metaServiceConfigs.listenbrainz?.username && metaServiceConfigs.lastfm?.username
-                ? 'Your listening activity from ListenBrainz & Last.fm'
-                : metaServiceConfigs.listenbrainz?.username
-                  ? 'Your listening activity from ListenBrainz'
-                  : 'Your listening activity from Last.fm'
-              )),
+              }, signedIn.length > 0
+                ? `Your listening activity from ${signedIn.map(c => c.label).join(' & ')}`
+                : 'Your listening activity')),
 collapsedContent: React.createElement(React.Fragment, null,
 React.createElement('div', {
                 className: 'flex items-center gap-1',
@@ -158,10 +163,20 @@ React.createElement('div', {
             historyTab === 'recent' ?
               React.createElement(SortMenu, { value: historySort, options: historySortOptions, onChange: setHistorySort, label: "Sort" })
             :
-              // Period dropdown for top charts
-              React.createElement(SortMenu, { value: historyPeriod, options: historyPeriodOptions, onChange: (option) => { setHistoryPeriod(option); if (historyTab === 'topTracks') loadTopTracks(option);
+              React.createElement(React.Fragment, null,
+                // Source (when you're signed in to more than one), then period
+                signedIn.length > 1 && React.createElement('div', { className: 'mr-2' },
+                  React.createElement(SortMenu, {
+                    value: topSource ? topSource.id : '',
+                    options: signedIn.map(c => ({ value: c.id, label: c.label })),
+                    label: 'History source',
+                    prefix: 'Source:',
+                    onChange: (v) => pickHistorySource(v),
+                  })
+                ),
+                React.createElement(SortMenu, { value: historyPeriod, options: historyPeriodOptions, onChange: (option) => { setHistoryPeriod(option); if (historyTab === 'topTracks') loadTopTracks(option);
                         else if (historyTab === 'topArtists') loadTopArtists(option);
-                        else if (historyTab === 'topAlbums') loadTopAlbums(option); }, label: "Time period" }),
+                        else if (historyTab === 'topAlbums') loadTopAlbums(option); }, label: "Time period" })),
             React.createElement('div', { className: 'flex-1' }),
             // Search (only for recent and top tracks)
             (historyTab === 'recent' || historyTab === 'topTracks') && React.createElement(FilterBox, { value: historySearch, onChange: setHistorySearch, open: historySearchOpen, onOpenChange: setHistorySearchOpen })
@@ -188,7 +203,7 @@ React.createElement('div', {
                   )
                 )
               : listeningHistory.error ?
-                historyErrorState(listeningHistory.error, loadListeningHistory, [{ id: 'lastfm', name: 'Last.fm' }, { id: 'listenbrainz', name: 'ListenBrainz' }])
+                historyErrorState(listeningHistory.error, loadListeningHistory, services)
               : (() => {
                   const filtered = filterHistory(listeningHistory.tracks);
                   const sorted = sortHistory(filtered);
@@ -241,7 +256,7 @@ React.createElement('div', {
                   )
                 )
               : topTracks.error ?
-                historyErrorState(topTracks.error, () => loadTopTracks(), [{ id: 'lastfm', name: 'Last.fm' }])
+                historyErrorState(topTracks.error, () => loadTopTracks(), services)
               : (() => {
                   const filtered = historySearch ? topTracks.tracks.filter(t =>
                     t.title.toLowerCase().includes(historySearch.toLowerCase()) ||
@@ -295,7 +310,7 @@ React.createElement('div', {
                   )
                 )
               : topArtists.error ?
-                historyErrorState(topArtists.error, () => loadTopArtists(), [{ id: 'lastfm', name: 'Last.fm' }])
+                historyErrorState(topArtists.error, () => loadTopArtists(), services)
               : topArtists.artists.length === 0 ?
                 React.createElement(EmptyState, { title: 'No top artists for this period', body: 'Pick a longer period.' })
               :
@@ -332,7 +347,7 @@ React.createElement('div', {
                   )
                 )
               : topAlbums.error ?
-                historyErrorState(topAlbums.error, () => loadTopAlbums(), [{ id: 'lastfm', name: 'Last.fm' }])
+                historyErrorState(topAlbums.error, () => loadTopAlbums(), services)
               : topAlbums.albums.length === 0 ?
                 React.createElement(EmptyState, { title: 'No top albums for this period', body: 'Pick a longer period.' })
               :
