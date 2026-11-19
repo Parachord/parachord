@@ -1,3 +1,17 @@
+# Parachord (unreleased)
+
+**Release date:** not yet released
+
+> Bandcamp only offers tracks you can play.
+
+---
+
+## Services
+
+- **Bandcamp: only tracks you can play.** Some artists make their Bandcamp tracks buy-only, and Bandcamp's search doesn't say which. Parachord used to offer those as Bandcamp sources, then fail to play them. It now checks: a buy-only track never plays from Bandcamp, and Parachord doesn't swap in someone else's upload of the same song. Buy on Bandcamp still shows for it. This comes with the Bandcamp plug-in update, which installs itself.
+
+---
+
 # Parachord v0.9.13
 
 **Release date:** 2026-11-18
