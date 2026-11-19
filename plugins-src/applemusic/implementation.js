@@ -685,6 +685,58 @@ module.exports = {
     console.log('[AppleMusic] All playback methods failed, returning false to try next source');
     return false;
   },
+  // The charts capability (#1539 step 3): Apple's public most-played feeds
+  // (no account needed), moved out of app.js (loadCharts,
+  // loadAppleMusicSongsCharts). query: { kind: 'tracks' | 'albums', country,
+  // limit? }. Apple has no global chart, so a query without a country (or a
+  // kind it doesn't chart) is null; the manifest's top-level `charts` lists
+  // the countries. Answers [{ title, artist, albumArt, url, genres,
+  // releaseDate }], most played first. Each try gives up after 5 s and a
+  // failed first try is tried once more (a stalled request left Pop of the
+  // Tops loading for good, #1493); a failure THROWS.
+  getCharts: async function (query, config) {
+    var kind = query && query.kind;
+    if (kind !== 'tracks' && kind !== 'albums') return null;
+    var country = String((query && query.country) || '').toLowerCase();
+    if (!/^[a-z]{2}$/.test(country)) return null;
+    var limit = Math.max(1, Math.min(100, Number(query.limit) || 50));
+    var size = limit <= 10 ? 10 : (limit <= 25 ? 25 : (limit <= 50 ? 50 : 100));
+    var url = 'https://rss.marketingtools.apple.com/api/v2/' + country + '/music/most-played/' + size + '/' +
+      (kind === 'tracks' ? 'songs' : 'albums') + '.json';
+    var once = async function () {
+      var controller = new AbortController();
+      var timer = setTimeout(function () { controller.abort(); }, 5000);
+      try {
+        // no-store: on a cold start the HTTP cache could hold this request
+        // until it timed out.
+        var response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+        if (!response.ok) throw new Error('Apple Music chart failed: ' + response.status);
+        return await response.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    var data;
+    try {
+      data = await once();
+    } catch (_firstError) {
+      data = await once();
+    }
+    var results = (data && data.feed && data.feed.results) || [];
+    return results.filter(function (item) {
+      return item && item.name && item.artistName;
+    }).slice(0, limit).map(function (item) {
+      var art = item.artworkUrl100 || '';
+      return {
+        title: item.name,
+        artist: item.artistName,
+        albumArt: art ? (kind === 'tracks' ? art.replace('100x100', '600x600') : art.replace('100x100bb', '300x300bb')) : undefined,
+        url: item.url || undefined,
+        genres: (item.genres || []).map(function (g) { return g && g.name; }).filter(function (g) { return g && g !== 'Music'; }),
+        releaseDate: item.releaseDate || undefined
+      };
+    });
+  },
   // The artistReleases capability (#1539 step 2): the artist page's
   // discography from Apple's catalog when MusicBrainz is slow or doesn't know
   // the artist, moved out of app.js (fetchArtistFromMusicKit). Needs the

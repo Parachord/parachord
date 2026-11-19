@@ -3,7 +3,7 @@
     "id": "listenbrainz",
     "name": "ListenBrainz",
     "type": "meta-service",
-    "version": "1.6.8",
+    "version": "1.6.9",
     "author": "Parachord Team",
     "description": "Scrobble what you play to ListenBrainz, and get recommendations and mixes from your listening history.",
     "requirement": "Needs your ListenBrainz username, and your user token to save listens.",
@@ -19,6 +19,7 @@
     "similarUsers": true,
     "similarArtists": true,
     "artistTopTracks": true,
+    "charts": true,
     "metadata": true,
     "listeningHistory": true,
     "lovedTracks": true,
@@ -33,6 +34,11 @@
       "listenbrainz.org/playlist/*",
       "*.listenbrainz.org/playlist/*"
     ]
+  },
+  "charts": {
+    "period": "this week",
+    "tracks": { "global": true },
+    "albums": { "global": true }
   },
   "settings": {
     "requiresAuth": true,

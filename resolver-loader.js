@@ -209,6 +209,11 @@ class ResolverLoader {
       // it. Kept outside `capabilities`, whose values every client (Android
       // and iOS decode a Map<String, Boolean>) reads as booleans.
       embedPlayer: axe.embedPlayer && typeof axe.embedPlayer === 'object' ? { ...axe.embedPlayer } : null,
+      // Charts (capabilities.charts, #1539): what it charts, from the
+      // manifest's top-level `charts` ({ period?, tracks?, albums? }, each
+      // kind { global?, countries? }), for Pop of the Tops' source and region
+      // menus. Outside `capabilities` for the same reason. null when none.
+      charts: ResolverLoader.chartsInfo(axe.charts),
 
       // Settings
       requiresAuth: settings?.requiresAuth || false,
@@ -720,6 +725,65 @@ class ResolverLoader {
         : [];
     } catch (error) {
       console.error(`Artist top tracks error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * A manifest's top-level `charts`, cleaned: { period?, tracks?, albums? },
+   * each kind { global: boolean, countries: ['us', ...] } (lowercase ISO
+   * codes). A kind with neither is left out; null when nothing is left.
+   * @param {object} raw
+   * @returns {object|null}
+   */
+  static chartsInfo(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const out = {};
+    for (const kind of ['tracks', 'albums']) {
+      const k = raw[kind];
+      if (!k || typeof k !== 'object') continue;
+      const countries = Array.isArray(k.countries)
+        ? [...new Set(k.countries.map(c => String(c || '').toLowerCase()).filter(c => /^[a-z]{2}$/.test(c)))]
+        : [];
+      if (k.global === true || countries.length) out[kind] = { global: k.global === true, countries };
+    }
+    if (!out.tracks && !out.albums) return null;
+    if (typeof raw.period === 'string' && raw.period.trim()) out.period = raw.period.trim();
+    return out;
+  }
+
+  /**
+   * Plug-ins with charts, for Pop of the Tops: they declare
+   * capabilities.charts, describe what they chart in the manifest's `charts`
+   * and implement getCharts (docs/architecture/plugins.md, "Charts", #1539).
+   * @returns {object[]}
+   */
+  getChartResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.charts && r.charts && typeof r.getCharts === 'function'
+    );
+  }
+
+  /**
+   * Ask one plug-in for a chart.
+   * @param {string} resolverId
+   * @param {{ kind: 'tracks'|'albums', country?: string|null, countryName?: string, limit?: number }} query
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object[]|null>} the chart's items, most played first
+   *          (untitled ones dropped); null when the plug-in doesn't chart that
+   *          kind or region, or lacks the capability. REJECTS when it throws.
+   */
+  async getCharts(resolverId, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.charts || typeof resolver.getCharts !== 'function') return null;
+    try {
+      const items = await resolver.getCharts(query || {}, configOverride || resolver.config || {});
+      if (items == null) return null;
+      return Array.isArray(items)
+        ? items.filter(i => i && typeof i.title === 'string' && i.title.trim() && typeof i.artist === 'string' && i.artist.trim())
+        : [];
+    } catch (error) {
+      console.error(`Charts error for ${resolverId}:`, error?.message || error);
       throw error;
     }
   }

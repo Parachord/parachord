@@ -446,6 +446,52 @@ module.exports = {
     });
   },
 
+  // The charts capability (#1539 step 3): what everyone on ListenBrainz
+  // played this week, from its sitewide statistics (/1/stats/sitewide/
+  // recordings and /release-groups). query: { kind: 'tracks' | 'albums',
+  // country?, limit? }. Worldwide only, so a country is null. No account is
+  // needed, but the user's token goes along when there is one: ListenBrainz
+  // turns some anonymous requests away (a "verifying your browser" page,
+  // 2026-11). Each request gives up after 10 s, so the app can move on to
+  // another chart. Answers tracks [{ title, artist, album, mbid, listens }]
+  // or albums [{ title, artist, mbid (the release group's), listens }]; 204
+  // (not calculated yet) is []; a failure or an answer that isn't the
+  // statistics THROWS.
+  getCharts: async function (query, config) {
+    var kind = query && query.kind;
+    if (kind !== 'tracks' && kind !== 'albums') return null;
+    if (query.country) return null;
+    var limit = Math.max(1, Math.min(100, Number(query.limit) || 50));
+    var entity = kind === 'tracks' ? 'recordings' : 'release-groups';
+    var headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 10000);
+    var data;
+    try {
+      var response = await fetch('https://api.listenbrainz.org/1/stats/sitewide/' + entity + '?range=week&count=' + limit,
+        { headers: headers, signal: controller.signal });
+      if (response.status === 204) return [];
+      if (!response.ok) throw new Error('ListenBrainz chart failed: ' + response.status);
+      data = await response.json();
+    } catch (error) {
+      if (error && error.name === 'AbortError') throw new Error('ListenBrainz chart: no answer in 10 s');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+    var payload = data && data.payload;
+    var list = payload && (kind === 'tracks' ? payload.recordings : payload.release_groups);
+    if (!Array.isArray(list)) throw new Error('ListenBrainz chart: unexpected answer');
+    return list.filter(function (r) {
+      return r && (kind === 'tracks' ? r.track_name : r.release_group_name) && r.artist_name;
+    }).slice(0, limit).map(function (r) {
+      var listens = Number(r.listen_count);
+      return kind === 'tracks'
+        ? { title: r.track_name, artist: r.artist_name, album: r.release_name || undefined, mbid: r.recording_mbid || undefined, listens: Number.isFinite(listens) ? listens : undefined }
+        : { title: r.release_group_name, artist: r.artist_name, mbid: r.release_group_mbid || undefined, listens: Number.isFinite(listens) ? listens : undefined };
+    });
+  },
+
   // The artistTopTracks capability (#1539 step 2): the artist's recordings by
   // listen count, from /1/popularity/top-recordings-for-artist/<mbid>.
   // artist: { name, mbid?, limit? }. Without an MBID there is nothing to ask:

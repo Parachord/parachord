@@ -15,7 +15,7 @@ Related: [METADATA_SOURCES.md](../architecture/METADATA_SOURCES.md) (artist imag
 | Related Artists | Artist page tab | Plug-ins with the `similarArtists` capability (Last.fm `artist.getsimilar`, ListenBrainz labs `similar-artists`), merged | The artist | Artists | Nothing |
 | Fresh Drops | Sidebar; Home "New from artists you love" | MusicBrainz release groups per artist | Collection, library, listening history | Release groups (albums, EPs, singles) | Nothing (empty with no collection or scrobbler) |
 | Critical Darlings | Sidebar; Home "Acclaimed by critics" | Achordion critics feed | Not personalized | Albums | Nothing |
-| Pop of the Tops | Sidebar | Apple Music RSS charts; Last.fm charts | Not personalized | Albums, tracks | Nothing |
+| Pop of the Tops | Sidebar | Plug-ins with `charts` (Apple Music, Last.fm, ListenBrainz) | Not personalized | Albums, tracks | Source and region |
 | Spinoff | Playbar button | Plug-ins with the `similarTracks` capability (Last.fm `track.getsimilar`), topped up from `similarArtists` plug-ins + `artistTopTracks` plug-ins (Last.fm `artist.gettoptracks`; ListenBrainz's popularity data when signed in) | The playing track | Tracks | Nothing |
 | Collection Radio | Home "Play Collection Radio"; Collection page; menu; `parachord://collection-radio` | Shuffle of the user's own tracks | Collection + local library | Tracks | Nothing |
 | Protocol radio | `parachord://play/radio` | External pool (JSPF / XSPF / JSON), e.g. ListenBrainz lb-radio | Publisher-supplied | Tracks | ListenBrainz token for lb-radio URLs |
@@ -141,45 +141,19 @@ Source: `https://achordion.xyz/api/critical-darlings/feed.xml`. Fresh items firs
 
 ## Pop of the Tops (charts)
 
-Code: `loadCharts`, `loadAppleMusicSongsCharts`, `loadLastfmCharts`.
+Code: `loadCharts` (Albums tab, also Home's chart cards), `loadSongsCharts` (Tracks tab), both through `loadChartFor`; the rules are `src/renderer/lib/charts.js`. Every chart comes from a plug-in with the `charts` capability (#1539 step 3; docs/architecture/plugins.md "Charts"):
 
-- **Albums tab**: `rss.applemarketingtools.com/api/v2/us/music/most-played/50/albums.json`. US only, no country picker. Refetched after 4 hours.
-- **Tracks tab**: a source dropdown (Apple Music or Last.fm) and a country dropdown with 15 countries (`CHARTS_COUNTRIES`). Apple Music uses `rss.marketingtools.apple.com/api/v2/{cc}/music/most-played/50/songs.json`; Last.fm uses `chart.gettoptracks&limit=50` for Global or `geo.gettoptracks&country=`. Cached 24 hours per source and country as `cache_charts`.
+- **Apple Music**: the most-played albums and songs feeds (`rss.marketingtools.apple.com/api/v2/{cc}/music/most-played/50/{albums|songs}.json`), by country (15), no global chart and no account.
+- **Last.fm**: top tracks, Global (`chart.gettoptracks`) or by country (`geo.gettoptracks`, the country's English name). No album chart.
+- **ListenBrainz**: what everyone on ListenBrainz played this week (`/1/stats/sitewide/recordings` and `/release-groups`, `range=week`), Global only. An album opens straight from its release-group MBID.
 
-Not personalized. No other chart sources exist. `src/charts-utils.js` is a copy of the parsing helpers used only by `tests/charts/charts.test.js`; app.js has its own.
+**Which sources:** every installed plug-in with the capability, whether or not it's turned on for playing (charts need no account, and Apple Music is off in a new install), minus one switched off (Enable, or "Use metadata from"). In the user's order, active plug-ins first. Each tab has a **Source** menu (its plug-ins) and a **Region** menu (the source's regions: Global and countries, from its manifest; hidden when it has one).
 
-## Spinoff
+**Which chart shows:** the picked source, else the first in order. With no pick, a source that fails, or has nothing, is skipped for the next, so the page never sits on one service's outage; a picked source that fails shows the error with Try again. A source that fails with a cached chart shows that, with a toast saying how old. Cached 24 hours per kind, source and region (`cache_charts`, `tracks:<plug-in>:<region>`); the Albums tab is refetched after 4 hours.
 
-Code: `startSpinoff` (playback hook), the pool and availability rules in `src/renderer/lib/spinoff-pool.js`, availability check `checkSpinoffAvailability` (app.js).
+Not personalized. The Tracks tab shows a play count column (Last.fm's listeners, ListenBrainz's plays this week; blank for Apple Music).
 
-The playbar Spinoff button seeds from the playing track's similar tracks, 20 from each plug-in with the `similarTracks` capability (`findSimilarTracks` in app.js, merged by `mergeSimilarTracks`; today Last.fm's `track.getsimilar`), shuffled. The availability check asks the same plug-ins for 1 on every track change. The pool lives in `spinoffTracksRef`; the next five tracks are resolved ahead. When the pool runs out, spinoff exits and playback returns to the queue. Seed spinoff has no refill. No Achordion source is used.
-
-**Few similar tracks (#1281).** Last.fm has no similar-track data for some of the most played songs ("Shape of You" answers an empty list). When the plug-ins return fewer than 5 similar tracks, the pool is topped up from the seed artist's similar artists: the top 8 from the `similarArtists` plug-ins, then each one's top 3 tracks (`getArtistTopTracks`: the first `artistTopTracks` plug-in with a list, by the similar artist's MBID when one came back, #1539), dealt round-robin with the artist order shuffled every round so no two tracks in a row share an artist. The similar tracks come first, and the seed track and duplicates are left out. Only an empty answer (a plug-in's "not found" is one) falls back; when no plug-in answers it stops there, so an outage costs one round, not ten. The availability check asks for one similar artist only when no similar track came back, so the button is disabled only when both are empty.
-
-## Collection Radio
-
-Code: `handleStartCollectionStation`, context name "Collection Station".
-
-Shuffles the local library plus collection tracks, deduplicated (one per song: a saved song and its file count once, #1532). Play Collection Radio in the Home header, a button on the Collection page, a menu entry, `parachord://collection-radio`, and the chat tool `collection_radio`. There is no recommendation step; it only plays what the user already has.
-
-## Protocol radio (`parachord://play/radio`)
-
-Code: the `switch (command)` protocol handler, `activateSpinoffFromPool`, `refillSpinoffPool`, parser `parseProtocolTracklist`. Public docs in [protocol-schema.md](../protocol-schema.md).
-
-- **Mode B** (`?artist=`, optionally `&title=`): calls the in-app spinoff starter. With no title, `resolveSpinoffSeed` picks the artist's top Last.fm track as the seed before the queue is cleared; if none is found the queue is kept and an error toast is shown (parachord#1005).
-- **Mode C** (`?tracks=` inline and/or `?url=` / `?refill=`): an externally curated pool. Supports `shuffle=1` and `name=` or `title=`. Skips up to 20 unplayable tracks, resolves two tracks ahead, refills when fewer than three remain (at most once per 5 seconds, stopping after three empty refills), deduplicates by MBID, then ISRC, then artist|title, and applies the public-URL guard and a 100 KB body cap.
-- **ListenBrainz lb-radio** works only through Mode C with a URL such as `https://api.listenbrainz.org/1/explore/lb-radio?prompt=...`. `buildProtocolFetchHeaders` attaches the user's ListenBrainz token from the scrobbler config for `api.listenbrainz.org`; without one the request fails with 401. There is no in-app lb-radio prompt box.
-
-## Concerts
-
-Code: `gatherConcertsArtists`, `loadConcerts`, `loadArtistConcerts`, providers from `getConcertServices`.
-
-Seed artists, interleaved and capped at 40 (not shuffled): collection artists, collection tracks and albums, then history (Last.fm `period=6month&limit=40`, ListenBrainz `range=half_yearly&count=40`).
-
-Providers are plugins with the `concerts` capability and a `searchArtistEvents` function whose credential is set:
-
-| Plugin | Credential | Endpoint |
-|---|---|---|
+---|---|---|
 | Bandsintown | `appId` | `rest.bandsintown.com/artists/{artist}/events?date=upcoming` |
 | Songkick | `apiKey` | artist search, then `artists/{id}/calendar.json` |
 | SeatGeek | `clientId` | `/2/performers?q=`, then `/2/events?performers.slug=` |

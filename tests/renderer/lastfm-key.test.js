@@ -518,8 +518,8 @@ describe('source check: one key chooser', () => {
     expect(app).toMatch(/initializeScrobblers\(\{ \.\.\.config, lastfmKeys: window\.lastfmKeys \}\)/);
   });
 
-  test('charts-utils, spinoff-pool and the plug-in take the key they are given', () => {
-    for (const p of ['src/charts-utils.js', 'src/renderer/lib/spinoff-pool.js', 'plugins-src/lastfm/implementation.js']) {
+  test('spinoff-pool and the plug-in take the key they are given', () => {
+    for (const p of ['src/renderer/lib/spinoff-pool.js', 'plugins-src/lastfm/implementation.js']) {
       const src = read(p);
       expect(src).not.toMatch(/process\.env|config\.get\(|metaServiceConfigs|LASTFM_API|electron\.store/);
       expect(src).not.toMatch(/['"`][0-9a-f]{32}['"`]/);
@@ -530,7 +530,7 @@ describe('source check: one key chooser', () => {
 
   test('no other source file talks to the Last.fm API', () => {
     const known = new Set([
-      'src/renderer/app.js', 'src/charts-utils.js', 'src/renderer/lib/spinoff-pool.js',
+      'src/renderer/app.js', 'src/renderer/lib/spinoff-pool.js',
       'src/renderer/lib/lastfm-key.js', 'scrobbler-loader.js', 'plugins-src/lastfm/implementation.js',
     ]);
     const walk = (dir) => fs.readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((d) => {

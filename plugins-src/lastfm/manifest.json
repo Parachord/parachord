@@ -3,7 +3,7 @@
     "id": "lastfm",
     "name": "Last.fm",
     "type": "meta-service",
-    "version": "1.2.10",
+    "version": "1.2.11",
     "author": "Parachord Team",
     "description": "Scrobble what you play to Last.fm, and get recommendations from your listening history.",
     "requirement": "Needs your Last.fm username.",
@@ -19,8 +19,12 @@
     "similarTracks": true,
     "artistTopTracks": true,
     "artistReleases": true,
+    "charts": true,
     "metadata": true,
     "lovedTracks": true
+  },
+  "charts": {
+    "tracks": { "global": true, "countries": ["us", "gb", "ca", "au", "de", "fr", "jp", "kr", "br", "mx", "es", "it", "nl", "se", "pl"] }
   },
   "settings": {
     "requiresAuth": true,
