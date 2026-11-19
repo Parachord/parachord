@@ -10,6 +10,10 @@
 // artist id itself (property P434), so it is asked first; the MusicBrainz
 // url-rels are the fallback for an artist Wikidata has no P434 for.
 //
+// A bio comes from the plug-ins with capabilities.biography (#1539 step 6):
+// all of them are asked at once, and bioWithSources keeps every bio found,
+// in the user's order, so the Biography tab can offer each one.
+//
 // Bios were also fetched from scratch by every caller: the playbar had Wild
 // Pink's bio from Wikipedia while the artist page, opened a minute later,
 // fetched it again and got nothing.
@@ -126,7 +130,28 @@ function createArtistBioCache({ now = () => Date.now(), ttlMs = BIO_TTL_MS, maxE
   };
 }
 
+// askEach's answers (lib/similar-music.js: [{ id, items: [bio] or [] }], in
+// the user's order) into the bio the app shows: the first plug-in's bio
+// ({ text, summary?, url?, markup?, source: its id }) with `sources`, every
+// plug-in's bio in the same order, for the Biography tab's Source menu.
+// null when none had one.
+function bioWithSources(answers) {
+  const sources = (answers || [])
+    .filter((a) => a && Array.isArray(a.items) && a.items[0] && typeof a.items[0].text === 'string' && a.items[0].text)
+    .map((a) => ({ ...a.items[0], source: a.id }));
+  return sources.length ? { ...sources[0], sources } : null;
+}
+
+// The bio on screen switched to another of its sources (the Source menu):
+// that source's text, url and markup, the same list of sources.
+function bioFromSource(bio, sourceId) {
+  const pick = bio && Array.isArray(bio.sources) && bio.sources.find((s) => s.source === sourceId);
+  return pick ? { ...pick, sources: bio.sources } : bio;
+}
+
 module.exports = {
+  bioWithSources,
+  bioFromSource,
   isMbid,
   wikidataSearchUrl,
   wikidataIdFromSearch,

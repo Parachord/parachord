@@ -12,6 +12,8 @@ const {
   wikidataIdFromMbRelations,
   createWikidataIdLookup,
   createArtistBioCache,
+  bioWithSources,
+  bioFromSource,
 } = require('../../src/renderer/lib/artist-bio');
 
 const WILD_PINK = '94fdf751-0644-4b78-9e72-dbdce539b5b7';
@@ -200,5 +202,37 @@ describe('createArtistBioCache', () => {
     const fetchBio = jest.fn();
     await expect(cache.load('', WILD_PINK, fetchBio)).resolves.toBeNull();
     expect(fetchBio).not.toHaveBeenCalled();
+  });
+});
+
+describe('bioWithSources (#1539 step 6)', () => {
+  const answers = [
+    { id: 'wikipedia', items: [] },
+    { id: 'discogs', items: [{ text: 'From Discogs.', url: 'https://d', markup: 'bbcode' }] },
+    { id: 'lastfm', items: [{ text: 'From Last.fm.', summary: 'Short.' }] },
+    { id: 'broken', items: [{ text: '' }] },
+  ];
+
+  test('the first plug-in with a bio, in the given order, with every bio in sources', () => {
+    const bio = bioWithSources(answers);
+    expect(bio).toMatchObject({ text: 'From Discogs.', url: 'https://d', markup: 'bbcode', source: 'discogs' });
+    expect(bio.sources).toEqual([
+      { text: 'From Discogs.', url: 'https://d', markup: 'bbcode', source: 'discogs' },
+      { text: 'From Last.fm.', summary: 'Short.', source: 'lastfm' },
+    ]);
+  });
+
+  test('none with a bio is null', () => {
+    expect(bioWithSources([{ id: 'a', items: [] }])).toBeNull();
+    expect(bioWithSources(undefined)).toBeNull();
+  });
+
+  test('bioFromSource switches to another source and keeps the list', () => {
+    const bio = bioWithSources(answers);
+    const lastfm = bioFromSource(bio, 'lastfm');
+    expect(lastfm).toMatchObject({ text: 'From Last.fm.', summary: 'Short.', source: 'lastfm' });
+    expect(lastfm.markup).toBeUndefined();
+    expect(lastfm.sources).toBe(bio.sources);
+    expect(bioFromSource(bio, 'nope')).toBe(bio);
   });
 });

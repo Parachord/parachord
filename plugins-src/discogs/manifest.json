@@ -3,7 +3,7 @@
     "id": "discogs",
     "name": "Discogs",
     "type": "meta-service",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "author": "Parachord Team",
     "description": "Artist biographies, photos and discographies from Discogs.",
     "icon": "📀",

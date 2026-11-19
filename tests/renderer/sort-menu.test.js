@@ -46,3 +46,17 @@ test('the trigger never wraps or shrinks in a narrow window ("Newest first" brok
   expect(src).toContain("className: 'relative inline-block flex-shrink-0'");
   expect(src).toContain('no-drag flex items-center gap-1 whitespace-nowrap px-3');
 });
+
+test("variant 'button' draws the trigger as the small secondary Button (the Biography tab's Source picker)", () => {
+  const { buttonClassName } = require('../../src/renderer/components/button');
+  const out = renderToStaticMarkup(h(SortMenu, { value: 'az', options: opts, onChange() {}, prefix: 'Source:', variant: 'button', label: 'Biography source' }));
+  for (const cls of buttonClassName({ variant: 'secondary', size: 'sm' }).split(' ')) expect(out).toContain(cls);
+  expect(out).toContain('whitespace-nowrap');
+  expect(out).toContain('aria-haspopup="listbox"');
+  // The default stays the quiet toolbar trigger.
+  expect(renderToStaticMarkup(h(SortMenu, { value: 'az', options: opts, onChange() {} }))).not.toContain('border-line-strong');
+  const fs = require('fs');
+  const path = require('path');
+  expect(fs.readFileSync(path.join(__dirname, '../../src/renderer/components/artist-page.js'), 'utf8'))
+    .toMatch(/variant: 'button',\s*value: artistBio\.source,[\s\S]{0,300}label: 'Biography source',\s*prefix: 'Source:'/);
+});

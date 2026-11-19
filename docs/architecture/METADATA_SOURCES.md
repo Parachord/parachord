@@ -7,7 +7,7 @@ This document describes all external data sources used by Parachord for fetching
 | Metadata Type | Primary Provider | Fallback 1 | Fallback 2 | Fallback 3 |
 |---------------|------------------|------------|------------|------------|
 | **Artist Images** | Spotify (plug-in on and signed in) | MusicKit (Apple Music, plug-in on) | Wikipedia | Discogs |
-| **Artist Bios** | Last.fm | Wikipedia | Discogs | - |
+| **Artist Bios** | Plug-ins with `biography`, in the user's order (Discogs, Last.fm, Wikipedia); every bio found is offered in the Biography tab's Source menu | - | - | - |
 | **Related Artists** | Last.fm + ListenBrainz (merged) | - | - | - |
 | **Album Art** | Cover Art Archive | Embedded metadata | Folder art | - |
 | **Charts (Albums)** | Plug-ins with `charts`, in the user's order (Apple Music, ListenBrainz) | - | - | - |
@@ -40,32 +40,36 @@ Spotify and Apple Music are asked only while their plug-ins are on (`activeResol
 
 ## Artist Biographies
 
-Displayed on artist pages below the header.
+Displayed on the artist page's Biography tab, in the playbar's artist tooltip and in Search's artist preview. Since #1539 step 6 every bio comes from a plug-in with `capabilities.biography` (`getArtistBio`, docs/architecture/plugins.md "Artist bios"); app.js calls no service by name.
 
-| Provider | Endpoint | Auth Required | Notes |
+| Plug-in | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
-| Last.fm | `ws.audioscrobbler.com/2.0/?method=artist.getinfo` | API key | Returns summary + full bio |
-| Wikipedia | `en.wikipedia.org/w/api.php?action=query&prop=extracts` | No | Needs the artist MBID |
-| Discogs | `api.discogs.com/artists/{id}` | Optional PAT | Profile field |
+| Wikipedia | `en.wikipedia.org/w/api.php?action=query&prop=extracts` | No | Needs the artist MBID; found through Wikidata |
+| Discogs | `api.discogs.com/artists/{id}` | Optional PAT | The profile, `markup: 'bbcode'` |
+| Last.fm | `ws.audioscrobbler.com/2.0/?method=artist.getinfo` | API key | Full bio and a summary, without the "Read more on Last.fm" link and licence line |
 
-**Code Location:** `src/renderer/app.js` → `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()`
+**Which bio:** all of them are asked at once (`fetchArtistBioUncached` in `src/renderer/app.js`: `askEach(similarProvidersFor('biography'), …)`): active plug-ins and meta-services in the user's order, minus one switched off (its Enable or "Use metadata from" switch). `bioWithSources` (`src/renderer/lib/artist-bio.js`) keeps every bio found; the first is shown and the rest are in `sources`. Meta-services have no order of their own yet, so among them it is the order they load in. The Biography tab's **Source** picker (`SortMenu`, `variant: 'button'`) lists every plug-in with a bio for the artist and switches to one (`bioFromSource`) for as long as the page is open; with one source the line just names it. A plug-in that fails is left out; none answering reads as "No biography for this artist".
 
-**Lookup Chain for Wikipedia:**
-1. The artist MBID (from the artist page, or the MBID mapper / a MusicBrainz search for the playbar)
-2. The Wikidata id: Wikidata's own search for the entity whose MusicBrainz artist ID (P434) is that MBID; only when Wikidata has none, the artist's MusicBrainz url-rels. `lookupWikidataId` (`src/renderer/lib/artist-bio.js`) keeps found ids for the session.
-3. Query Wikidata for Wikipedia article title
-4. Fetch the whole article as plain text from the Wikipedia API (`prop=extracts&explaintext=1`, no `exintro`), then trim it with `bioFromWikipediaExtract` (`src/renderer/lib/wikipedia-bio.js`):
+Before #1539 step 6 the order was fixed (Wikipedia, then Discogs, then Last.fm), and Last.fm's bio was never shown: its text always ends with "Read more on Last.fm", which the old check treated as an empty bio.
+
+**Lookup Chain for Wikipedia** (the Wikipedia plug-in, `plugins-src/wikipedia/implementation.js`):
+1. The artist MBID (from the artist page, or the MBID mapper / a MusicBrainz search for the playbar, or the MusicBrainz row's id in Search)
+2. The Wikidata id (`lookupWikidataId`): Wikidata's own search for the entity whose MusicBrainz artist ID (P434) is that MBID; only when Wikidata has none, the artist's MusicBrainz url-rels, in the background lane. Found ids are kept on the plug-in instance for the session.
+3. Query Wikidata for the Wikipedia article title
+4. Fetch the whole article as plain text from the Wikipedia API (`prop=extracts&explaintext=1`, no `exintro`), then trim it with `bioFromExtract` (the plug-in's `_lib`):
    - a lead of 150 words or more is the whole bio;
    - otherwise prose paragraphs from the following sections are added in article order until the bio reaches 400 words (whole paragraphs only);
    - sections that aren't a bio (References, External links, See also, Notes, Discography, Band members, Personnel, Tours, Accolades, Timeline, ...) are skipped with their subsections;
    - inside kept sections only prose survives (ends like a sentence, at least 4 words), so member and release lists don't;
    - headings are dropped and paragraphs are separated by a blank line.
 
-   The lead alone was too thin when an article's lead is short (Wild Pink's is one sentence), and the whole article (what Android showed) carried the lists, empty headings, link stubs and raw `== History ==` markup. parachord-mobile mirrors this rule.
+   The lead alone was too thin when an article's lead is short (Wild Pink's is one sentence), and the whole article (what Android showed) carried the lists, empty headings, link stubs and raw `== History ==` markup. parachord-mobile loads the same plug-in.
 
-Wikidata comes first so a MusicBrainz outage doesn't take the Wikipedia bio with it: the url-rels request waits in the 1 req/s MusicBrainz queue, and during an outage that queue is full of retrying requests (Wild Pink's Biography tab showed its skeleton, then nothing, on 2026-10-25). The Wikipedia artist image uses the same lookup.
+Wikidata comes first so a MusicBrainz outage doesn't take the Wikipedia bio with it: the url-rels request waits in the 1 req/s MusicBrainz queue, and during an outage that queue is full of retrying requests (Wild Pink's Biography tab showed its skeleton, then nothing, on 2026-10-25). The Wikipedia artist image, still in app.js, uses the same rule through `lookupWikidataId` in `src/renderer/lib/artist-bio.js`.
 
-**Session cache:** bios go through `artistBioCache` (same file), shared by the playbar tooltip and the artist page, keyed by artist name plus MBID (a bio fetched without an MBID skipped Wikipedia, so it can't answer a request that has one). Found bios are kept for 6 hours; "no bio" is never kept, since it may mean a source was down. Concurrent requests for the same artist share one fetch. Only the artist page's `getArtistBio` sets `loadingBio`; the playbar calls `fetchArtistBio`, because the Biography tab skips its fetch while `loadingBio` is set.
+**Discogs markup:** the Discogs plug-in resolves the profile's references (`[a17632854]`, `[a=Name]`, labels, releases) to names and keeps the `[b]`, `[i]`, `[u]` and `[url=]` tags; the Biography tab renders them (`parseBioMarkup`, `src/renderer/lib/bio-markup.js`) and the short previews drop them (`bioPlainText`).
+
+**Session cache:** bios go through `artistBioCache` (`src/renderer/lib/artist-bio.js`), shared by the playbar tooltip, Search's preview and the artist page, keyed by artist name plus MBID (a bio fetched without an MBID skipped Wikipedia, so it can't answer a request that has one). The whole answer, every source included, is kept for 6 hours; "no bio" is never kept, since it may mean a source was down. Concurrent requests for the same artist share one fetch. Only the artist page's `getArtistBio` sets `loadingBio`; the playbar calls `fetchArtistBio`, because the Biography tab skips its fetch while `loadingBio` is set.
 
 ---
 
@@ -234,7 +238,7 @@ Bridge between MusicBrainz and Wikipedia.
 | Feature | File | Function |
 |---------|------|----------|
 | Artist images | `src/renderer/app.js` | `getArtistImage()` |
-| Artist bios | `src/renderer/app.js` | `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()` |
+| Artist bios | `src/renderer/app.js`, `src/renderer/lib/artist-bio.js` | `fetchArtistBio()`, `getArtistBio()`, `bioWithSources()`; the plug-ins' `getArtistBio` (Wikipedia, Discogs, Last.fm `artist.getinfo`) |
 | Related artists | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `getRelatedArtists()`, `findSimilarArtists()`; the plug-ins' `getSimilarArtists` |
 | Artist top tracks | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `findArtistTopTracks()`, `getArtistTopTracks()`; the plug-ins' `getArtistTopTracks` (Last.fm `artist.gettoptracks`; ListenBrainz `/1/popularity/top-recordings-for-artist/{mbid}`, signed in only) |
 | Artist discography fallback | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `fetchArtistFromPlugins()` (`askInTurn`); the plug-ins' `getArtistReleases` (Spotify, Apple Music, Last.fm `artist.gettopalbums`, Discogs) |

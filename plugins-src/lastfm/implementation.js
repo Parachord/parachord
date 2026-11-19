@@ -409,5 +409,49 @@ module.exports = {
       });
     }
     return out.slice(0, limit);
+  },
+
+  // The biography capability (#1539 step 6): artist.getinfo, moved out of
+  // app.js (getLastfmBio). artist: { name }. Answers { text, summary, url }:
+  // the bio without its HTML, its "Read more on Last.fm" link and the licence
+  // line Last.fm appends (the app's old check for that phrase dropped every
+  // Last.fm bio). null when Last.fm doesn't know the artist (error 6) or its
+  // bio is empty or a stub; anything else that goes wrong THROWS.
+  getArtistBio: async function (artist, config) {
+    const name = artist && typeof artist.name === 'string' ? artist.name.trim() : '';
+    if (!name) return null;
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm bio: no API key yet');
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=' + encodeURIComponent(name) +
+      '&autocorrect=1&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm bio failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return null;
+      throw new Error('Last.fm bio failed: error ' + data.error);
+    }
+    const info = data && data.artist;
+    const bio = info && info.bio;
+    if (!bio) return null;
+    const clean = function (html) {
+      return String(html || '')
+        .replace(/<a\b[^>]*>\s*Read more on Last\.fm\s*<\/a>\.?/gi, '')
+        .replace(/User-contributed text is available under the Creative Commons By-SA License;?\s*additional terms may apply\.?/gi, '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    };
+    const text = clean(bio.content) || clean(bio.summary);
+    // An artist with no bio still gets a stub (a link, or a line).
+    if (text.length < 50) return null;
+    const summary = clean(bio.summary);
+    return {
+      text: text,
+      summary: summary.length >= 50 ? summary : undefined,
+      url: typeof info.url === 'string' && /^https:\/\//.test(info.url) ? info.url : undefined
+    };
   }
 };

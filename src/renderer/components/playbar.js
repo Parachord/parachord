@@ -29,6 +29,7 @@ const { Menu } = require('./menu');
 const { Slider } = require('./fields');
 const { transition } = require('../lib/motion');
 const { DropZoneOverlay } = require('./drop-zone-overlay');
+const { bioPlainText } = require('../lib/bio-markup');
 
 const { List, Music, Pause, Play, SkipBack, SkipForward } = Icons;
 
@@ -369,8 +370,10 @@ const Playbar = React.memo(function Playbar(props) {
               // Line 2: Artist name with bio tooltip + on tour badge
               React.createElement('div', { className: 'flex items-center text-xs text-on-dark-secondary min-w-0' },
                 (() => {
-                  const bioPreview = playbarArtistBio && playbarArtistBio.bio
-                    ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '…' : '')
+                  // The bio's first lines, tags dropped (lib/bio-markup.js).
+                  const bioText = bioPlainText(playbarArtistBio);
+                  const bioPreview = bioText
+                    ? bioText.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (bioText.length > 200 ? '…' : '')
                     : null;
 
                   const artistButton = React.createElement('button', {
