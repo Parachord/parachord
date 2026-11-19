@@ -10,7 +10,7 @@ const read = (f) => fs.readFileSync(path.join(__dirname, '../../src/renderer/com
 const uses = (src) => [...src.matchAll(/React\.createElement\(VirtualizedTrackList, \{\s*tracks: ([^,]+),\s*parentRef: (\w+)/g)].map((m) => [m[1].trim(), m[2]]);
 
 test.each([
-  ['charts-page.js', [['filtered', 'lastfmChartsScrollContainerRef']]],
+  ['charts-page.js', [['filtered', 'songsChartsScrollContainerRef']]],
   ['history-page.js', [['sorted', 'historyScrollContainerRef'], ['filtered', 'topTracksScrollContainerRef']]],
   ['friend-history-page.js', [['sorted', 'friendHistoryScrollContainerRef'], ['friendHistoryData.topTracks', 'friendHistoryScrollContainerRef']]],
   ['search-page.js', [['filteredTracks', 'searchScrollContainerRef']]],

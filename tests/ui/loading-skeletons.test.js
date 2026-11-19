@@ -476,15 +476,18 @@ describe('Pop of the Tops', () => {
   const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
   test('album cards show the release year, from Apple\'s date text', () => {
     expect(app).toContain("subtitle: chartAlbumYear(item) || '\\u00a0',");
-    expect(app).toContain('releaseDate: item.releaseDate || null,');
+    // The plug-ins' chart items keep the date as the source sent it (lib/charts.js).
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/lib/charts.js'), 'utf8')).toContain('releaseDate: item.releaseDate || null,');
     expect(app).toMatch(/if \(item\.releaseDate\) return String\(item\.releaseDate\)\.slice\(0, 4\);/);
     expect(app).toMatch(/d\.getUTCFullYear\(\)/);
   });
   test('its placeholders are the shared ones, in the real layout', () => {
     expect(app).toContain("React.createElement(CardSkeleton, { key: `skeleton-${i}`, index: i, lines: 2 })");
     expect(app).toMatch(/React\.createElement\(TrackRowSkeleton, \{\s*key: `skeleton-row-\$\{i\}`, index: i, duration: true,/);
-    // The rows and their placeholder share the Last.fm listeners column.
-    expect(app).toMatch(/cells: chartsSongsSource === 'lastfm' \? \[\{ key: 'listeners', width: '90px', align: 'right' \}\] : \[\]/);
+    // The rows and their placeholder share the play-count column, always there
+    // whatever the source, so the rows line up with it.
+    expect(app).toContain("cells: [{ key: 'listeners', width: '90px', align: 'right' }]");
+    expect(app).toContain("cells: [{ key: 'listeners', content: playCount(track), width: '90px', align: 'right' }]");
   });
 });
 

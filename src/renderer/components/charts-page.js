@@ -1,6 +1,8 @@
 // src/renderer/components/charts-page.js: Pop of the Tops (activeView
-// 'discover'): the albums chart (iTunes, by country) and the songs chart
-// (Apple Music or Last.fm), in hero tabs (#1451, moved out of app.js).
+// 'discover'): an albums chart and a tracks chart, in hero tabs (#1451, moved
+// out of app.js). Each comes from a plug-in with charts (lib/charts.js,
+// #1539 step 3), picked in the Source menu; the Region menu lists that
+// source's regions.
 //
 // A React.memo'd page fed stable props, like the other pages: state,
 // setters, refs and memos by value, plain functions through
@@ -18,21 +20,21 @@ const { SortMenu } = require('./sort-menu');
 const { HeroTabs } = require('./hero-tabs');
 const { EmptyState, ErrorState } = require('./states');
 const { releaseMenu } = require('../lib/item-menus');
-const { CHARTS_COUNTRIES } = require('../lib/charts-countries');
 const { chartLoadView } = require('../lib/chart-load-view');
 const { errorText } = require('../lib/error-copy');
+const { countOf } = require('../lib/plural');
 
 const CHARTS_PAGE_HANDLERS = [
   'albumCardActions',
   'chartAlbumYear',
   'copyParachordLink',
   'fetchArtistData',
-  'loadAppleMusicSongsCharts',
   'loadCharts',
-  'loadLastfmCharts',
+  'loadSongsCharts',
   'observedRowRef',
   'openChartsAlbum',
   'patchListArt',
+  'pickChart',
   'playTrackRow',
   'prefetchChartsTracks',
   'retryBrokenListArt',
@@ -42,20 +44,17 @@ const ChartsPage = React.memo(function ChartsPage(props) {
   const {
     albumCardActions,
     allResolvers,
-    appleMusicSongsCharts,
-    appleMusicSongsChartsError,
-    appleMusicSongsChartsLoaded,
-    appleMusicSongsChartsLoading,
     chartAlbumYear,
     charts,
-    chartsCountry,
     chartsError,
     chartsHeaderCollapsed,
     chartsLoaded,
     chartsLoading,
     chartsSearch,
     chartsSearchOpen,
-    chartsSongsSource,
+    chartsPicks,
+    chartsShown,
+    chartSources,
     chartsTab,
     copyParachordLink,
     currentTrack,
@@ -63,19 +62,19 @@ const ChartsPage = React.memo(function ChartsPage(props) {
     filterCharts,
     handleChartsScroll,
     isPlaying,
-    lastfmCharts,
-    lastfmChartsError,
-    lastfmChartsLoaded,
-    lastfmChartsLoading,
-    lastfmChartsObserverRef,
-    lastfmChartsRowRefs,
-    lastfmChartsScrollContainerRef,
-    loadAppleMusicSongsCharts,
+    songsCharts,
+    songsChartsError,
+    songsChartsLoaded,
+    songsChartsLoading,
+    songsChartsObserverRef,
+    songsChartsRowRefs,
+    songsChartsScrollContainerRef,
     loadCharts,
-    loadLastfmCharts,
+    loadSongsCharts,
     observedRowRef,
     openChartsAlbum,
     patchListArt,
+    pickChart,
     playTrackRow,
     playbackResolvers,
     prefetchChartsTracks,
@@ -83,15 +82,39 @@ const ChartsPage = React.memo(function ChartsPage(props) {
     resolverOrder,
     retryBrokenListArt,
     setCharts,
-    setChartsCountry,
     setChartsError,
     setChartsSearch,
     setChartsSearchOpen,
-    setChartsSongsSource,
     setChartsTab,
-    setLastfmChartsScrollContainerReady,
+    setSongsChartsScrollContainerReady,
     trackSources,
   } = props;
+  // The tab's sources (plug-ins with charts, in the user's order) and the one
+  // the menus show: the user's pick, else what the last load showed, else
+  // the first. The region likewise, when that source has it.
+  const sources = (chartSources && chartSources[chartsTab]) || [];
+  const pick = (chartsPicks && chartsPicks[chartsTab]) || {};
+  const shown = chartsShown && chartsShown[chartsTab];
+  const current = sources.find(c => c.id === pick.source) || sources.find(c => c.id === (shown && shown.source)) || sources[0] || null;
+  const offered = (v) => !!current && current.regions.some(r => r.value === v);
+  const regionValue = pick.region != null && offered(pick.region) ? pick.region
+    : (shown && current && shown.source === current.id && offered(shown.region) ? shown.region
+      : (current && current.regions[0] ? current.regions[0].value : ''));
+  const kindWord = chartsTab === 'albums' ? 'albums' : 'tracks';
+  const subtitle = current
+    ? `Top 50 most played ${kindWord} on ${current.label}${current.period ? ` ${current.period}` : ''}`
+    : `The most played ${kindWord} right now`;
+  const songsView = chartLoadView({ loading: songsChartsLoading, loaded: songsChartsLoaded, error: songsChartsError });
+  // A row's play count, when the chart gives one (Last.fm: listeners;
+  // ListenBrainz: plays this week). The column is always there on the Tracks
+  // tab, so the rows line up with the skeleton whatever the source.
+  // Short enough for the column: 940 plays, 325K listeners, 2.2M listeners.
+  const countText = (n, word) => {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M ${word}s`;
+    if (n >= 1000) return `${Math.round(n / 1000)}K ${word}s`;
+    return countOf(n, word);
+  };
+  const playCount = (track) => (track.listeners > 0 ? countText(track.listeners, 'listener') : (track.listens > 0 ? countText(track.listens, 'play') : ''));
   return React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
@@ -114,11 +137,7 @@ React.createElement('div', {
                 ),
 React.createElement('p', {
                   className: 'mt-4 text-white/80 text-sm'
-                }, chartsTab === 'albums'
-                  ? 'Top 50 most played albums on Apple Music'
-                  : chartsSongsSource === 'apple'
-                    ? 'Top 50 most played tracks on Apple Music'
-                    : 'Top 50 most played tracks on Last.fm')),
+                }, subtitle)),
 collapsedContent: React.createElement(React.Fragment, null,
 React.createElement('div', {
                   className: 'flex items-center gap-1'
@@ -132,38 +151,31 @@ React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
                 }, chartsTab === 'albums'
                   ? `${charts.length} Albums`
-                  : `${chartsSongsSource === 'apple' ? appleMusicSongsCharts.length : lastfmCharts.length} Tracks`))
+                  : `${songsCharts.length} Tracks`))
 }),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
             className: 'flex items-center px-6 py-3',
             style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-              // Source (components/sort-menu.js); a pick loads that source's chart
-              chartsTab === 'songs' && React.createElement(SortMenu, {
-                value: chartsSongsSource,
-                options: [{ value: 'apple', label: 'Apple Music' }, { value: 'lastfm', label: 'Last.fm' }],
+              // Source (components/sort-menu.js): the plug-ins with this
+              // tab's chart; a pick loads that source's chart.
+              sources.length > 0 && React.createElement(SortMenu, {
+                value: current ? current.id : '',
+                options: sources.map(c => ({ value: c.id, label: c.label })),
                 label: 'Chart source',
                 prefix: 'Source:',
-                // The picked source's chart loads from an effect once it can.
-                onChange: (v) => setChartsSongsSource(v),
+                onChange: (v) => pickChart(chartsTab, { source: v }),
               }),
-              // Region (components/sort-menu.js). Apple Music has no global
-              // chart, so an empty region means the US there; Last.fm offers Global.
-              chartsTab === 'songs' && React.createElement('div', { className: 'ml-2' },
+              // Region (components/sort-menu.js): the source's regions (Global
+              // and countries); none when it has only one.
+              current && current.regions.length > 1 && React.createElement('div', { className: 'ml-2' },
                 React.createElement(SortMenu, {
-                  value: chartsSongsSource === 'apple' && !chartsCountry ? 'us' : chartsCountry,
-                  options: (chartsSongsSource === 'lastfm' ? [{ value: '', label: 'Global' }] : [])
-                    .concat(CHARTS_COUNTRIES.map(c => ({ value: c.code, label: c.name }))),
+                  value: regionValue,
+                  options: current.regions,
                   label: 'Chart region',
                   prefix: 'Region:',
-                  placeholder: 'United States',
-                  onChange: (v) => {
-                    setChartsCountry(v);
-                    if (!v) loadLastfmCharts({ forceReload: true });
-                    else if (chartsSongsSource === 'apple') loadAppleMusicSongsCharts({ country: v, forceReload: true });
-                    else loadLastfmCharts({ country: v, forceReload: true });
-                  },
+                  onChange: (v) => pickChart(chartsTab, { region: v }),
                 })
               ),
               React.createElement('div', { className: 'flex-1' }),
@@ -174,9 +186,9 @@ React.createElement('span', {
           React.createElement('div', {
             className: 'scrollable-content scroll-edge',
             ref: (el) => {
-              lastfmChartsScrollContainerRef.current = el;
+              songsChartsScrollContainerRef.current = el;
               if (el && chartsTab === 'songs') {
-                setLastfmChartsScrollContainerReady(true);
+                setSongsChartsScrollContainerReady(true);
               }
             },
             style: {
@@ -239,39 +251,24 @@ React.createElement('span', {
             })(),
 
             // SONGS TAB: a failed load shows its error with Try again.
-            chartsTab === 'songs' && chartsSongsSource === 'apple' &&
-              chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'error' &&
+            chartsTab === 'songs' && songsView === 'error' &&
               React.createElement(ErrorState, {
-                title: 'Couldn’t load the Apple Music chart',
-                body: errorText(appleMusicSongsChartsError, 'Apple Music’s chart didn’t load. Check your connection and try again.'),
-                onRetry: () => loadAppleMusicSongsCharts({ country: chartsCountry, forceReload: true })
-              }),
-            chartsTab === 'songs' && chartsSongsSource === 'lastfm' &&
-              chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'error' &&
-              React.createElement(ErrorState, {
-                title: 'Couldn’t load the Last.fm chart',
-                body: errorText(lastfmChartsError, 'Last.fm’s chart didn’t load. Check your connection and try again.'),
-                onRetry: () => loadLastfmCharts({ country: chartsCountry, forceReload: true })
+                title: current ? `Couldn’t load the ${current.label} chart` : 'Couldn’t load the chart',
+                body: errorText(songsChartsError, current ? `${current.label}’s chart didn’t load. Try again, or pick another source.` : 'The chart didn’t load. Try again in a moment.'),
+                onRetry: () => loadSongsCharts({ forceReload: true })
               }),
 
             // SONGS TAB: the shared track row's placeholder, in its columns.
-            chartsTab === 'songs' && (
-              (chartsSongsSource === 'apple' && chartLoadView({ loading: appleMusicSongsChartsLoading, loaded: appleMusicSongsChartsLoaded, error: appleMusicSongsChartsError }) === 'skeleton') ||
-              (chartsSongsSource === 'lastfm' && chartLoadView({ loading: lastfmChartsLoading, loaded: lastfmChartsLoaded, error: lastfmChartsError }) === 'skeleton')
-            ) && React.createElement('div', { className: 'space-y-0' },
+            chartsTab === 'songs' && songsView === 'skeleton' && React.createElement('div', { className: 'space-y-0' },
               Array.from({ length: 20 }).map((_, i) => React.createElement(TrackRowSkeleton, {
                 key: `skeleton-row-${i}`, index: i, duration: true,
-                cells: chartsSongsSource === 'lastfm' ? [{ key: 'listeners', width: '90px', align: 'right' }] : []
+                cells: [{ key: 'listeners', width: '90px', align: 'right' }]
               }))
             ),
 
-            // SONGS TAB - Table of tracks (Apple Music or Last.fm)
-            chartsTab === 'songs' && (
-              (chartsSongsSource === 'apple' && appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) ||
-              (chartsSongsSource === 'lastfm' && lastfmChartsLoaded && !lastfmChartsLoading)
-            ) && (() => {
-              const songsData = chartsSongsSource === 'apple' ? appleMusicSongsCharts : lastfmCharts;
-              const filtered = filterCharts(songsData);
+            // SONGS TAB - the chart's tracks
+            chartsTab === 'songs' && songsChartsLoaded && !songsChartsLoading && (() => {
+              const filtered = filterCharts(songsCharts);
 
               if (filtered.length === 0 && chartsSearch) {
                 return React.createElement(EmptyState, { icon: Icons.Search, title: 'No tracks match your search', body: 'Try other words, or clear the filter.' });
@@ -284,7 +281,7 @@ React.createElement('span', {
               // Virtualized past 100 rows (#767); each row is a list item.
               return React.createElement(VirtualizedTrackList, {
                 tracks: filtered,
-                parentRef: lastfmChartsScrollContainerRef,
+                parentRef: songsChartsScrollContainerRef,
                 renderRow: (track, index) => {
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
@@ -296,13 +293,13 @@ React.createElement('span', {
                     isNowPlaying,
                     sources: { trackSources, playbackResolvers, resolverOrder },
                     allResolvers,
-                    rowRef: observedRowRef(lastfmChartsRowRefs, lastfmChartsObserverRef, track.id),
+                    rowRef: observedRowRef(songsChartsRowRefs, songsChartsObserverRef, track.id),
                     // Sources (resolved or empty) go along so playback resolves
                     // what isn't yet; the source buttons share the row's context.
                     onPlay: (resolverId) => playTrackRow(
                       { id: track.id, title: track.title, artist: track.artist, album: '', sources: trackSources[track.id] || {} },
                       filtered.slice(index + 1).map(t => ({ id: t.id, title: t.title, artist: t.artist, album: '', sources: trackSources[t.id] || {} })),
-                      { type: 'songs-charts', name: chartsSongsSource === 'apple' ? 'Apple Music Charts' : 'Last.fm Charts' },
+                      { type: 'songs-charts', name: current ? `${current.label} Charts` : 'Charts' },
                       resolverId),
                     onOpenArtist: fetchArtistData,
                     onContextMenu: () => window.showItemMenu({
@@ -310,9 +307,7 @@ React.createElement('span', {
                       track: { id: track.id, title: track.title, artist: track.artist, album: '' }
                     }),
                     duration: true,
-                    // Last.fm's chart says how many listen; the column is
-                    // always there on Last.fm so the rows line up.
-                    cells: chartsSongsSource === 'lastfm' ? [{ key: 'listeners', content: track.listeners > 0 ? `${(track.listeners / 1000).toFixed(0)}K listeners` : '', width: '90px', align: 'right' }] : []
+                    cells: [{ key: 'listeners', content: playCount(track), width: '90px', align: 'right' }]
                   });
                 }
               });

@@ -48,7 +48,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Related Artists** - Discover similar artists via Last.fm
 - **Album Art** - High-quality artwork from Cover Art Archive
 - **Release Filtering** - Filter by albums, EPs, singles, live releases, and compilations
-- **Charts** - Browse top albums and songs from iTunes and Last.fm, filterable by country
+- **Charts** - Browse top albums and songs from Apple Music, Last.fm and ListenBrainz, filterable by country
 
 ### Playlists & Queue
 - **URL Import** - Paste Spotify, Apple Music, Amazon Music, SoundCloud, YouTube, ListenBrainz, or hosted .xspf playlist URLs

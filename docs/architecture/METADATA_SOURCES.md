@@ -10,8 +10,8 @@ This document describes all external data sources used by Parachord for fetching
 | **Artist Bios** | Last.fm | Wikipedia | Discogs | - |
 | **Related Artists** | Last.fm + ListenBrainz (merged) | - | - | - |
 | **Album Art** | Cover Art Archive | Embedded metadata | Folder art | - |
-| **Charts (Albums)** | Apple Music RSS | - | - | - |
-| **Charts (Songs)** | Apple Music RSS | Last.fm | - | - |
+| **Charts (Albums)** | Plug-ins with `charts`, in the user's order (Apple Music, ListenBrainz) | - | - | - |
+| **Charts (Songs)** | Plug-ins with `charts`, in the user's order (Apple Music, Last.fm, ListenBrainz) | - | - | - |
 | **Critics Picks** | Achordion RSS (Critical Darlings) | - | - | - |
 | **Recommendations** | Last.fm | ListenBrainz | - | - |
 | **Scrobbling** | Last.fm | ListenBrainz | Libre.fm | - |
@@ -121,23 +121,15 @@ Callers that have a track title but no album (chat cards from prose) use `getTra
 
 Displayed on the "Pop of the Tops" page.
 
-### Apple Music Charts
+Every chart comes from a plug-in with the `charts` capability (#1539 step 3); the page lists them in the user's order and the user picks one per tab. See docs/architecture/plugins.md "Charts".
 
-| Endpoint | Auth | Notes |
-|----------|------|-------|
-| `rss.applemarketingtools.com/api/v2/{country}/music/most-played/{limit}/albums.json` | No | Top albums |
-| `rss.applemarketingtools.com/api/v2/{country}/music/most-played/{limit}/songs.json` | No | Top songs |
+| Plug-in | Endpoint | Auth | Charts |
+|---------|----------|------|--------|
+| Apple Music | `rss.marketingtools.apple.com/api/v2/{country}/music/most-played/{limit}/{albums,songs}.json` | No | Albums and tracks, by country (US, GB, CA, AU, DE, FR, JP, KR, BR, MX, ES, IT, NL, SE, PL) |
+| Last.fm | `ws.audioscrobbler.com/2.0/?method=chart.gettoptracks`, `geo.gettoptracks&country={name}` | API key | Tracks, Global or by country |
+| ListenBrainz | `api.listenbrainz.org/1/stats/sitewide/{recordings,release-groups}?range=week` | No (the user's token goes along when there is one) | Tracks and albums, Global, this week |
 
-**Supported Countries:** US, GB, CA, AU, DE, FR, JP, KR, BR, MX, ES, IT, NL, SE, PL
-
-### Last.fm Charts
-
-| Endpoint | Auth | Notes |
-|----------|------|-------|
-| `ws.audioscrobbler.com/2.0/?method=chart.gettoptracks` | API key | Global charts |
-| `ws.audioscrobbler.com/2.0/?method=geo.gettoptracks&country={country}` | API key | Country-specific |
-
-**Code Location:** `src/renderer/app.js` → `loadCharts()` (Apple Music albums), `loadAppleMusicSongsCharts()`, `loadLastfmCharts()`. `src/charts-utils.js` holds copies of the parsing helpers that only `tests/charts/charts.test.js` uses; the app does not load it.
+**Code Location:** `src/renderer/app.js` → `loadCharts()` (Albums tab), `loadSongsCharts()` (Tracks tab), `loadChartFor()`; `src/renderer/lib/charts.js`; the plug-ins' `getCharts`.
 
 ---
 
@@ -247,7 +239,7 @@ Bridge between MusicBrainz and Wikipedia.
 | Artist top tracks | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `findArtistTopTracks()`, `getArtistTopTracks()`; the plug-ins' `getArtistTopTracks` (Last.fm `artist.gettoptracks`; ListenBrainz `/1/popularity/top-recordings-for-artist/{mbid}`, signed in only) |
 | Artist discography fallback | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `fetchArtistFromPlugins()` (`askInTurn`); the plug-ins' `getArtistReleases` (Spotify, Apple Music, Last.fm `artist.gettopalbums`, Discogs) |
 | Album art | `src/renderer/app.js` | `getAlbumArt()` |
-| Charts | `src/renderer/app.js` | `loadCharts()`, `loadAppleMusicSongsCharts()`, `loadLastfmCharts()` |
+| Charts | `src/renderer/app.js`, `src/renderer/lib/charts.js` | `loadCharts()`, `loadSongsCharts()`, `loadChartFor()`; the plug-ins' `getCharts` |
 | MusicKit artist images | `musickit-web.js` | `getArtistImage()` |
 | Scrobblers | `scrobbler-loader.js` | `ScrobbleManager`, `LastFmScrobbler`, `ListenBrainzScrobbler`, `LibreFmScrobbler` |
 | Library sync | `sync-providers/spotify.js`, `sync-providers/applemusic.js`, `sync-providers/listenbrainz.js` | One provider per service |

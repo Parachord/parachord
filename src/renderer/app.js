@@ -2023,6 +2023,7 @@ const { CANONICAL_RESOLVER_ORDER, appendUniqueId, insertRemembered, rememberOrde
 
 // Charts page country options (lib/charts-countries.js).
 const { CHARTS_COUNTRIES } = require('./lib/charts-countries');
+const { chartKind, chartProviders, regionOptions, pickRegion, chartItems, chartCacheKey } = require('./lib/charts');
 // History's and a friend's history's sort and period menus (lib/history-options.js).
 const { historySortOptions, historyPeriodOptions } = require('./lib/history-options');
 // The Playlists page's and Add to playlist's sort menu (lib/playlists-sort.js).
@@ -4982,17 +4983,20 @@ const Parachord = () => {
   const [chartsHeaderCollapsed, setChartsHeaderCollapsed] = useState(false);
   const [chartsSearchOpen, setChartsSearchOpen] = useState(false);
   const [chartsSearch, setChartsSearch] = useState('');
-  const [chartsTab, setChartsTab] = useState('albums'); // 'albums' (iTunes) | 'songs' (Last.fm)
-  const [chartsCountry, setChartsCountry] = useState(''); // Empty = global, or ISO code for country charts
-  const [lastfmCharts, setLastfmCharts] = useState([]); // Last.fm top tracks
-  const [lastfmChartsLoading, setLastfmChartsLoading] = useState(false);
-  const [lastfmChartsLoaded, setLastfmChartsLoaded] = useState(false);
-  const [lastfmChartsError, setLastfmChartsError] = useState(null); // the failed load's error, for ErrorState
-  const [chartsSongsSource, setChartsSongsSource] = useState('apple'); // 'apple' | 'lastfm'
-  const [appleMusicSongsCharts, setAppleMusicSongsCharts] = useState([]); // Apple Music top songs
-  const [appleMusicSongsChartsLoading, setAppleMusicSongsChartsLoading] = useState(false);
-  const [appleMusicSongsChartsLoaded, setAppleMusicSongsChartsLoaded] = useState(false);
-  const [appleMusicSongsChartsError, setAppleMusicSongsChartsError] = useState(null); // the failed load's error, for ErrorState
+  const [chartsTab, setChartsTab] = useState('albums'); // 'albums' | 'songs' (the Tracks tab)
+  // Each tab's chart comes from a plug-in with capabilities.charts
+  // (lib/charts.js, #1539 step 3). The picks: a plug-in id, or null for the
+  // first in the user's order; a region '' (Global) or an ISO code, or null
+  // for the source's default. What's on screen is the *Shown state: the
+  // automatic pick can land on a later source when the first one fails.
+  const [chartsPicks, setChartsPicks] = useState({ albums: { source: null, region: null }, songs: { source: null, region: null } });
+  const chartsPicksRef = useRef(chartsPicks);
+  chartsPicksRef.current = chartsPicks;
+  const [chartsShown, setChartsShown] = useState({ albums: null, songs: null }); // { source, region } per tab
+  const [songsCharts, setSongsCharts] = useState([]); // the Tracks tab's chart
+  const [songsChartsLoading, setSongsChartsLoading] = useState(false);
+  const [songsChartsLoaded, setSongsChartsLoaded] = useState(false);
+  const [songsChartsError, setSongsChartsError] = useState(null); // the failed load's error, for ErrorState
 
   // Critics Picks page state
   const [criticsHeaderCollapsed, setCriticsHeaderCollapsed] = useState(false);
@@ -6148,12 +6152,12 @@ const Parachord = () => {
   const [recommendationsGridColumns, setRecommendationsGridColumns] = useState({ cards: 0, friends: 0 });
 
   // Refs for Last.fm charts tracks visibility tracking
-  const lastfmChartsRowRefs = useRef(new Map());
-  const lastfmChartsObserverRef = useRef(null);
-  const visibleLastfmChartsTrackIds = useRef(new Set());
-  const lastfmChartsTracksRef = useRef([]); // Ref to access current tracks in observer callback
-  const lastfmChartsScrollContainerRef = useRef(null); // Ref to scroll container for IntersectionObserver root
-  const [lastfmChartsScrollContainerReady, setLastfmChartsScrollContainerReady] = useState(false);
+  const songsChartsRowRefs = useRef(new Map());
+  const songsChartsObserverRef = useRef(null);
+  const visibleSongsChartsTrackIds = useRef(new Set());
+  const songsChartsTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const songsChartsScrollContainerRef = useRef(null); // Ref to scroll container for IntersectionObserver root
+  const [songsChartsScrollContainerReady, setSongsChartsScrollContainerReady] = useState(false);
 
   // Refs for history tracks visibility tracking
   const historyTrackRowRefs = useRef(new Map());
@@ -8836,6 +8840,8 @@ const Parachord = () => {
           // Artists' top tracks and discographies (#1539 step 2).
           || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks)
           || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases)
+          // Pop of the Tops' charts (#1539 step 3).
+          || (axe.capabilities?.charts && axe.implementation?.getCharts)
         );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
@@ -8971,7 +8977,8 @@ const Parachord = () => {
           || (axe.capabilities?.similarArtists && axe.implementation?.getSimilarArtists)
           || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks)
           || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks)
-          || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases));
+          || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases)
+          || (axe.capabilities?.charts && axe.implementation?.getCharts));
         const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -24159,100 +24166,104 @@ ${trackListXml}
     return () => recommendationsObserverRef.current?.disconnect();
   }, [activeView, recommendationSongsKey, updateSchedulerVisibility, recommendationsScrollContainerReady]);
 
-  // Register page context for songs charts tracks resolution (Apple Music or Last.fm)
+  // Pop of the Tops' source menus (lib/charts.js, #1539 step 3): per tab,
+  // every installed plug-in with charts for it, turned on or not, minus one
+  // switched off, in the user's order; each with its name, period and
+  // regions. Built from state, not chartProvidersFor (declared further down).
+  const chartSources = useMemo(() => {
+    const isOff = (id) => (metaServiceConfigs?.[id] || {}).enabled === false || (metadataOffResolvers || []).includes(id);
+    const build = (tab) => chartProviders(resolverLoaderRef.current, chartKind(tab), { activeIds: activeResolvers, order: resolverOrder, isOff })
+      .map(r => ({ id: r.id, label: pluginName(r.id), period: r.charts.period || null, regions: regionOptions(r, chartKind(tab), CHARTS_COUNTRIES) }));
+    return { albums: build('albums'), songs: build('songs') };
+  }, [loadedResolvers, metaServices, activeResolvers, resolverOrder, metaServiceConfigs, metadataOffResolvers]);
+  // Changes when a source comes or goes, so a chart waiting for its first
+  // plug-in loads then.
+  const chartSourcesKey = `${chartSources.albums.map(c => c.id).join(',')}|${chartSources.songs.map(c => c.id).join(',')}`;
+
+  // Register page context for the Tracks tab's rows' resolution
   useEffect(() => {
     // Note: Charts (Pop of the Tops) uses activeView === 'discover'
-    const songsData = chartsSongsSource === 'apple' ? appleMusicSongsCharts : lastfmCharts;
-    if (activeView === 'discover' && chartsTab === 'songs' && songsData.length > 0) {
+    if (activeView === 'discover' && chartsTab === 'songs' && songsCharts.length > 0) {
       const cleanup = registerPageContext('songs-charts-tracks');
       return () => {
         abortSchedulerContext('songs-charts-tracks', { afterCurrentBatch: true });
         cleanup();
       };
     }
-  }, [activeView, chartsTab, chartsSongsSource, appleMusicSongsCharts.length, lastfmCharts.length, registerPageContext, abortSchedulerContext]);
+  }, [activeView, chartsTab, songsCharts.length, registerPageContext, abortSchedulerContext]);
 
   // Keep ref in sync with songs charts tracks for observer callback
   useEffect(() => {
-    const songsData = chartsSongsSource === 'apple' ? appleMusicSongsCharts : lastfmCharts;
-    lastfmChartsTracksRef.current = songsData;
-  }, [chartsSongsSource, appleMusicSongsCharts, lastfmCharts]);
+    songsChartsTracksRef.current = songsCharts;
+  }, [songsCharts]);
 
   // Set scroll container ready when switching to Songs tab or after charts reload
   // (ref callback may not fire if element already exists)
   useEffect(() => {
     // Note: Charts (Pop of the Tops) uses activeView === 'discover'
-    const isLoading = chartsSongsSource === 'apple' ? appleMusicSongsChartsLoading : lastfmChartsLoading;
-    if (activeView === 'discover' && chartsTab === 'songs' && lastfmChartsScrollContainerRef.current && !isLoading) {
-      setLastfmChartsScrollContainerReady(true);
+    if (activeView === 'discover' && chartsTab === 'songs' && songsChartsScrollContainerRef.current && !songsChartsLoading) {
+      setSongsChartsScrollContainerReady(true);
     }
-  }, [activeView, chartsTab, chartsSongsSource, appleMusicSongsChartsLoading, lastfmChartsLoading]);
+  }, [activeView, chartsTab, songsChartsLoading]);
 
   // Load the Tracks tab's chart once it's showing and the app can load it:
-  // the cache for Apple Music, the Last.fm key for Last.fm. The tab and
-  // source pickers used to start the load themselves and did nothing before
-  // the cache was ready, so a click then left the skeleton up for good. A
-  // failed load waits for Try again; this never retries it.
+  // the cache, the Last.fm key (Last.fm may be the source) and a plug-in with
+  // charts. The tab and source pickers used to start the load themselves and
+  // did nothing before the cache was ready, so a click then left the skeleton
+  // up for good. A failed load waits for Try again; this never retries it.
   useEffect(() => {
     if (activeView !== 'discover' || chartsTab !== 'songs') return;
-    if (chartsSongsSource === 'apple') {
-      if (cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading && !appleMusicSongsChartsError) {
-        loadAppleMusicSongsCharts({ country: chartsCountry });
-      }
-    } else if (chartsSongsSource === 'lastfm') {
-      if (lastfmKeyLoaded && !lastfmChartsLoaded && !lastfmChartsLoading && !lastfmChartsError) {
-        loadLastfmCharts({ country: chartsCountry });
-      }
+    if (cacheLoaded && lastfmKeyLoaded && chartSources.songs.length > 0 && !songsChartsLoaded && !songsChartsLoading && !songsChartsError) {
+      loadSongsCharts();
     }
-  }, [activeView, chartsTab, chartsSongsSource, cacheLoaded, lastfmKeyLoaded,
-    appleMusicSongsChartsLoaded, appleMusicSongsChartsLoading, appleMusicSongsChartsError,
-    lastfmChartsLoaded, lastfmChartsLoading, lastfmChartsError]);
+  }, [activeView, chartsTab, cacheLoaded, lastfmKeyLoaded, chartSourcesKey,
+    songsChartsLoaded, songsChartsLoading, songsChartsError]);
 
-  // IntersectionObserver for songs charts tracks visibility (Apple Music or Last.fm)
+  // IntersectionObserver for the Tracks tab's rows' visibility
   useEffect(() => {
     // Note: Charts (Pop of the Tops) uses activeView === 'discover'
     if (activeView !== 'discover' || chartsTab !== 'songs') {
-      lastfmChartsObserverRef.current?.disconnect();
-      visibleLastfmChartsTrackIds.current.clear();
-      setLastfmChartsScrollContainerReady(false);
+      songsChartsObserverRef.current?.disconnect();
+      visibleSongsChartsTrackIds.current.clear();
+      setSongsChartsScrollContainerReady(false);
       return;
     }
 
-    const tracks = chartsSongsSource === 'apple' ? appleMusicSongsCharts : lastfmCharts;
+    const tracks = songsCharts;
     if (tracks.length === 0) return;
 
     // Clear stale visible track IDs when tracks/source change
-    visibleLastfmChartsTrackIds.current.clear();
+    visibleSongsChartsTrackIds.current.clear();
     updateSchedulerVisibility('songs-charts-tracks', []);
 
     // Wait for scroll container to be available
-    const scrollContainer = lastfmChartsScrollContainerRef.current;
+    const scrollContainer = songsChartsScrollContainerRef.current;
     if (!scrollContainer) {
       return;
     }
 
-    lastfmChartsObserverRef.current = new IntersectionObserver(
+    songsChartsObserverRef.current = new IntersectionObserver(
       (entries) => {
         let changed = false;
         entries.forEach(entry => {
           const trackId = entry.target.dataset.trackId;
           if (entry.isIntersecting) {
-            if (!visibleLastfmChartsTrackIds.current.has(trackId)) {
-              visibleLastfmChartsTrackIds.current.add(trackId);
+            if (!visibleSongsChartsTrackIds.current.has(trackId)) {
+              visibleSongsChartsTrackIds.current.add(trackId);
               changed = true;
             }
           } else {
-            if (visibleLastfmChartsTrackIds.current.has(trackId)) {
-              visibleLastfmChartsTrackIds.current.delete(trackId);
+            if (visibleSongsChartsTrackIds.current.has(trackId)) {
+              visibleSongsChartsTrackIds.current.delete(trackId);
               changed = true;
             }
           }
         });
 
         if (changed) {
-          const currentTracks = lastfmChartsTracksRef.current;
+          const currentTracks = songsChartsTracksRef.current;
           const visibleTracks = [];
-          visibleLastfmChartsTrackIds.current.forEach(trackId => {
+          visibleSongsChartsTrackIds.current.forEach(trackId => {
             const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
@@ -24267,24 +24278,24 @@ ${trackListXml}
       { root: scrollContainer, rootMargin: '200px' }
     );
 
-    lastfmChartsRowRefs.current.forEach((element) => {
-      if (element) lastfmChartsObserverRef.current.observe(element);
+    songsChartsRowRefs.current.forEach((element) => {
+      if (element) songsChartsObserverRef.current.observe(element);
     });
 
     // Manually check initial visibility after a short delay
     setTimeout(() => {
-      if (!lastfmChartsObserverRef.current) return;
-      const currentTracks = lastfmChartsTracksRef.current;
+      if (!songsChartsObserverRef.current) return;
+      const currentTracks = songsChartsTracksRef.current;
       const visibleTracks = [];
 
-      lastfmChartsRowRefs.current.forEach((element, trackId) => {
+      songsChartsRowRefs.current.forEach((element, trackId) => {
         if (!element) return;
         const rect = element.getBoundingClientRect();
         const containerRect = scrollContainer.getBoundingClientRect();
         const isVisible = rect.bottom >= containerRect.top - 200 &&
                          rect.top <= containerRect.bottom + 200;
         if (isVisible) {
-          visibleLastfmChartsTrackIds.current.add(trackId);
+          visibleSongsChartsTrackIds.current.add(trackId);
           const track = currentTracks.find(t => t.id === trackId);
           if (track) {
             visibleTracks.push({
@@ -24300,8 +24311,8 @@ ${trackListXml}
       }
     }, 50);
 
-    return () => lastfmChartsObserverRef.current?.disconnect();
-  }, [activeView, chartsTab, chartsSongsSource, appleMusicSongsCharts, lastfmCharts, updateSchedulerVisibility, chartsSearch, lastfmChartsScrollContainerReady]);
+    return () => songsChartsObserverRef.current?.disconnect();
+  }, [activeView, chartsTab, songsCharts, updateSchedulerVisibility, chartsSearch, songsChartsScrollContainerReady]);
 
   // Register page context for history tracks resolution
   useEffect(() => {
@@ -25874,110 +25885,6 @@ ${tracks}
     return d instanceof Date && !isNaN(d) ? String(d.getUTCFullYear()) : '';
   };
 
-  const parseChartsJSON = (data) => {
-    try {
-      const results = data?.feed?.results || [];
-      const albums = [];
-
-      results.forEach((item, index) => {
-        const album = item.name || '';
-        const artist = item.artistName || '';
-        const artworkUrl = item.artworkUrl100 || '';
-        const link = item.url || '';
-        const genres = (item.genres || [])
-          .map(g => g.name)
-          .filter(g => g !== 'Music');
-
-        if (album && artist) {
-          albums.push({
-            id: `charts-${index}-${artist}-${album}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-            artist: artist,
-            title: album,
-            rank: index + 1,
-            link: link,
-            genres: genres,
-            pubDate: item.releaseDate ? new Date(item.releaseDate) : null,
-            // The date as Apple sent it ("2026-05-17"): its year is the card's
-            // (a Date of it can read as the day before in the Americas).
-            releaseDate: item.releaseDate || null,
-            // Use artwork URL directly from JSON (higher quality available)
-            albumArt: artworkUrl ? artworkUrl.replace('100x100bb', '300x300bb') : null
-          });
-        }
-      });
-
-      return albums;
-    } catch (error) {
-      console.error('Error parsing Charts JSON:', error);
-      return [];
-    }
-  };
-
-  // Parse Apple Music Charts RSS feed (legacy fallback)
-  const parseChartsRSS = (rssString) => {
-    try {
-      const parser = new DOMParser();
-      const xml = parser.parseFromString(rssString, 'text/xml');
-
-      const items = xml.querySelectorAll('item');
-      const albums = [];
-
-      items.forEach((item, index) => {
-        const titleText = item.querySelector('title')?.textContent || '';
-        const link = item.querySelector('link')?.textContent || '';
-        const description = item.querySelector('description')?.textContent || '';
-        const pubDate = item.querySelector('pubDate')?.textContent || '';
-
-        // Get artist from category with domain attribute
-        const categories = item.querySelectorAll('category');
-        let artist = '';
-        let genres = [];
-
-        categories.forEach(cat => {
-          if (cat.getAttribute('domain')) {
-            // Category with domain is the artist link
-            artist = cat.textContent || '';
-          } else {
-            // Categories without domain are genres
-            genres.push(cat.textContent);
-          }
-        });
-
-        // Title format is "Album Name - Artist Name"
-        // But we already have artist from category, so extract album from title
-        let album = titleText;
-        if (titleText.includes(' - ') && artist) {
-          album = titleText.replace(` - ${artist}`, '').trim();
-        }
-
-        // Fallback: if no artist from category, try parsing from title
-        if (!artist && titleText.includes(' - ')) {
-          const parts = titleText.split(' - ');
-          album = parts[0].trim();
-          artist = parts.slice(1).join(' - ').trim();
-        }
-
-        if (album && artist) {
-          albums.push({
-            id: `charts-${index}-${artist}-${album}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-            artist: artist,
-            title: album,
-            rank: index + 1,
-            link: link,
-            genres: genres.filter(g => g !== 'Music'),
-            pubDate: pubDate ? new Date(pubDate) : null,
-            albumArt: null
-          });
-        }
-      });
-
-      return albums;
-    } catch (error) {
-      console.error('Error parsing Charts RSS:', error);
-      return [];
-    }
-  };
-
   // Persist the Critical Darlings union base (parachord#962) — ref + disk cache,
   // so the section survives restart and seeds the next fetch's union.
   const persistCriticsPicksCache = (albums) => {
@@ -26082,63 +25989,39 @@ ${tracks}
   };
 
   // Load Charts from Apple Music JSON feed
+  // The Albums tab's chart (also Home's Pop of the Tops cards): the picked
+  // plug-in's, else the first in the user's order that answers
+  // (loadChartFor). Nothing loads until a plug-in with charts is loaded; the
+  // page's effect asks again once one is.
   const loadCharts = async (forceRefresh = false) => {
     if (chartsLoading) return;
     if (chartsLoaded && !forceRefresh) return;
 
     setChartsLoading(true);
     setChartsError(null);
-    console.log('📊 Loading Charts...');
-
+    console.log('📊 Loading the albums chart…');
     try {
-      // Use JSON endpoint instead of RSS (RSS returns 500 intermittently).
-      // Apple moved the feed to rss.marketingtools.apple.com (the old host
-      // answers with a 301 there): ask the new host directly. A request with
-      // no timeout could stall for good on a cold start and leave Pop of the
-      // Tops loading forever (#1493), so each try gives up after 5 s (the feed
-      // answers in under one), and a
-      // stalled or failed first try is tried once more.
-      const CHARTS_URL = 'https://rss.marketingtools.apple.com/api/v2/us/music/most-played/50/albums.json';
-      // The timeout covers reading the body too: a body that stalls after
-      // the headers hung the load just the same.
-      const fetchChartsOnce = async () => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
-        try {
-          // no-store: on a cold start the HTTP cache could hold this request
-          // until it timed out (it never stalled with the cache off).
-          const res = await fetch(CHARTS_URL, { signal: controller.signal, cache: 'no-store' });
-          if (!res.ok) throw new Error(`Failed to fetch charts: ${res.status}`);
-          return await res.json();
-        } finally {
-          clearTimeout(timer);
-        }
-      };
-      let data;
-      try {
-        data = await fetchChartsOnce();
-      } catch (firstError) {
-        console.warn('📊 Charts request failed, trying once more:', firstError?.name || firstError);
-        data = await fetchChartsOnce();
+      const result = await loadChartFor('albums', { forceReload: forceRefresh });
+      if (!result) return;
+      setChartsShown(prev => ({ ...prev, albums: { source: result.source, region: result.region } }));
+      if (result.error) {
+        console.error('Failed to load the albums chart:', result.error);
+        setCharts([]);
+        setChartsError(errorText(result.error, `${pluginName(result.source)}’s chart didn’t load. Try again, or pick another source.`));
+        return;
       }
-
-      const albums = parseChartsJSON(data);
-
-      console.log(`📊 Parsed ${albums.length} albums from Charts`);
-
+      const albums = result.items;
       setCharts(albums);
       setChartsLoaded(true);
       setChartsLastFetched(Date.now());
 
       // Check for new content (unread badge)
-      const hash = generateDiscoveryHash(albums);
-      checkDiscoveryUnread('charts', hash);
+      checkDiscoveryUnread('charts', generateDiscoveryHash(albums));
 
       // Wait for cache to be loaded before fetching album art
       if (cacheLoaded) {
         fetchChartsAlbumArt(albums);
       } else {
-        // If cache not ready, wait a bit and try again
         const waitForCache = setInterval(() => {
           if (cacheLoaded) {
             clearInterval(waitForCache);
@@ -26146,10 +26029,6 @@ ${tracks}
           }
         }, 100);
       }
-
-    } catch (error) {
-      console.error('Failed to load Charts:', error);
-      setChartsError('Failed to load Charts. Please try again.');
     } finally {
       setChartsLoading(false);
     }
@@ -26202,136 +26081,115 @@ ${tracks}
     }
   };
 
-  // Load Last.fm Charts - supports country filtering via geo.gettoptracks
-  const loadLastfmCharts = async (options = {}) => {
-    const { country, forceReload = false } = options;
+  // Pop of the Tops' sources for a tab (lib/charts.js, #1539 step 3): every
+  // installed plug-in with charts for that kind, turned on or not, minus one
+  // switched off; in the user's order.
+  const chartProvidersFor = (tab) => chartProviders(resolverLoaderRef.current, chartKind(tab), {
+    activeIds: activeResolversRef.current || [],
+    order: resolverOrderRef.current || [],
+    isOff: pluginSwitchedOff
+  });
 
-    // Allow reload when filters change
-    if (lastfmChartsLoading) return;
-    if (lastfmChartsLoaded && !forceReload) return;
-
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) {
-      console.log('📊 No Last.fm API key available for charts');
-      // Settled, so the Tracks tab says why instead of keeping its skeleton.
-      setLastfmCharts([]);
-      setLastfmChartsLoaded(false);
-      setLastfmChartsError(userError('Last.fm’s chart needs a Last.fm API key. Add your own in Settings.'));
-      return;
+  // Load one tab's chart. The picked source only; with no pick (or a pick
+  // that's gone), each source in order until one has a chart, so a failing
+  // first source never leaves the page empty. A source that fails with a
+  // cached chart shows that (with a toast saying how old). Resolves to
+  // { source, region, items } or { source, region, error }, or null when no
+  // plug-in with charts is loaded yet.
+  const loadChartFor = async (tab, { forceReload = false } = {}) => {
+    const kind = chartKind(tab);
+    const providers = chartProvidersFor(tab);
+    if (providers.length === 0) return null;
+    const pick = chartsPicksRef.current[tab] || {};
+    const picked = pick.source && providers.find(p => p.id === pick.source);
+    const queue = picked ? [picked] : providers;
+    let failure = null;
+    for (const provider of queue) {
+      const region = pickRegion(provider, kind, pick.region);
+      if (region == null) continue;
+      const key = chartCacheKey(kind, provider.id, region);
+      const cached = chartsCache.current[key];
+      const now = Date.now();
+      if (!forceReload && cached?.items && (now - cached.timestamp) < CACHE_TTL.charts) {
+        console.log(`📦 Using cached ${pluginName(provider.id)} ${kind} chart (${region || 'global'})`);
+        return { source: provider.id, region, items: cached.items };
+      }
+      try {
+        const raw = await resolverLoaderRef.current.getCharts(provider.id, {
+          kind,
+          country: region || null,
+          countryName: region ? (CHARTS_COUNTRIES.find(c => c.code === region)?.name || '') : '',
+          limit: 50
+        }, await configForSimilar(provider.id));
+        if (raw == null) continue;
+        const items = chartItems(kind, provider.id, region, raw);
+        // An empty chart when there's another source to try: try it.
+        if (items.length === 0 && !picked) continue;
+        chartsCache.current[key] = { items, timestamp: Date.now() };
+        console.log(`📊 ${items.length} ${kind} from ${pluginName(provider.id)}'s chart (${region || 'global'})`);
+        return { source: provider.id, region, items };
+      } catch (error) {
+        console.warn(`📊 ${pluginName(provider.id)}'s ${kind} chart failed:`, error?.message || error);
+        if (cached?.items?.length) {
+          const hours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
+          showToast(`Couldn’t refresh ${pluginName(provider.id)}’s chart. Showing the one from ${countOf(hours, 'hour')} ago.`, 'info');
+          return { source: provider.id, region, items: cached.items };
+        }
+        if (!failure) failure = { source: provider.id, region, error };
+      }
     }
+    const first = picked || providers[0];
+    return failure || { source: first.id, region: pickRegion(first, kind, pick.region), error: userError('No chart came back. Try again in a moment.') };
+  };
 
-    // Cache key based on country (or 'global' for no country)
-    const cacheKey = `lastfm-${country || 'global'}`;
-    const cached = chartsCache.current[cacheKey];
-    const now = Date.now();
-
-    // Check cache first (unless force reload)
-    if (!forceReload && cached && (now - cached.timestamp) < CACHE_TTL.charts) {
-      const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
-      console.log(`📦 Using cached Last.fm Charts (${country || 'global'}, ${cacheAgeHours}h old)`);
-      setLastfmCharts(cached.tracks);
-      setLastfmChartsLoaded(true);
-      setLastfmChartsError(null);
-      return;
-    }
-
-    setLastfmChartsLoading(true);
-    setLastfmChartsLoaded(false);
-    setLastfmChartsError(null);
-    setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
-
-    try {
-      let url;
-      let logMessage;
-
-      if (country) {
-        // Use geo.gettoptracks for country filtering
-        const countryInfo = CHARTS_COUNTRIES.find(c => c.code === country);
-        const countryName = countryInfo?.lastfmName || 'United States';
-        const params = new URLSearchParams({
-          method: 'geo.gettoptracks',
-          country: countryName,
-          api_key: apiKey,
-          format: 'json',
-          limit: '50'
-        });
-        url = `https://ws.audioscrobbler.com/2.0/?${params}`;
-        logMessage = `📊 Loading Last.fm Charts (${countryName})…`;
-      } else {
-        // Global charts
-        url = `https://ws.audioscrobbler.com/2.0/?method=chart.gettoptracks&api_key=${apiKey}&format=json&limit=50`;
-        logMessage = '📊 Loading Last.fm Global Charts…';
-      }
-
-      console.log(logMessage);
-      const response = await lastfmFetch(url);
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch Last.fm charts: ${response.status}`);
-      }
-
-      const data = await response.json();
-      // Response structure differs slightly by endpoint
-      const tracks = data.tracks?.track || data.toptracks?.track || [];
-
-      const parsedTracks = tracks.map((track, index) => ({
-        id: `lastfm-chart-${index}-${track.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        title: track.name,
-        artist: track.artist?.name || (typeof track.artist === 'string' ? track.artist : 'Unknown Artist'),
-        album: '', // Last.fm doesn't include album info in these endpoints
-        rank: index + 1,
-        playcount: parseInt(track.playcount) || 0,
-        listeners: parseInt(track.listeners) || 0,
-        url: track.url,
-        albumArt: track.image?.find(img => img.size === 'extralarge')?.['#text'] || null,
-        source: 'lastfm',
-        mbid: track.mbid || null
-      }));
-
-      console.log(`📊 Parsed ${parsedTracks.length} tracks from Last.fm Charts`);
-
-      // Save to cache
-      chartsCache.current[cacheKey] = { tracks: parsedTracks, timestamp: Date.now() };
-
-      setLastfmCharts(parsedTracks);
-      setLastfmChartsLoaded(true);
-
-      // Fetch album art for tracks that don't have it
-      fetchLastfmChartsAlbumArt(parsedTracks);
-
-    } catch (error) {
-      console.error('Failed to load Last.fm Charts:', error);
-      // If we have stale cache data, use it as fallback
-      if (cached && cached.tracks) {
-        const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
-        console.log(`📦 Using stale cache as fallback (${cacheAgeHours}h old)`);
-        setLastfmCharts(cached.tracks);
-        setLastfmChartsLoaded(true);
-        showConfirmDialog({
-          type: 'info',
-          title: 'Using cached data',
-          message: `Could not refresh Last.fm charts. Showing cached data from ${cacheAgeHours} hours ago.`
-        });
-      } else {
-        // Nothing to fall back on: the Tracks tab shows ErrorState with Try again.
-        setLastfmCharts([]);
-        setLastfmChartsError(error);
-      }
-    } finally {
-      setLastfmChartsLoading(false);
+  // Pick a tab's source or region (the page's menus): the next load uses it.
+  const pickChart = (tab, change) => {
+    setChartsPicks(prev => ({ ...prev, [tab]: { ...prev[tab], ...change } }));
+    chartsPicksRef.current = { ...chartsPicksRef.current, [tab]: { ...chartsPicksRef.current[tab], ...change } };
+    if (tab === 'albums') {
+      setChartsError(null);
+      setChartsLoaded(false);
+    } else {
+      setSongsChartsError(null);
+      setSongsChartsLoaded(false);
     }
   };
 
-  // Fetch album art for Last.fm Charts tracks
-  const fetchLastfmChartsAlbumArt = async (tracks) => {
-    for (const track of tracks) {
-      // Skip if already has art from Last.fm
-      if (track.albumArt && !track.albumArt.includes('2a96cbd8b46e442fc41c2b86b821562f')) continue;
+  // The Tracks tab's chart; the page's effect starts it once it can.
+  const loadSongsCharts = async ({ forceReload = false } = {}) => {
+    if (songsChartsLoading) return;
+    if (songsChartsLoaded && !forceReload) return;
+    setSongsChartsLoading(true);
+    setSongsChartsLoaded(false);
+    setSongsChartsError(null);
+    setSongsChartsScrollContainerReady(false); // Reset to re-trigger observer setup
+    try {
+      const result = await loadChartFor('songs', { forceReload });
+      if (!result) return;
+      setChartsShown(prev => ({ ...prev, songs: { source: result.source, region: result.region } }));
+      if (result.error) {
+        // Nothing to fall back on: the Tracks tab shows ErrorState with Try again.
+        setSongsCharts([]);
+        setSongsChartsError(result.error);
+        return;
+      }
+      setSongsCharts(result.items);
+      setSongsChartsLoaded(true);
+      fetchSongsChartsAlbumArt(result.items);
+    } finally {
+      setSongsChartsLoading(false);
+    }
+  };
 
+  // Covers for the Tracks tab's rows that came without one, through the
+  // album-art pipeline (the track's album when the chart names it).
+  const fetchSongsChartsAlbumArt = async (tracks) => {
+    for (const track of tracks) {
+      if (track.albumArt) continue;
       try {
-        const artUrl = await getAlbumArt(track.artist, track.title);
+        const artUrl = await getAlbumArt(track.artist, track.album || track.title);
         if (artUrl) {
-          setLastfmCharts(prev => prev.map(t =>
+          setSongsCharts(prev => prev.map(t =>
             t.id === track.id ? { ...t, albumArt: artUrl } : t
           ));
         }
@@ -26340,98 +26198,6 @@ ${tracks}
       }
       // MusicBrainz rate limit: 1 request per second
       await new Promise(resolve => setTimeout(resolve, 1100));
-    }
-  };
-
-  // Load Apple Music Songs Charts
-  const loadAppleMusicSongsCharts = async (options = {}) => {
-    const { forceReload = false, country = chartsCountry || 'us' } = options;
-
-    if (appleMusicSongsChartsLoading) return;
-    if (appleMusicSongsChartsLoaded && !forceReload) return;
-
-    // Apple Music uses country codes (us, gb, de, etc.) - default to 'us' if empty
-    const countryCode = country || 'us';
-    const countryName = CHARTS_COUNTRIES.find(c => c.code === countryCode)?.name || 'United States';
-    const cacheKey = `apple-${countryCode}`;
-
-    // Check cache first (unless force reload)
-    const cached = chartsCache.current[cacheKey];
-    const now = Date.now();
-    if (!forceReload && cached && (now - cached.timestamp) < CACHE_TTL.charts) {
-      const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
-      console.log(`📦 Using cached Apple Music Songs Charts (${countryName}, ${cacheAgeHours}h old)`);
-      setAppleMusicSongsCharts(cached.tracks);
-      setAppleMusicSongsChartsLoaded(true);
-      setAppleMusicSongsChartsError(null);
-      return;
-    }
-
-    setAppleMusicSongsChartsLoading(true);
-    setAppleMusicSongsChartsLoaded(false);
-    setAppleMusicSongsChartsError(null);
-    setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
-
-    try {
-      console.log(`📊 Loading Apple Music Songs Charts (${countryName})...`);
-      const response = await fetch(`https://rss.marketingtools.apple.com/api/v2/${countryCode}/music/most-played/50/songs.json`);
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unable to read error response');
-        console.error(`❌ Apple Music Songs Charts fetch failed: ${response.status} ${response.statusText}`, errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('📊 Apple Music Songs Charts response:', { feedTitle: data?.feed?.title, resultsCount: data?.feed?.results?.length, country: data?.feed?.country });
-
-      const results = data?.feed?.results || [];
-      if (results.length === 0) {
-        console.warn('⚠️ Apple Music Songs Charts returned empty results');
-      }
-
-      const parsedTracks = results.map((item, index) => ({
-        id: `apple-chart-${countryCode}-${index}-${item.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        title: item.name || '',
-        artist: item.artistName || 'Unknown Artist',
-        album: '', // Songs endpoint doesn't include album name
-        rank: index + 1,
-        albumArt: item.artworkUrl100 ? item.artworkUrl100.replace('100x100', '600x600') : null,
-        genres: (item.genres || []).map(g => g.name).filter(g => g !== 'Music'),
-        url: item.url || '',
-        source: 'apple',
-        releaseDate: item.releaseDate || null
-      }));
-
-      console.log(`📊 Parsed ${parsedTracks.length} tracks from Apple Music Songs Charts (${countryName})`);
-
-      // Save to cache
-      chartsCache.current[cacheKey] = { tracks: parsedTracks, timestamp: Date.now() };
-
-      setAppleMusicSongsCharts(parsedTracks);
-      setAppleMusicSongsChartsLoaded(true);
-
-    } catch (error) {
-      console.error('❌ Failed to load Apple Music Songs Charts:', error.message || error);
-      // If we have stale cache data, use it as fallback
-      if (cached && cached.tracks) {
-        const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
-        console.log(`📦 Using stale cache as fallback (${cacheAgeHours}h old)`);
-        setAppleMusicSongsCharts(cached.tracks);
-        setAppleMusicSongsChartsLoaded(true);
-        showConfirmDialog({
-          type: 'info',
-          title: 'Using cached data',
-          message: `Could not refresh Apple Music charts. Showing cached data from ${cacheAgeHours} hours ago.`
-        });
-      } else {
-        // Nothing to fall back on: the Tracks tab shows ErrorState with Try
-        // again (a dialog left the tab on its skeleton behind it).
-        setAppleMusicSongsCharts([]);
-        setAppleMusicSongsChartsError(error);
-      }
-    } finally {
-      setAppleMusicSongsChartsLoading(false);
     }
   };
 
@@ -29545,11 +29311,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (activeView === 'discover' && cacheLoaded) {
       const staleAfterMs = 4 * 60 * 60 * 1000; // 4 hours
       const isStale = chartsLastFetched && (Date.now() - chartsLastFetched) > staleAfterMs;
-      if (!chartsLoaded || isStale) {
+      // A failed load waits for Try again (or another pick), and nothing
+      // loads before a plug-in with charts has (chartSourcesKey).
+      if ((!chartsLoaded && !chartsError) || isStale) {
         loadCharts(isStale);
       }
     }
-  }, [activeView, cacheLoaded, chartsLoaded]);
+  }, [activeView, cacheLoaded, chartsLoaded, chartsError, chartSourcesKey]);
 
   // Load critics picks when navigating to critics-picks page (re-fetch if stale)
   useEffect(() => {
@@ -33460,14 +33228,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // (capabilities.similarArtists / similarTracks, lib/similar-music.js,
   // #1539): Related Artists and Spinoff ask them all in the user's order and
   // merge the answers, so one service failing never empties either.
+  // Switched off (its Enable switch), or its "Use metadata from" switch is
+  // off (#1505): similar music, top tracks, discographies and charts are
+  // metadata.
+  const pluginSwitchedOff = (id) => (metaServiceConfigsRef.current?.[id] || {}).enabled === false
+    || (metadataOffRef.current || []).includes(id);
   const similarProvidersFor = (capability) => similarProviders(resolverLoaderRef.current, capability, {
     activeIds: activeResolversRef.current || [],
     order: resolverOrderRef.current || [],
     metaIds: (metaServicesRef.current || []).map(s => s.id),
-    // Switched off (its Enable switch), or its "Use metadata from" switch is
-    // off (#1505): similar music, top tracks and discographies are metadata.
-    isOff: (id) => (metaServiceConfigsRef.current?.[id] || {}).enabled === false
-      || (metadataOffRef.current || []).includes(id)
+    isOff: pluginSwitchedOff
   });
   // A config whose key isn't ready yet (Last.fm before main's built-in pair
   // arrives) is a failure for this ask, never a keyless empty answer.
@@ -37192,7 +36962,7 @@ useEffect(() => {
   // Stable function props for the memo'd ChartsPage (keys must
   // match CHARTS_PAGE_HANDLERS in charts-page.js).
   const chartsPageHandlers = useStableHandlers({
-    albumCardActions, chartAlbumYear, copyParachordLink, fetchArtistData, loadAppleMusicSongsCharts, loadCharts, loadLastfmCharts, observedRowRef, openChartsAlbum, patchListArt, playTrackRow, prefetchChartsTracks, retryBrokenListArt,
+    albumCardActions, chartAlbumYear, copyParachordLink, fetchArtistData, loadCharts, loadSongsCharts, observedRowRef, openChartsAlbum, patchListArt, pickChart, playTrackRow, prefetchChartsTracks, retryBrokenListArt,
   });
 
   // Stable function props for the memo'd ConcertsPage (keys must
@@ -37573,42 +37343,37 @@ useEffect(() => {
         // ChartsPage (components/charts-page.js), a memo'd page.
         activeView === 'discover' && React.createElement(ChartsPage, {
           allResolvers,
-          appleMusicSongsCharts,
-          appleMusicSongsChartsError,
-          appleMusicSongsChartsLoaded,
-          appleMusicSongsChartsLoading,
           charts,
-          chartsCountry,
           chartsError,
           chartsHeaderCollapsed,
           chartsLoaded,
           chartsLoading,
           chartsSearch,
           chartsSearchOpen,
-          chartsSongsSource,
+          chartsPicks,
+          chartsShown,
+          chartSources,
           chartsTab,
           currentTrack,
           filterCharts,
           handleChartsScroll,
           isPlaying,
-          lastfmCharts,
-          lastfmChartsError,
-          lastfmChartsLoaded,
-          lastfmChartsLoading,
-          lastfmChartsObserverRef,
-          lastfmChartsRowRefs,
-          lastfmChartsScrollContainerRef,
+          songsCharts,
+          songsChartsError,
+          songsChartsLoaded,
+          songsChartsLoading,
+          songsChartsObserverRef,
+          songsChartsRowRefs,
+          songsChartsScrollContainerRef,
           playbackResolvers,
           prefetchedReleases,
           resolverOrder,
           setCharts,
-          setChartsCountry,
           setChartsError,
           setChartsSearch,
           setChartsSearchOpen,
-          setChartsSongsSource,
           setChartsTab,
-          setLastfmChartsScrollContainerReady,
+          setSongsChartsScrollContainerReady,
           trackSources,
           ...chartsPageHandlers
         }),

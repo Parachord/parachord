@@ -284,6 +284,53 @@ module.exports = {
     return out;
   },
 
+  // The charts capability (#1539 step 3): Last.fm's top tracks, worldwide
+  // (chart.gettoptracks) or for a country (geo.gettoptracks), moved out of
+  // app.js (loadLastfmCharts). query: { kind: 'tracks', country?, countryName?,
+  // limit? }; countryName is the country's English name, which geo charts
+  // take. Albums aren't charted (null). Answers [{ title, artist, albumArt,
+  // url, listeners, listens, mbid }], most played first. Same failure rules as
+  // the rest: an error body or a failed request THROWS.
+  getCharts: async function (query, config) {
+    if (!query || query.kind !== 'tracks') return null;
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm chart: no API key yet');
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 50));
+    const countryName = query.country ? String(query.countryName || '').trim() : '';
+    if (query.country && !countryName) return null;
+    const url = 'https://ws.audioscrobbler.com/2.0/?' + (countryName
+      ? 'method=geo.gettoptracks&country=' + encodeURIComponent(countryName)
+      : 'method=chart.gettoptracks') +
+      '&limit=' + limit + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Last.fm chart failed: ' + response.status);
+    const data = await response.json();
+    if (data && data.error !== undefined) throw new Error('Last.fm chart failed: error ' + data.error);
+    const list = (data && ((data.tracks && data.tracks.track) || (data.toptracks && data.toptracks.track))) || [];
+    const rows = Array.isArray(list) ? list : [list];
+    const out = [];
+    for (const t of rows) {
+      if (!t || typeof t.name !== 'string' || !t.name.trim()) continue;
+      const artist = (t.artist && t.artist.name) || (typeof t.artist === 'string' ? t.artist : '');
+      const image = Array.isArray(t.image) ? t.image.find((img) => img && img.size === 'extralarge') : null;
+      const art = image && image['#text'];
+      const listeners = parseInt(t.listeners, 10);
+      const listens = parseInt(t.playcount, 10);
+      out.push({
+        title: t.name,
+        artist: artist || 'Unknown Artist',
+        // Last.fm's grey star stands in for a missing cover: leave it out so
+        // the app's album-art pipeline finds the real one.
+        albumArt: art && art.indexOf('/2a96cbd8b46e442fc41c2b86b821562f.png') === -1 ? art : undefined,
+        url: t.url || undefined,
+        listeners: Number.isFinite(listeners) ? listeners : undefined,
+        listens: Number.isFinite(listens) ? listens : undefined,
+        mbid: t.mbid || undefined
+      });
+    }
+    return out;
+  },
+
   // The artistReleases capability (#1539 step 2): artist.gettopalbums, the
   // artist page's discography when MusicBrainz is slow or doesn't know the
   // artist, moved out of app.js (fetchArtistFromLastfm). artist: { name }.
