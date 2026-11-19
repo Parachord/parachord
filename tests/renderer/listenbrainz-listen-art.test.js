@@ -44,15 +44,17 @@ describe('app.js wiring', () => {
   };
   const LISTEN_COVER = /albumArt: listenBrainzCoverUrl\(listen\.track_metadata\?\.mbid_mapping\)/;
 
+  // A friend's listens come from their plug-in's getRecentListens (#1539
+  // step 5), which carries the listen's cover (checked with your own
+  // History below); the app keeps it.
   test('the friend card takes the listen\'s cover', () => {
     const body = sliceFrom('const fetchFriendRecentTrack = async', '\n  };\n');
-    expect(body).toMatch(LISTEN_COVER);
+    expect(body).toMatch(/albumArt: newest\.albumArt \|\| null/);
   });
 
   test('a friend\'s Recent tab takes each listen\'s cover', () => {
     const body = sliceFrom('const loadFriendRecentTracks = async', 'const fetchFriendTopTracksList = async');
-    expect(body).toMatch(LISTEN_COVER);
-    expect(body).not.toMatch(/albumArt: null/);
+    expect(body).toMatch(/albumArt: t\.albumArt \|\| null/);
   });
 
   test('your own ListenBrainz History takes each listen\'s cover (the plug-in\'s getRecentListens, #1539)', () => {

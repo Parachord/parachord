@@ -36,10 +36,11 @@ describe('app.js wiring', () => {
     return src.slice(start, src.indexOf(endMarker, start));
   };
 
-  test('the ListenBrainz branch takes its cover from the stats payload', () => {
+  test('an album takes the cover its plug-in matched (ListenBrainz\'s, from the stats payload; #1539 step 5)', () => {
     const body = sliceFrom('const loadFriendTopAlbums = async', 'const FRIEND_TOP_ALBUM_ART_CONCURRENCY');
-    expect(body).toMatch(/image: listenBrainzCoverUrl\(release\)/);
-    expect(body).not.toMatch(/image: null/);
+    expect(body).toMatch(/image: album\.albumArt \|\| null/);
+    const plugin = require('fs').readFileSync(require('path').join(__dirname, '../../plugins-src/listenbrainz/implementation.js'), 'utf8');
+    expect(plugin).toMatch(/r\.caa_id && r\.caa_release_mbid \? 'https:\/\/coverartarchive\.org\/release\/'/);
   });
 
   test('the remaining covers go through getAlbumArt and the coalesced writer, not a per-album search', () => {

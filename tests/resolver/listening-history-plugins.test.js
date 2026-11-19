@@ -10,7 +10,7 @@ const path = require('path');
 const load = (id) => {
   const axe = JSON.parse(fs.readFileSync(path.join(__dirname, `../../plugins/${id}.axe`), 'utf8'));
   const fns = {};
-  for (const name of ['getTopItems', 'getRecentListens']) fns[name] = new Function('return ' + axe.implementation[name])();
+  for (const name of ['getTopItems', 'getRecentListens', 'getNowPlaying']) fns[name] = new Function('return ' + axe.implementation[name])();
   return { axe, ...fns };
 };
 const lastfm = load('lastfm');
@@ -146,5 +146,35 @@ describe('ListenBrainz', () => {
     await expect(listenbrainz.getRecentListens({}, { username: 'me' })).rejects.toThrow('503');
     mockFetch(() => reply({ payload: {} }));
     await expect(listenbrainz.getTopItems({ kind: 'albums', period: 'all' }, { username: 'me' })).rejects.toThrow('unexpected');
+  });
+});
+
+describe('friends (#1539 step 5): getNowPlaying and error statuses', () => {
+  test('Last.fm: playing now is the newest listen when Last.fm marks it so', async () => {
+    const self = { getRecentListens: lastfm.getRecentListens };
+    mockFetch(() => reply({ recenttracks: { track: [{ name: 'Now', artist: { '#text': 'A' }, album: { '#text': 'LP' }, '@attr': { nowplaying: 'true' } }] } }));
+    await expect(lastfm.getNowPlaying.call(self, { user: 'friend' }, { apiKey: KEY })).resolves.toEqual({ title: 'Now', artist: 'A', album: 'LP' });
+    expect(new URL(calls[0].url).searchParams.get('user')).toBe('friend');
+    expect(new URL(calls[0].url).searchParams.get('limit')).toBe('1');
+    mockFetch(() => reply({ recenttracks: { track: [{ name: 'Then', artist: { '#text': 'A' }, date: { uts: '1' } }] } }));
+    await expect(lastfm.getNowPlaying.call(self, { user: 'friend' }, { apiKey: KEY })).resolves.toBeNull();
+  });
+
+  test('ListenBrainz: /playing-now', async () => {
+    mockFetch(() => reply({ payload: { listens: [{ playing_now: true, track_metadata: { track_name: 'Now', artist_name: 'A', release_name: 'LP' } }] } }));
+    await expect(listenbrainz.getNowPlaying({ user: 'friend' }, {})).resolves.toEqual({ title: 'Now', artist: 'A', album: 'LP' });
+    expect(calls[0].url).toBe('https://api.listenbrainz.org/1/user/friend/playing-now');
+    mockFetch(() => reply({ payload: { listens: [] } }));
+    await expect(listenbrainz.getNowPlaying({ user: 'friend' }, {})).resolves.toBeNull();
+  });
+
+  test('a failed request\'s error carries its HTTP status, for the friend poll\'s backoff', async () => {
+    mockFetch(() => reply({ error: 29 }, { ok: false, status: 429 }));
+    expect((await lastfm.getRecentListens({ user: 'f' }, { apiKey: KEY }).catch((e) => e)).status).toBe(429);
+    expect((await lastfm.getTopItems({ user: 'f', kind: 'tracks', period: 'week' }, { apiKey: KEY }).catch((e) => e)).status).toBe(429);
+    mockFetch(() => reply(null, { ok: false, status: 404 }));
+    expect((await listenbrainz.getRecentListens({ user: 'f' }, {}).catch((e) => e)).status).toBe(404);
+    expect((await listenbrainz.getTopItems({ user: 'f', kind: 'albums', period: 'week' }, {}).catch((e) => e)).status).toBe(404);
+    expect((await listenbrainz.getNowPlaying({ user: 'f' }, {}).catch((e) => e)).status).toBe(404);
   });
 });

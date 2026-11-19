@@ -1,29 +1,43 @@
 /**
  * A Last.fm profile that hides its recent listening (403 + error 17) is
  * recognised as such, not as a broken account, and the friend UI says so.
- * The lib is tested directly; the app.js / collection-page.js wiring by
- * source markers, because app.js never runs under jest.
+ * The Last.fm plug-in is driven directly; the app.js / collection-page.js
+ * wiring by source markers, because app.js never runs under jest.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const { isLastfmHiddenListening, LASTFM_LOGIN_REQUIRED } = require('../../src/renderer/lib/lastfm-hidden-listening');
+// The rule lives in the Last.fm plug-in's getRecentListens (#1539 step 5):
+// driven here through the built plug-in, as the app materializes it.
+const axe = JSON.parse(fs.readFileSync(path.join(__dirname, '../../plugins/lastfm.axe'), 'utf8'));
+const getRecentListens = new Function('return ' + axe.implementation.getRecentListens)();
+const recentFails = async (status, body) => {
+  global.fetch = async () => ({ ok: status < 300, status, json: async () => body });
+  try {
+    await getRecentListens({ user: 'someone', limit: 1 }, { apiKey: 'k' });
+    return null;
+  } catch (error) {
+    return error;
+  } finally {
+    delete global.fetch;
+  }
+};
 
-describe('isLastfmHiddenListening', () => {
-  test('403 with error 17 is a hidden profile', () => {
-    expect(LASTFM_LOGIN_REQUIRED).toBe(17);
-    expect(isLastfmHiddenListening(403, { error: 17, message: 'Login: User required to be logged in' })).toBe(true);
-    expect(isLastfmHiddenListening(403, { error: '17' })).toBe(true);
+describe('the Last.fm plug-in recognises a hidden profile', () => {
+  test('403 with error 17 is a hidden profile, and says its status', async () => {
+    const error = await recentFails(403, { error: 17, message: 'Login: User required to be logged in' });
+    expect(error.hidesListening).toBe(true);
+    expect(error.status).toBe(403);
+    expect((await recentFails(403, { error: '17' })).hidesListening).toBe(true);
   });
 
-  test('other failures are not', () => {
-    expect(isLastfmHiddenListening(403, { error: 10, message: 'Invalid API key' })).toBe(false);
-    expect(isLastfmHiddenListening(404, { error: 6, message: 'User not found' })).toBe(false);
-    expect(isLastfmHiddenListening(500, { error: 17 })).toBe(false);
-    expect(isLastfmHiddenListening(403, null)).toBe(false);
-    expect(isLastfmHiddenListening(403, undefined)).toBe(false);
-    expect(isLastfmHiddenListening(200, { recenttracks: {} })).toBe(false);
+  test('other failures are not', async () => {
+    for (const [status, body] of [[403, { error: 10, message: 'Invalid API key' }], [500, { error: 17 }], [403, null], [429, {}]]) {
+      const error = await recentFails(status, body);
+      expect([status, error.hidesListening]).toEqual([status, undefined]);
+      expect(error.status).toBe(status);
+    }
   });
 });
 
@@ -47,7 +61,7 @@ describe('hidden-listening wiring', () => {
   });
 
   test('the friend poll reports hidden profiles and records them on the friend', () => {
-    expect(fetchRecent).toContain('isLastfmHiddenListening(response.status, body)');
+    expect(fetchRecent).toContain('if (error && error.hidesListening) return { track: null, hidesListening: true };');
     expect(fetchRecent).toContain('hidesListening: false');
     expect(updateHidden).toContain('if (hidesListening === null || hidesListening === !!friend.hidesListening) return;');
     expect(poll).toContain('const { track: recentTrack, hidesListening } = await fetchFriendRecentTrack(friend);');
@@ -61,6 +75,7 @@ describe('hidden-listening wiring', () => {
   });
 
   test('the Recent tab says the listening is hidden instead of toasting a failure', () => {
+    expect(historyLoad).toContain('if (error && error.hidesListening) {');
     expect(historyLoad).toContain("recent: [], recentHidden: true");
     expect(historyLoad).toContain('recentHidden: false');
     expect(src).toContain('friendHistoryData.recentHidden');

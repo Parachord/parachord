@@ -56,7 +56,10 @@ describe('listening context', () => {
 describe('friend poll', () => {
   test('skips backed-off friends and records each response status', () => {
     expect(app).toMatch(/for \(const friend of friendsToCheck\) \{\n\s*if \(friendPollBackoffRef\.current\.shouldSkip\(friend\.id\)\) continue;/);
-    expect(app.match(/recordFriendPollStatus\(friend, response\.status\);/g)).toHaveLength(2);
+    // One plug-in call for every service (#1539 step 5): a success counts
+    // as 200, a failure records the status its plug-in's error carries.
+    expect(app).toContain('recordFriendPollStatus(friend, 200);');
+    expect(app).toContain('if (error && error.status) recordFriendPollStatus(friend, error.status);');
   });
 
   test('weekly stats are attempted at most once per window', () => {
