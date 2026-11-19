@@ -3,7 +3,7 @@
     "id": "listenbrainz",
     "name": "ListenBrainz",
     "type": "meta-service",
-    "version": "1.6.11",
+    "version": "1.6.12",
     "author": "Parachord Team",
     "description": "Scrobble what you play to ListenBrainz, and get recommendations and mixes from your listening history.",
     "requirement": "Needs your ListenBrainz username, and your user token to save listens.",
@@ -22,6 +22,7 @@
     "charts": true,
     "metadata": true,
     "listeningHistory": true,
+    "friends": true,
     "lovedTracks": true,
     "playlistSync": true
   },

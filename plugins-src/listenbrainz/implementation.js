@@ -555,6 +555,96 @@ module.exports = {
     return { title: meta.track_name, artist: meta.artist_name, album: meta.release_name || undefined };
   },
 
+  // The friends capability (#1539 step 5): finding a person, the people you
+  // follow, and following or unfollowing, moved out of app.js
+  // (fetchListenbrainzUserInfo, the /following pull in syncFriendsFromServices,
+  // followOnService / unfollowOnService).
+  //
+  // findUser: query is a username or a listenbrainz.org/user/<name> link.
+  // Another service's link is null without a request. ListenBrainz's
+  // /1/user/<name> doesn't answer, so the listen count says whether the user
+  // exists. Answers { username, displayName } (no avatars on ListenBrainz) or
+  // null; a failure THROWS.
+  findUser: async function (query, config) {
+    var raw = String((query && query.query) || '').trim();
+    if (!raw) return null;
+    var link = raw.match(/listenbrainz\.org\/user\/([^\/?#]+)/i);
+    if (!link && /[\/:]/.test(raw)) return null;
+    var name = link ? decodeURIComponent(link[1]) : raw;
+    var headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    var response = await fetch('https://api.listenbrainz.org/1/user/' + encodeURIComponent(name) + '/listen-count', { headers: headers });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      var failed = new Error('ListenBrainz user lookup failed: ' + response.status);
+      failed.status = response.status;
+      throw failed;
+    }
+    var data = await response.json();
+    if (!data || !data.payload || data.payload.count === undefined) return null;
+    return { username: name, displayName: name };
+  },
+
+  // friends: the people a user follows (/1/user/<user>/following; the
+  // signed-in user by default). Entries are plain names or objects,
+  // depending on the ListenBrainz version. Answers [{ username, displayName }];
+  // no user is null; a failure THROWS.
+  getFollowing: async function (query, config) {
+    var user = String((query && query.user) || (config && config.username) || '').trim();
+    if (!user) return null;
+    var headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    var response = await fetch('https://api.listenbrainz.org/1/user/' + encodeURIComponent(user) + '/following', { headers: headers });
+    if (!response.ok) {
+      var failed = new Error('ListenBrainz following failed: ' + response.status);
+      failed.status = response.status;
+      throw failed;
+    }
+    var data = await response.json();
+    var following = (data && data.following) || [];
+    var out = [];
+    following.forEach(function (entry) {
+      var name = typeof entry === 'string' ? entry : (entry && (entry.musicbrainz_id || entry.user_name || entry.name));
+      if (name) out.push({ username: name, displayName: name });
+    });
+    return out;
+  },
+
+  // friends, optional: follow a user as the signed-in one
+  // (POST /1/user/<user>/follow). Needs the user's token: without it, false
+  // (nothing to do, not a failure). Answers true; a failure THROWS.
+  follow: async function (query, config) {
+    var user = String((query && query.user) || '').trim();
+    var token = config && config.userToken;
+    if (!user || !token) return false;
+    var response = await fetch('https://api.listenbrainz.org/1/user/' + encodeURIComponent(user) + '/follow', {
+      method: 'POST',
+      headers: { Authorization: 'Token ' + token, 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      var failed = new Error('ListenBrainz follow failed: ' + response.status);
+      failed.status = response.status;
+      throw failed;
+    }
+    return true;
+  },
+
+  // friends, optional: unfollow (DELETE /1/user/<user>/follow). A 404 (the
+  // account is gone) counts as done. Same rules as follow.
+  unfollow: async function (query, config) {
+    var user = String((query && query.user) || '').trim();
+    var token = config && config.userToken;
+    if (!user || !token) return false;
+    var response = await fetch('https://api.listenbrainz.org/1/user/' + encodeURIComponent(user) + '/follow', {
+      method: 'DELETE',
+      headers: { Authorization: 'Token ' + token, 'Content-Type': 'application/json' }
+    });
+    if (!response.ok && response.status !== 404) {
+      var failed = new Error('ListenBrainz unfollow failed: ' + response.status);
+      failed.status = response.status;
+      throw failed;
+    }
+    return true;
+  },
+
   // The charts capability (#1539 step 3): what everyone on ListenBrainz
   // played this week, from its sitewide statistics (/1/stats/sitewide/
   // recordings and /release-groups). query: { kind: 'tracks' | 'albums',

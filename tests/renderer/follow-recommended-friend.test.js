@@ -12,8 +12,8 @@ const body = (start, endMarker) => {
 describe('follow a recommended listener', () => {
   test('addFriendCore exists, looks up the exact service, and never touches the modal', () => {
     const core = body('const addFriendCore = async', 'const addFriend = async');
-    expect(core).toMatch(/fetchLastfmUserInfo\(username\)/);
-    expect(core).toMatch(/fetchListenbrainzUserInfo\(username\)/);
+    // Looked up on exactly that service's plug-in (findUser, #1539 step 5).
+    expect(core).toMatch(/const person = found \|\| await findFriendOn\(service, username\);/);
     expect(core).toMatch(/followOnService\(newFriend\)/);
     expect(core).toMatch(/setPinnedFriendIds/);
     expect(core).not.toMatch(/setAddFriendModalOpen|setAddFriendInput|setAddFriendLoading/);
@@ -22,19 +22,20 @@ describe('follow a recommended listener', () => {
 
   test('addFriendCore refuses a service that is not a friend service, before any lookup', () => {
     // A third similarUsers plugin must never make Follow look the same name
-    // up on ListenBrainz (the old fallback mapped any non-Last.fm service there).
+    // up somewhere else. A friend service is a plug-in with
+    // capabilities.friends (#1539 step 5).
     const core = body('const addFriendCore = async', 'const addFriend = async');
-    const guard = core.search(/if \(!FRIEND_SERVICES\.includes\(service\)\) \{\s*throw userError\(/);
+    const guard = core.search(/if \(!isFriendService\(service\)\) \{\s*throw userError\(/);
     expect(guard).toBeGreaterThan(-1);
-    expect(guard).toBeLessThan(core.indexOf('fetchLastfmUserInfo(username)'));
+    expect(guard).toBeLessThan(core.indexOf('findFriendOn(service, username)'));
     expect(core).toMatch(/const finalService = service;/);
-    expect(core).not.toMatch(/service === 'lastfm' \? 'lastfm' : 'listenbrainz'/);
-    expect(src).toMatch(/const \{[^}]*\bFRIEND_SERVICES\b[^}]*\} = require\('\.\/lib\/recommendation-model'\);/);
+    expect(src).toContain("const isFriendService = (id) => friendProvidersFor().some(r => r.id === id);");
+    expect(src).toContain("const friendProvidersFor = () => similarProvidersFor('friends');");
   });
 
   test('only friend-service similar-users providers are asked (the Friends row input)', () => {
     const fn = body('const similarUsersProviders = () => {', 'const recommendationExclusions');
-    expect(fn).toMatch(/\.filter\(r => FRIEND_SERVICES\.includes\(r\.id\)\)/);
+    expect(fn).toMatch(/\.filter\(r => isFriendService\(r\.id\)\)/);
   });
 
   test('addFriend (the browser extension\'s link) delegates to addFriendCore; the dialog closes itself', () => {

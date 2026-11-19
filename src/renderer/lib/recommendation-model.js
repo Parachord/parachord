@@ -625,22 +625,22 @@ function buildRecommendationViews(args = {}) {
 // alternating. Same name on two services stays
 // two entries (not known to be the same person); followed, removed and self
 // accounts are dropped by key.
-// The services a friend can be followed on (addFriendCore looks a username up
-// on exactly these). A similar-users provider's id is the friend `service` it
-// speaks for, so the Friends row takes only providers whose id is one of
-// these: a future third similarUsers plugin must not make Follow look the
-// same name up somewhere else. The one deliberate service-name list in the
-// recommendations code, mirroring addFriendCore.
-const FRIEND_SERVICES = ['lastfm', 'listenbrainz'];
+// Only providers that are friend services make the row: a similar-users
+// provider's id is the friend `service` it speaks for, and Follow looks the
+// person up there (addFriendCore), so a provider whose plug-in has no
+// `friends` capability would offer people nobody can follow. The app passes
+// those ids as exclude.friendServices (the plug-ins with
+// capabilities.friends, #1539 step 5); without it, nobody is offered.
 
 function friendsRow(similarUsers, exclude) {
   const friendKeys = (exclude && exclude.friendKeys) || new Set();
   const selfKeys = (exclude && exclude.selfKeys) || new Set();
+  const friendServices = (exclude && exclude.friendServices) || new Set();
   const lists = [];
   const order = [];
   const names = {};
   for (const provider of similarUsers || []) {
-    if (!provider || !FRIEND_SERVICES.includes(provider.resolverId)) continue;
+    if (!provider || !friendServices.has(provider.resolverId)) continue;
     const service = provider.resolverId;
     const seen = new Set();
     const list = [];
@@ -916,5 +916,4 @@ module.exports = {
   flattenRecommendationItems,
   weeklyHomeEntries,
   shuffleupagusSection,
-  FRIEND_SERVICES
 };

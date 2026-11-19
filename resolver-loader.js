@@ -821,6 +821,80 @@ class ResolverLoader {
   }
 
   /**
+   * Plug-ins with friends: finding a person and the people you follow, for
+   * the friend list, Add Friend and the friend sync (capabilities.friends,
+   * findUser and getFollowing; docs/architecture/plugins.md "Friends",
+   * #1539 step 5).
+   * @returns {object[]}
+   */
+  getFriendsResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.friends &&
+      typeof r.findUser === 'function' &&
+      typeof r.getFollowing === 'function'
+    );
+  }
+
+  /**
+   * Find a person on one plug-in from a username or its profile link.
+   * @param {string} resolverId
+   * @param {{ query: string }} query
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<{ username, displayName, avatarUrl? }|null>} null when
+   *          there's no such person, the link is another service's, or the
+   *          plug-in lacks the capability. REJECTS when it throws.
+   */
+  async findUser(resolverId, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.friends || typeof resolver.findUser !== 'function') return null;
+    try {
+      const user = await resolver.findUser(query || {}, configOverride || resolver.config || {});
+      return user && typeof user.username === 'string' && user.username.trim() ? user : null;
+    } catch (error) {
+      console.error(`Find user error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * The people a user follows on one plug-in (the signed-in user by default).
+   * @returns {Promise<object[]|null>} [{ username, displayName?, avatarUrl? }];
+   *          null when there's no user or no capability. REJECTS on a throw.
+   */
+  async getFollowing(resolverId, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.friends || typeof resolver.getFollowing !== 'function') return null;
+    try {
+      const people = await resolver.getFollowing(query || {}, configOverride || resolver.config || {});
+      if (people == null) return null;
+      return Array.isArray(people) ? people.filter(p => p && typeof p.username === 'string' && p.username.trim()) : [];
+    } catch (error) {
+      console.error(`Following error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * Follow or unfollow someone on one plug-in. Optional: a plug-in without
+   * the method (Last.fm, whose friend writes are gone) answers null and the
+   * app treats it as pull-only.
+   * @param {'follow'|'unfollow'} which
+   * @returns {Promise<boolean|null>} true when done, false when the plug-in
+   *          couldn't (no sign-in), null without the method. REJECTS on a throw.
+   */
+  async setFollowing(resolverId, which, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (which !== 'follow' && which !== 'unfollow') return null;
+    if (!resolver || !resolver.capabilities?.friends || typeof resolver[which] !== 'function') return null;
+    try {
+      return !!(await resolver[which](query || {}, configOverride || resolver.config || {}));
+    } catch (error) {
+      console.error(`${which} error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
    * A manifest's top-level `charts`, cleaned: { period?, tracks?, albums? },
    * each kind { global: boolean, countries: ['us', ...] } (lowercase ISO
    * codes). A kind with neither is left out; null when nothing is left.

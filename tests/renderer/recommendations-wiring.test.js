@@ -625,7 +625,7 @@ describe('album category rows on the page', () => {
     expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && (i.type === 'playlist' || i.type === 'album')).map(i => `${i.type}:${categoryFor(i.type, i, section.category)}`))]");
     expect(app).toContain('expansion.lastPageCategories.includes(`${sub.type}:${sub.category}`)');
     // The model's typed category helper, imported with the other model helpers.
-    expect(app).toMatch(/shuffleupagusSection, FRIEND_SERVICES, categoryFor\s*\} = require\('\.\/lib\/recommendation-model'\)/);
+    expect(app).toMatch(/shuffleupagusSection, categoryFor\s*\} = require\('\.\/lib\/recommendation-model'\)/);
     expect(app).toContain("const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist', 'albums:personal']);");
     expect(app).toContain("'albums:personal-pending'");
     expect(app).toContain("title: 'Based on your listening'");

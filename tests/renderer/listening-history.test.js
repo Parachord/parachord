@@ -84,7 +84,7 @@ describe('app.js and the History page ask the plug-ins', () => {
       fn('const fetchListeningContext = async', '// Conversational DJ'),
       fn('const loadListeningHistory = async', 'const topListFailed = '),
       fn('const loadTopTracks = async', 'const resolveTopArtistImages = async'),
-      fn('const loadTopAlbums = async', '// Parse friend input'),
+      fn('const loadTopAlbums = async', 'const pickHistorySource = '),
       fn('const gatherNewReleasesArtists = async', '// Shuffle each source'),
       fn('const gatherConcertsArtists = async', '// Interleave sources so each gets fair representation\n    const maxArtists = 40;'),
     ];

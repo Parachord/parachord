@@ -415,6 +415,96 @@ module.exports = {
     return { title: newest.title, artist: newest.artist, album: newest.album };
   },
 
+  // The friends capability (#1539 step 5): finding a person and the people
+  // you follow, moved out of app.js (fetchLastfmUserInfo, the user.getfriends
+  // pull in syncFriendsFromServices). Last.fm's friend writes
+  // (user.addFriend / removeFriend) were deprecated in 2018, so there's no
+  // follow or unfollow: the app treats Last.fm as pull-only and its
+  // hidden-keys list keeps a removal (docs/architecture/friends.md).
+  //
+  // findUser: query is a username or a last.fm/user/<name> link. Another
+  // service's link is null without a request. Answers { username,
+  // displayName, avatarUrl? } or null when there's no such user; a failure
+  // THROWS.
+  findUser: async function (query, config) {
+    const raw = String((query && query.query) || '').trim();
+    if (!raw) return null;
+    const link = raw.match(/last\.fm\/user\/([^\/?#]+)/i);
+    if (!link && /[\/:]/.test(raw)) return null;
+    const name = link ? decodeURIComponent(link[1]) : raw;
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm user lookup: no API key yet');
+    const url = 'https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=' + encodeURIComponent(name) +
+      '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+    const response = await fetch(url);
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      const error = new Error('Last.fm user lookup failed: ' + response.status);
+      error.status = response.status;
+      throw error;
+    }
+    const data = await response.json();
+    if (data && data.error !== undefined) {
+      if (Number(data.error) === 6) return null;
+      throw new Error('Last.fm user lookup failed: error ' + data.error);
+    }
+    const user = data && data.user;
+    if (!user || !user.name) return null;
+    const images = Array.isArray(user.image) ? user.image : [];
+    const avatar = (images[2] && images[2]['#text']) || (images[1] && images[1]['#text']) || '';
+    return { username: user.name, displayName: (user.realname || '').trim() || user.name, avatarUrl: avatar || undefined };
+  },
+
+  // friends: the people a user follows (user.getfriends; the signed-in user
+  // by default), all pages: 200 a page, at most 50 pages. Answers [{ username,
+  // displayName, avatarUrl? }]; no user is null; a failed first page THROWS
+  // (a later one ends the list there).
+  getFollowing: async function (query, config) {
+    const user = String((query && query.user) || (config && config.username) || '').trim();
+    if (!user) return null;
+    const apiKey = config && config.apiKey;
+    if (!apiKey) throw new Error('Last.fm friends: no API key yet');
+    const PAGE_LIMIT = 200;
+    const MAX_PAGES = 50;
+    const out = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const url = 'https://ws.audioscrobbler.com/2.0/?method=user.getfriends&user=' + encodeURIComponent(user) +
+        '&limit=' + PAGE_LIMIT + '&page=' + page + '&api_key=' + encodeURIComponent(apiKey) + '&format=json';
+      const response = await fetch(url);
+      if (!response.ok) {
+        if (page === 1) {
+          const error = new Error('Last.fm friends failed: ' + response.status);
+          error.status = response.status;
+          throw error;
+        }
+        break;
+      }
+      const data = await response.json();
+      if (data && data.error !== undefined) {
+        if (page === 1) throw new Error('Last.fm friends failed: error ' + data.error);
+        break;
+      }
+      const friends = data && data.friends;
+      const list = friends && friends.user;
+      const users = Array.isArray(list) ? list : (list && typeof list === 'object' ? [list] : []);
+      // Last.fm sends totalPages as a string.
+      const pages = parseInt((friends && friends['@attr'] && friends['@attr'].totalPages) || '1', 10);
+      if (Number.isFinite(pages) && pages > 0) totalPages = pages;
+      for (const u of users) {
+        if (!u || !u.name) continue;
+        const images = Array.isArray(u.image) ? u.image : [];
+        const avatar = (images[2] && images[2]['#text']) || (images[1] && images[1]['#text']) || '';
+        out.push({ username: u.name, displayName: (u.realname || '').trim() || u.name, avatarUrl: avatar || undefined });
+      }
+      // Fewer than a page: the end, whatever totalPages says.
+      if (users.length < PAGE_LIMIT) break;
+      page++;
+    } while (page <= totalPages && page <= MAX_PAGES);
+    return out;
+  },
+
   // The charts capability (#1539 step 3): Last.fm's top tracks, worldwide
   // (chart.gettoptracks) or for a country (geo.gettoptracks), moved out of
   // app.js (loadLastfmCharts). query: { kind: 'tracks', country?, countryName?,

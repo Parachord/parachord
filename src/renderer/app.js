@@ -1355,7 +1355,7 @@ const achordionUserUrl = (username) => `https://achordion.xyz/user/${encodeURICo
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems, homeRecommendationAlbums,
-  filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, categoryFor
+  filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, categoryFor
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
 const { formatCalendarDate } = require('./lib/calendar-date');
@@ -8854,6 +8854,8 @@ const Parachord = () => {
           || (axe.capabilities?.listeningHistory && axe.implementation?.getTopItems)
           // Artist bios (#1539 step 6).
           || (axe.capabilities?.biography && axe.implementation?.getArtistBio)
+          // Friends (#1539 step 5).
+          || (axe.capabilities?.friends && axe.implementation?.findUser)
         );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
@@ -8992,7 +8994,8 @@ const Parachord = () => {
           || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases)
           || (axe.capabilities?.charts && axe.implementation?.getCharts)
           || (axe.capabilities?.listeningHistory && axe.implementation?.getTopItems)
-          || (axe.capabilities?.biography && axe.implementation?.getArtistBio));
+          || (axe.capabilities?.biography && axe.implementation?.getArtistBio)
+          || (axe.capabilities?.friends && axe.implementation?.findUser));
         const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -27592,7 +27595,8 @@ Return ONLY the JSON array, no other text.`;
 
   // The similar-users providers (the Friends row), found by capability and
   // ordered like the recommendation providers. Only those whose id is a
-  // friend service (FRIEND_SERVICES): Follow looks the person up on the
+  // friend service (a plug-in with capabilities.friends, isFriendService):
+  // Follow looks the person up on the
   // provider's id, so a provider for any other service would be asked for
   // people nobody can follow.
   const similarUsersProviders = () => {
@@ -27603,7 +27607,7 @@ Return ONLY the JSON array, no other text.`;
     const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
     return orderCatalogResolvers(
       loader.getSimilarUsersResolvers()
-        .filter(r => FRIEND_SERVICES.includes(r.id))
+        .filter(r => isFriendService(r.id))
         .filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
       { activeIds, order }
     );
@@ -27623,7 +27627,10 @@ Return ONLY the JSON array, no other text.`;
       const username = metaServiceConfigsRef.current?.[id]?.username;
       if (username) selfKeys.add(friendKey(id, username));
     }
-    return { friendKeys, selfKeys };
+    // The friend services (#1539 step 5): the Friends row offers people only
+    // from these.
+    const friendServices = new Set(friendProvidersFor().map(r => r.id));
+    return { friendKeys, selfKeys, friendServices };
   };
 
   // Rebuild the display model from the current provider results + the LLM
@@ -29460,74 +29467,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     else if (historyTab === 'topAlbums') loadTopAlbums(historyPeriod);
   };
 
-  // Parse friend input to extract service and username
-  const parseFriendInput = (input) => {
-    const trimmed = input.trim();
-
-    // Check for Last.fm URL
-    const lastfmMatch = trimmed.match(/last\.fm\/user\/([^\/\?]+)/i);
-    if (lastfmMatch) {
-      return { service: 'lastfm', username: lastfmMatch[1] };
-    }
-
-    // Check for ListenBrainz URL
-    const listenbrainzMatch = trimmed.match(/listenbrainz\.org\/user\/([^\/\?]+)/i);
-    if (listenbrainzMatch) {
-      return { service: 'listenbrainz', username: listenbrainzMatch[1] };
-    }
-
-    // Plain username - will try Last.fm first, then ListenBrainz
-    return { service: null, username: trimmed };
+  // Friends come from plug-ins with capabilities.friends (#1539 step 5):
+  // finding a person (findUser), the people you follow (getFollowing), and
+  // following or unfollowing where the service allows it. The providers are
+  // active plug-ins and meta-services, minus one switched off, in your order;
+  // the ones you're signed in to (a username) are whose follow graph the
+  // sync pulls.
+  const friendProvidersFor = () => similarProvidersFor('friends');
+  const friendAccountsFor = () => signedInSources(friendProvidersFor(), metaServiceConfigsRef.current || {});
+  const isFriendService = (id) => friendProvidersFor().some(r => r.id === id);
+  const friendServiceNames = (joiner = 'or') => {
+    const names = friendProvidersFor().map(r => pluginName(r.id));
+    return names.length > 1 ? `${names.slice(0, -1).join(', ')} ${joiner} ${names[names.length - 1]}` : (names[0] || 'a friends service');
   };
-
-  // Fetch Last.fm user info (avatar, display name)
-  const fetchLastfmUserInfo = async (username) => {
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) throw new Error('Last.fm API key not configured');
-
-    const url = `https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json`;
-    const response = await lastfmFetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) throw userError('There’s no Last.fm user with that name. Check the spelling and try again.');
-      throw new Error(`Last.fm API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (data.error) throw userError('There’s no Last.fm user with that name. Check the spelling and try again.');
-
-    const user = data.user;
-    return {
-      username: user.name,
-      displayName: user.realname || user.name,
-      avatarUrl: user.image?.[2]?.['#text'] || user.image?.[1]?.['#text'] || null
-    };
-  };
-
-  // Fetch ListenBrainz user info
-  const fetchListenbrainzUserInfo = async (username) => {
-    // Use listen-count endpoint to validate user exists (the /1/user/{username} endpoint doesn't work)
-    const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/listen-count`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      if (response.status === 404) throw userError('There’s no ListenBrainz user with that name. Check the spelling and try again.');
-      throw new Error(`ListenBrainz API error: ${response.status}`);
-    }
-
-    // Verify response has valid data
-    const data = await response.json();
-    if (data.payload?.count === undefined) {
-      throw userError('There’s no ListenBrainz user with that name. Check the spelling and try again.');
-    }
-
-    // ListenBrainz doesn't have avatars, return username only
-    return {
-      username: username,
-      displayName: username,
-      avatarUrl: null // Will use generated avatar fallback
-    };
-  };
+  // Look someone up on one service: their username, display name and avatar,
+  // or null when there's no one by that name there.
+  const findFriendOn = async (service, query) =>
+    resolverLoaderRef.current.findUser(service, { query }, await configForSimilar(service));
 
   // Per-friend backoff for accounts that always fail (private 403, deleted
   // 404) and rate limits, plus one weekly-stats attempt per 30 min.
@@ -29623,60 +29579,24 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // ListenBrainz has a proper follow API; Last.fm's was deprecated in 2018.
   const followOnService = async (friend) => {
     try {
-      if (friend.service === 'listenbrainz') {
-        const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-        const token = listenbrainzConfig?.userToken;
-        if (!token) return; // not authenticated — silent no-op
-        const resp = await fetch(
-          `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/follow`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Token ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        if (!resp.ok) {
-          console.warn(`[Friends] ListenBrainz follow failed for ${friend.username}: ${resp.status}`);
-        } else {
-          console.log(`[Friends] Followed ${friend.username} on ListenBrainz`);
-        }
-      }
-      // Last.fm: no-op. user.addFriend is deprecated.
+      // null: the service can't follow from here (Last.fm, pull-only);
+      // false: you're not signed in to it with a token.
+      const done = await resolverLoaderRef.current.setFollowing(friend.service, 'follow', { user: friend.username }, await configForSimilar(friend.service));
+      if (done) console.log(`[Friends] Followed ${friend.username} on ${pluginName(friend.service)}`);
     } catch (err) {
-      console.warn(`[Friends] followOnService failed for ${friend.username}:`, err.message);
+      console.warn(`[Friends] Following ${friend.username} on ${pluginName(friend.service)} failed:`, err.message);
     }
   };
 
-  // Unfollow a user on their service when removing locally. ListenBrainz
-  // supports this; Last.fm does not. For Last.fm the hidden-keys allowlist
-  // is what keeps the removal durable across sync cycles.
+  // Unfollow a user on their service when removing locally, where its
+  // plug-in can (ListenBrainz). Where it can't (Last.fm), the hidden-keys
+  // allowlist is what keeps the removal durable across sync cycles.
   const unfollowOnService = async (friend) => {
     try {
-      if (friend.service === 'listenbrainz') {
-        const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-        const token = listenbrainzConfig?.userToken;
-        if (!token) return;
-        const resp = await fetch(
-          `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/follow`,
-          {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Token ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        if (!resp.ok && resp.status !== 404) {
-          console.warn(`[Friends] ListenBrainz unfollow failed for ${friend.username}: ${resp.status}`);
-        } else {
-          console.log(`[Friends] Unfollowed ${friend.username} on ListenBrainz`);
-        }
-      }
-      // Last.fm: no-op. Hidden-keys allowlist enforces the removal.
+      const done = await resolverLoaderRef.current.setFollowing(friend.service, 'unfollow', { user: friend.username }, await configForSimilar(friend.service));
+      if (done) console.log(`[Friends] Unfollowed ${friend.username} on ${pluginName(friend.service)}`);
     } catch (err) {
-      console.warn(`[Friends] unfollowOnService failed for ${friend.username}:`, err.message);
+      console.warn(`[Friends] Unfollowing ${friend.username} on ${pluginName(friend.service)} failed:`, err.message);
     }
   };
 
@@ -29696,149 +29616,63 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     lastFriendSyncAtRef.current = Date.now();
     setFriendSyncInProgress(true);
     try {
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-
-      const apiKey = getLastfmApiKey();
-      const lastfmUsername = lastfmConfig?.username;
-      const lbUsername = listenbrainzConfig?.username;
-
+      const accounts = friendAccountsFor();
       // Build lookup sets against fresh refs (avoids stale closure during
       // the periodic sync, which fires from a setInterval callback).
       const existingKeys = new Set(
         friendsRef.current.map(f => friendKey(f.service, f.username))
       );
       const hiddenKeys = new Set(hiddenFriendKeysRef.current);
-
       const batch = [];
+      // Per-service counts for the log: which side is short when someone
+      // says sync missed a friend.
+      const counts = [];
+      let totalSeen = 0;
 
-      // Per-service counters for diagnostic logging. Helps identify which
-      // side is short when a user reports "sync missed some friends".
-      let lastfmSeen = 0;
-      let lastfmAdded = 0;
-      let lbSeen = 0;
-      let lbAdded = 0;
-
-      // ---- Last.fm: user.getFriends ------------------------------------
-      //
-      // Paginated. 50 per page default; Last.fm caps limit at ~500 but we
-      // use 200 to stay comfortably under rate limits. Response meta has
-      // `@attr.totalPages` — loop until we've fetched them all.
-      if (apiKey && lastfmUsername) {
+      // Every service you're signed in to, one after another: who you follow
+      // there (the plug-in's getFollowing, all pages), minus who you already
+      // have and who you removed (hidden_friend_keys: load-bearing where the
+      // service can't unfollow).
+      for (const account of accounts) {
+        let seen = 0;
+        let added = 0;
         try {
-          const PAGE_LIMIT = 200;
-          let page = 1;
-          let totalPages = 1;
-          // Hard cap as defense against a runaway response claiming
-          // absurd page counts. 50 * 200 = 10k friends — more than
-          // enough for any real user.
-          const MAX_PAGES = 50;
-          do {
-            const url = `https://ws.audioscrobbler.com/2.0/?method=user.getfriends&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=${PAGE_LIMIT}&page=${page}`;
-            const resp = await lastfmFetch(url);
-            if (!resp.ok) {
-              console.warn(`[Friends] Last.fm getfriends page ${page} returned ${resp.status}`);
-              break;
-            }
-            const data = await resp.json();
-            const users = data.friends?.user || [];
-            // Last.fm quirk: `@attr.totalPages` arrives as a string.
-            const attrTotal = parseInt(data.friends?.['@attr']?.totalPages || '1', 10);
-            if (!Number.isNaN(attrTotal) && attrTotal > 0) totalPages = attrTotal;
-
-            for (const u of users) {
-              const uname = u.name;
-              if (!uname) continue;
-              lastfmSeen++;
-              const key = friendKey('lastfm', uname);
-              if (existingKeys.has(key) || hiddenKeys.has(key)) continue;
-              const avatar = u.image?.[2]?.['#text'] || u.image?.[1]?.['#text'] || null;
-              batch.push({
-                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${lastfmAdded}`,
-                username: uname,
-                service: 'lastfm',
-                displayName: u.realname?.trim() || uname,
-                avatarUrl: avatar,
-                addedAt: Date.now(),
-                lastFetched: 0,
-                cachedRecentTrack: null,
-                savedToCollection: false
-              });
-              existingKeys.add(key);
-              lastfmAdded++;
-            }
-            // If Last.fm returns fewer users than the requested page size,
-            // we've hit the end even if totalPages says otherwise (happens
-            // on the final page of some endpoints).
-            if (users.length < PAGE_LIMIT) break;
-            page++;
-          } while (page <= totalPages && page <= MAX_PAGES);
-          console.log(`[Friends] Last.fm: ${lastfmSeen} friend(s) found, ${lastfmAdded} new after dedup/hide filter`);
-        } catch (err) {
-          console.warn('[Friends] Last.fm sync failed:', err.message);
-        }
-      }
-
-      // ---- ListenBrainz: /user/{name}/following ------------------------
-      //
-      // Returns the full following list in one response (no pagination in
-      // the public API). Response shape varies by ListenBrainz version —
-      // can be plain strings or objects with `musicbrainz_id` / `user_name`.
-      if (lbUsername) {
-        try {
-          const resp = await fetch(
-            `https://api.listenbrainz.org/1/user/${encodeURIComponent(lbUsername)}/following`
-          );
-          if (resp.ok) {
-            const data = await resp.json();
-            const following = data.following || [];
-            console.log(`[Friends] ListenBrainz: raw /following returned ${following.length} entries`);
-            for (const entry of following) {
-              const uname = typeof entry === 'string'
-                ? entry
-                : (entry?.musicbrainz_id || entry?.user_name || entry?.name);
-              if (!uname) continue;
-              lbSeen++;
-              const key = friendKey('listenbrainz', uname);
-              if (existingKeys.has(key) || hiddenKeys.has(key)) continue;
-              batch.push({
-                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${lbAdded}`,
-                username: uname,
-                service: 'listenbrainz',
-                displayName: uname,
-                avatarUrl: null,
-                addedAt: Date.now(),
-                lastFetched: 0,
-                cachedRecentTrack: null,
-                savedToCollection: false
-              });
-              existingKeys.add(key);
-              lbAdded++;
-            }
-            console.log(`[Friends] ListenBrainz: ${lbSeen} valid, ${lbAdded} new after dedup/hide filter`);
-          } else {
-            console.warn(`[Friends] ListenBrainz following returned ${resp.status}`);
+          const people = await resolverLoaderRef.current.getFollowing(account.id, {}, await configForSimilar(account.id)) || [];
+          for (const person of people) {
+            seen++;
+            const key = friendKey(account.id, person.username);
+            if (existingKeys.has(key) || hiddenKeys.has(key)) continue;
+            batch.push({
+              id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${account.id}-${added}`,
+              username: person.username,
+              service: account.id,
+              displayName: person.displayName || person.username,
+              avatarUrl: person.avatarUrl || null,
+              addedAt: Date.now(),
+              lastFetched: 0,
+              cachedRecentTrack: null,
+              savedToCollection: false
+            });
+            existingKeys.add(key);
+            added++;
           }
+          console.log(`[Friends] ${pluginName(account.id)}: ${seen} friend(s) found, ${added} new after dedup/hide filter`);
         } catch (err) {
-          console.warn('[Friends] ListenBrainz sync failed:', err.message);
+          console.warn(`[Friends] ${pluginName(account.id)} sync failed:`, err.message);
         }
+        counts.push(`${account.id}=${seen}`);
+        totalSeen += seen;
       }
 
-      const totalSeen = lastfmSeen + lbSeen;
-
-      // Zero-returned path: the APIs gave us nothing at all. Usually means
-      // credentials are stale/wrong, or both services legit have no
-      // follow graph for this user. Surface it so the user can tell
-      // the difference from "all already synced".
+      // Zero-returned path: the services gave us nothing at all. Usually
+      // means the account is wrong, or you follow nobody there. Say so, so
+      // it reads differently from "all already synced".
       if (totalSeen === 0) {
         if (!silent) {
-          const parts = [];
-          if (apiKey && lastfmUsername) parts.push('Last.fm');
-          if (lbUsername) parts.push('ListenBrainz');
-          if (parts.length === 0) {
-            showToast('No Last.fm or ListenBrainz account connected', 'error');
+          if (accounts.length === 0) {
+            showToast(`No ${friendServiceNames()} account connected`, 'error');
           } else {
-            showToast(`No friends returned from ${parts.join(' or ')}. Check Settings.`, 'info');
+            showToast(`No friends returned from ${accounts.map(acc => pluginName(acc.id)).join(' or ')}. Check Settings.`, 'info');
           }
         }
         return 0;
@@ -29861,7 +29695,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       setFriends(prev => [...prev, ...deduped]);
-      console.log(`[Friends] Synced ${deduped.length} new friend(s); saw ${totalSeen} total across services (lastfm=${lastfmSeen}, lb=${lbSeen})`);
+      console.log(`[Friends] Synced ${deduped.length} new friend(s); saw ${totalSeen} total across services (${counts.join(', ')})`);
 
       if (!silent) {
         const n = deduped.length;
@@ -29877,15 +29711,20 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // fallback to the other one), add them, pin them to the sidebar, un-hide
   // them and follow on the service. Throws when they are already a friend or
   // can't be found. No modal, no toast: callers own their own UI.
-  const addFriendCore = async ({ service, username }) => {
-    // Exactly the friend services: anything else used to fall through to a
-    // ListenBrainz lookup of the same name.
-    if (!FRIEND_SERVICES.includes(service)) {
-      throw userError('You can follow people on Last.fm or ListenBrainz.');
+  // `found` is a findUser answer the caller already has (Add Friend's
+  // lookup), so it isn't asked twice.
+  const addFriendCore = async ({ service, username, found = null }) => {
+    // Exactly the friend services (plug-ins with capabilities.friends):
+    // anything else used to fall through to a lookup of the same name
+    // somewhere else.
+    if (!isFriendService(service)) {
+      throw userError(`You can follow people on ${friendServiceNames()}.`);
     }
-    const userInfo = service === 'lastfm'
-      ? await fetchLastfmUserInfo(username)
-      : await fetchListenbrainzUserInfo(username);
+    const person = found || await findFriendOn(service, username);
+    if (!person) {
+      throw userError(`There’s no ${pluginName(service)} user with that name. Check the spelling and try again.`);
+    }
+    const userInfo = { username: person.username, displayName: person.displayName || person.username, avatarUrl: person.avatarUrl || null };
     const finalService = service;
 
     // Check if already added
@@ -29943,7 +29782,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setHiddenFriendKeys(prev => prev.filter(k => k !== key));
     }
 
-    // Outbound push: follow on ListenBrainz (no-op on Last.fm). Fire-and-forget.
+    // Outbound push: follow on the service where its plug-in can (no-op where
+    // it can't, as on Last.fm). Fire-and-forget.
     followOnService(newFriend);
 
     console.log(`👥 Added friend: ${newFriend.displayName} (${finalService})`);
@@ -29955,31 +29795,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   const addFriend = async (input) => {
 
     try {
-      const { service, username } = parseFriendInput(input);
-
-      if (!username) {
-        showToast('Please enter a username or profile URL', 'error');
+      const query = String(input || '').trim();
+      if (!query) {
+        showToast('Enter a username or profile link', 'error');
         return;
       }
 
-      let finalService = service;
-      if (!service) {
-        // Plain username: try Last.fm first, then ListenBrainz
-        try {
-          await fetchLastfmUserInfo(username);
-          finalService = 'lastfm';
-        } catch (lfmError) {
-          console.log(`User not found on Last.fm, trying ListenBrainz...`);
-          try {
-            await fetchListenbrainzUserInfo(username);
-            finalService = 'listenbrainz';
-          } catch (lbError) {
-            throw new Error('User not found on Last.fm or ListenBrainz');
-          }
-        }
-      }
+      // Each friend service in turn (askInTurn): the ones you're signed in
+      // to first, then the rest, in your order. A profile link is only its
+      // own service's (the others answer null without asking); a plain name
+      // goes to the first service that has someone by it.
+      const providers = friendProvidersFor();
+      const signedIn = new Set(friendAccountsFor().map(r => r.id));
+      const ordered = [...providers.filter(r => signedIn.has(r.id)), ...providers.filter(r => !signedIn.has(r.id))];
+      const { answer } = await askInTurn(ordered, (p) => findFriendOn(p.id, query));
+      if (!answer) throw userError(`There’s no one by that name on ${friendServiceNames()}. Check the spelling and try again.`);
 
-      await addFriendCore({ service: finalService, username });
+      await addFriendCore({ service: answer.id, username: answer.value.username, found: answer.value });
 
     } catch (error) {
       console.error('Failed to add friend:', error);
@@ -30602,10 +30434,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   useEffect(() => {
     if (!cacheLoaded) return;
     if (friendStartupSyncDoneRef.current) return;
-    const lastfmConfig = metaServiceConfigs.lastfm;
-    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-    const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
-    if (!hasCreds) return;
+    // A friend service you're signed in to, and the plug-ins loaded (the
+    // sync asks them, #1539 step 5).
+    const hasCreds = Object.values(metaServiceConfigs || {}).some(c => c && c.username);
+    if (!hasCreds || metaServices.length === 0) return;
     friendStartupSyncDoneRef.current = true;
     // Small delay so we don't thrash the network during startup. A launch
     // that restores onto the Friends tab has already synced by then.
@@ -30613,17 +30445,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (Date.now() - lastFriendSyncAtRef.current < FRIEND_TAB_SYNC_MIN_GAP_MS) return;
       syncFriendsFromServicesRef.current?.({ silent: true });
     }, 5000);
-  }, [cacheLoaded, metaServiceConfigs]);
+  }, [cacheLoaded, metaServiceConfigs, metaServices]);
 
-  // Periodic friend-graph sync: every 30 min while Last.fm or ListenBrainz
-  // is set up. It used to ride every 15th tick of the activity poll above,
+  // Periodic friend-graph sync: every 30 min while a friend service is set
+  // up. It used to ride every 15th tick of the activity poll above,
   // which only runs once a friend is saved or pinned, so with no friends yet
   // someone followed mid-session never arrived until a restart. Friend graphs
   // change far less often than recent tracks, so this keeps its own slower
   // timer. It calls the latest syncFriendsFromServices through
   // syncFriendsFromServicesRef (above the startup sync).
   const FRIEND_GRAPH_SYNC_MS = 30 * 60 * 1000;
-  const hasFriendServiceAccount = !!(metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username);
+  // A friend service you're signed in to (a username in its plug-in's
+  // settings). Read from state, so the timers start once one is set up.
+  const hasFriendServiceAccount = Object.values(metaServiceConfigs || {}).some(c => c && c.username);
   useEffect(() => {
     if (!cacheLoaded || !hasFriendServiceAccount) return;
     const id = setInterval(() => {
