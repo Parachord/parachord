@@ -17,6 +17,7 @@ const { trackSlug } = require('../lib/track-slug');
 const { playbarShowsTrack } = require('../lib/playbar-art');
 const { playStartPending } = require('../lib/play-state');
 const { purchaseSource: pickPurchaseSource } = require('../lib/purchase-source');
+const { isPlayableSource } = require('../lib/playable-source');
 const { sourceBlockId } = require('../lib/bad-match-report');
 const { ResolverIcon, Tooltip, PlaybackProgress } = require('./ui-atoms');
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -440,7 +441,9 @@ const Playbar = React.memo(function Playbar(props) {
                 const availableSources = currentTrack.sources && typeof currentTrack.sources === 'object' && !Array.isArray(currentTrack.sources)
                   ? Object.keys(currentTrack.sources).filter(resId => {
                       if (!playbackResolvers.includes(resId)) return false;
-                      if (currentTrack.sources[resId]?.noMatch) return false;
+                      // Play from lists only sources that play (a purchase-only
+                      // one is Buy's, lib/playable-source.js).
+                      if (!isPlayableSource(currentTrack.sources[resId])) return false;
                       const src = currentTrack.sources[resId];
                       const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.filePath || src.id || null) : null;
                       return !resolverBlocklist.some(entry =>
@@ -453,6 +456,58 @@ const Playbar = React.memo(function Playbar(props) {
                   : [];
 
                 const hasMultipleSources = availableSources.length > 1;
+
+                // Buy button - shows when track has a purchasable source (Bandcamp),
+                // a purchase-only one included (a buy-only track: buying is the
+                // only way), so it also stands alone on line 3 when nothing plays.
+                const buyButton = (() => {
+                  // Merge sources from state, cache, and currentTrack (same pattern as Save to Collection)
+                  const stateSources = currentTrack.id ? trackSources[currentTrack.id] : undefined;
+                  const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}`;
+                  // Read at render; the call site passes _cacheLoaded so this
+                  // re-renders once the persisted cache is in.
+                  const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
+                  const effectiveSources = Object.fromEntries(
+                    Object.entries({ ...(stateSources || {}), ...(cachedSources || {}), ...(currentTrack.sources || {}) }).filter(([, v]) => v && !v.noMatch)
+                  );
+
+                  // The plug-in that sells it: one declaring
+                  // capabilities.purchase whose source is a sure match
+                  // (lib/purchase-source.js).
+                  const purchaseSource = pickPurchaseSource({ resolvers: allResolvers, sources: effectiveSources, track: currentTrack });
+                  if (!purchaseSource) return null;
+
+                  return React.createElement(Tooltip, {
+                    content: `Buy on ${purchaseSource.resolverName}`,
+                    position: 'top',
+                    variant: 'dark'
+                  },
+                    React.createElement('button', {
+                      onClick: async (e) => {
+                        e.stopPropagation();
+                        try {
+                          if (window.electron?.shell?.openExternal) {
+                            await window.electron.shell.openExternal(purchaseSource.purchaseUrl);
+                          } else {
+                            window.open(purchaseSource.purchaseUrl, '_blank');
+                          }
+                        } catch (error) {
+                          console.error('Failed to open purchase link:', error);
+                        }
+                      },
+                      className: 'flex items-center justify-center rounded transition-colors text-on-dark-secondary hover:text-on-dark-success no-drag',
+                      style: { width: '16px', height: '16px' },
+                      // The Tooltip above names it; a native title too
+                      // showed two tooltips at once.
+                      'aria-label': `Buy on ${purchaseSource.resolverName}`
+                    },
+                      // The cart, at the old glyph's 14px. Its basket sits in the
+                      // top of the box and only the wheels below, so it reads
+                      // high: 1px down centres it on the source name.
+                      React.createElement(Icons.ShoppingCart, { size: 14, style: { transform: 'translateY(1px)' } })
+                    )
+                  );
+                })();
 
                 if (resolver) {
                   // The plugin's own colour (manifest.color), like every other
@@ -542,57 +597,12 @@ const Playbar = React.memo(function Playbar(props) {
                       React.createElement(Icons.ExternalLink, { className: 'w-2.5 h-2.5', style: { opacity: 0.9 } }),
                       'external'
                     ),
-                    // Buy button - shows when track has a purchasable source (Bandcamp)
-                    (() => {
-                      // Merge sources from state, cache, and currentTrack (same pattern as Save to Collection)
-                      const stateSources = currentTrack.id ? trackSources[currentTrack.id] : undefined;
-                      const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}`;
-                      // Read at render; the call site passes _cacheLoaded so this
-                      // re-renders once the persisted cache is in.
-                      const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
-                      const effectiveSources = Object.fromEntries(
-                        Object.entries({ ...(stateSources || {}), ...(cachedSources || {}), ...(currentTrack.sources || {}) }).filter(([, v]) => v && !v.noMatch)
-                      );
-
-                      // The plug-in that sells it: one declaring
-                      // capabilities.purchase whose source is a sure match
-                      // (lib/purchase-source.js).
-                      const purchaseSource = pickPurchaseSource({ resolvers: allResolvers, sources: effectiveSources, track: currentTrack });
-                      if (!purchaseSource) return null;
-
-                      return React.createElement(Tooltip, {
-                        content: `Buy on ${purchaseSource.resolverName}`,
-                        position: 'top',
-                        variant: 'dark'
-                      },
-                        React.createElement('button', {
-                          onClick: async (e) => {
-                            e.stopPropagation();
-                            try {
-                              if (window.electron?.shell?.openExternal) {
-                                await window.electron.shell.openExternal(purchaseSource.purchaseUrl);
-                              } else {
-                                window.open(purchaseSource.purchaseUrl, '_blank');
-                              }
-                            } catch (error) {
-                              console.error('Failed to open purchase link:', error);
-                            }
-                          },
-                          className: 'flex items-center justify-center rounded transition-colors text-on-dark-secondary hover:text-on-dark-success no-drag',
-                          style: { width: '16px', height: '16px' },
-                          // The Tooltip above names it; a native title too
-                          // showed two tooltips at once.
-                          'aria-label': `Buy on ${purchaseSource.resolverName}`
-                        },
-                          // The cart, at the old glyph's 14px. Its basket sits in the
-                          // top of the box and only the wheels below, so it reads
-                          // high: 1px down centres it on the source name.
-                          React.createElement(Icons.ShoppingCart, { size: 14, style: { transform: 'translateY(1px)' } })
-                        )
-                      );
-                    })()
+                    buyButton
                   );
                 }
+                // Nothing plays it but it can be bought (only a purchase-only
+                // source): line 3 is the Buy button alone, at the same 20px.
+                if (buyButton) return React.createElement('div', { className: 'flex items-center gap-1.5', style: { height: '20px' } }, buyButton);
                 // No source yet: line 3 still holds its 20px (a shimmer while
                 // the track loads), so the title and artist don't jump up
                 // when the source picker arrives.

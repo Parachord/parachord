@@ -13,7 +13,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Smart Resolution** - Automatically finds the best available source for each track, with incremental results as resolvers respond
 - **Source Priority** - Drag the tiles, or use Raise Priority / Lower Priority in a tile's menu, to choose which services are preferred
 - **Volume Normalization** - Balance loudness between different sources
-- **Buy Links** - Bandcamp purchase buttons surfaced for any track that streams on Bandcamp, even when playing from a different source
+- **Buy Links** - Bandcamp purchase buttons surfaced for any track that can be found, even when streaming from a different source
 
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required. You sign in with your own Spotify developer app, and Spotify only runs such an app while the account that owns it has Premium)

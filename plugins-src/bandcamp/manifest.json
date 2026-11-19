@@ -22,7 +22,8 @@
     "urlLookup": true,
     "purchase": true,
     "albumSearch": true,
-    "embedPlayer": true
+    "embedPlayer": true,
+    "resolvePicks": true
   },
   "embedPlayer": {
     "adapter": "bandcamp-embed"

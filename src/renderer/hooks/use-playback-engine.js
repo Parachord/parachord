@@ -38,6 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
+const { isPlayableSource } = require('../lib/playable-source');
 const { fallbackAfter, trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack, pendingStartAt, trackPositionKey } = require('../lib/playback-helpers');
 const { reconcileEnginePlayState, musicKitStatePlaying, musicKitWebHoldsTrack, playStartPending, restartPositionForResume, PLAY_START_PATIENCE_MS, nativeAppleMusicPlaying, spotifyPlayingTrack, EXTERNAL_RESUME_POLL_MS } = require('../lib/play-state');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
@@ -884,7 +885,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       console.warn(`🔐 ${label}: ${message}`);
       const fallbackSources = trackOrSource.sources
         ? Object.keys(trackOrSource.sources).filter(id => id !== refusedId
-          && !trackOrSource.sources[id]?.noMatch && activeResolversRef.current.includes(id))
+          && isPlayableSource(trackOrSource.sources[id]) && activeResolversRef.current.includes(id))
         : [];
       if (fallbackSources.length > 0) {
         const order = resolverOrderRef.current;
@@ -1029,6 +1030,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // Initialize empty sources object so they go through on-demand resolution
     if (!trackOrSource.sources && trackOrSource.artist && trackOrSource.title) {
       console.log('🔄 Track has no sources, initializing for on-demand resolution:', trackOrSource.title);
+      trackOrSource = { ...trackOrSource, sources: {} };
+    }
+    // A purchase-only source handed over as the thing to play (a buy-only
+    // Bandcamp track, `streamable: false`; lib/playable-source.js) is nothing
+    // to play: resolve the track like one with no sources, so another service
+    // plays it or it shows as unplayable.
+    if ((!trackOrSource.sources || Array.isArray(trackOrSource.sources)) && !isPlayableSource(trackOrSource)) {
+      console.log('🛒 Purchase-only source, resolving the track elsewhere:', trackOrSource.title);
       trackOrSource = { ...trackOrSource, sources: {} };
     }
 
@@ -1559,7 +1568,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
 
         // Try fallback to next available source if we have the original track with sources
-        if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
+        if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => isPlayableSource(trackOrSource.sources[id])).length > 1) {
           const fallback = fallbackAfter(trackOrSource.sources, resolverId);
           if (fallback.ids.length > 0) {
             console.log('🔄 Falling back to next available source...');
@@ -1732,7 +1741,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         // Spotify-unavailable fallback's shape: drop this source, replay).
         const fallbackSources = trackOrSource.sources
           ? Object.keys(trackOrSource.sources).filter(id => id !== resolverId
-            && !trackOrSource.sources[id]?.noMatch && activeResolversRef.current.includes(id))
+            && isPlayableSource(trackOrSource.sources[id]) && activeResolversRef.current.includes(id))
           : [];
         if (fallbackSources.length > 0) {
           const order = resolverOrderRef.current;
@@ -2509,11 +2518,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           console.error('❌ Spotify retry also failed');
 
           // Spotify failed after retry - try to fall back to next best source
-          if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
+          if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => isPlayableSource(trackOrSource.sources[id])).length > 1) {
             // Use refs for current resolver settings
             const fallbackActiveResolvers = activeResolversRef.current;
             const fallbackResolverOrder = resolverOrderRef.current;
-            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && !trackOrSource.sources[id]?.noMatch && fallbackActiveResolvers.includes(id));
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && isPlayableSource(trackOrSource.sources[id]) && fallbackActiveResolvers.includes(id));
 
             if (otherSources.length > 0) {
               // Sort by resolver priority
@@ -2558,11 +2567,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         // For Apple Music, fall back to next best source (track may not be available in region)
         if (resolverId === 'applemusic' && !trackOrSource._appleMusicFallback) {
-          if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
+          if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => isPlayableSource(trackOrSource.sources[id])).length > 1) {
             // Use refs for current resolver settings
             const fallbackActiveResolvers = activeResolversRef.current;
             const fallbackResolverOrder = resolverOrderRef.current;
-            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'applemusic' && !trackOrSource.sources[id]?.noMatch && fallbackActiveResolvers.includes(id));
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'applemusic' && isPlayableSource(trackOrSource.sources[id]) && fallbackActiveResolvers.includes(id));
 
             if (otherSources.length > 0) {
               // Sort by resolver priority

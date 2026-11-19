@@ -7,10 +7,11 @@
  * got a Bandcamp source while "15 Step" (row 3) did.
  *
  * Reading deeper found Radiohead's own "Nude", which is buy-only: the artist
- * turned streaming off, so it can't be a source (2026-11-18). resolve checks
- * its pick with isStreamable, and a buy-only track on the artist's own page
- * ends the search, so a fan's upload credited to Radiohead on another page
- * (there is one: a "stripped mix") isn't the source either.
+ * turned streaming off, so it can't be a source to play (2026-11-18). resolve
+ * checks its pick with isStreamable, and a buy-only pick comes back
+ * purchase-only (streamable false: Buy, no playing) and ends the search, so a
+ * fan's upload credited to Radiohead on another page (there is one: a
+ * "stripped mix") is never taken.
  */
 
 const bandcamp = require('../../plugins-src/bandcamp/implementation');
@@ -65,17 +66,22 @@ describe('Bandcamp search depth', () => {
     expect(found.bandcampUrl).toBe('https://radiohead.bandcamp.com/track/nude');
   });
 
-  test("Radiohead's own buy-only Nude is not the source, and neither is a fan's copy", async () => {
+  test("Radiohead's own buy-only Nude is purchase-only, and a fan's copy is never taken", async () => {
     buyOnly.add(31);
-    expect(await resolveNude()).toBeNull();
+    // Buy, not play: the pick comes back marked streamable false.
+    expect(await resolveNude()).toMatchObject({
+      bandcampUrl: 'https://radiohead.bandcamp.com/track/nude',
+      purchaseUrl: 'https://radiohead.bandcamp.com/track/nude',
+      streamable: false,
+    });
     // One check: the pick, on the artist's own page.
     const checks = global.fetch.mock.calls.filter(([u]) => u.includes('/api/mobile/'));
     expect(checks.map(([u]) => new URL(u).searchParams.get('tralbum_id'))).toEqual(['31']);
   });
 
   test('a remix by another uploader never stands in for it', async () => {
-    // With the original buy-only on a label's page, the track gets no Bandcamp
-    // source: a buy-only pick ends the search, so no other copy is checked,
+    // With the original buy-only on a label's page, the track gets only a
+    // purchase-only source: a buy-only pick ends the search, so no other copy is checked,
     // and the remixes at the top ("Radiohead - Nude (Lobec Remix)" by Lobec,
     // live) are other versions by someone else and never candidates.
     const labelRows = apiRows.map((r) => (r.id === 31 ? { ...r, item_url_path: 'https://xlrecordings.bandcamp.com/track/nude' } : r));
@@ -86,7 +92,7 @@ describe('Bandcamp search depth', () => {
       }
       return { ok: true, json: async () => ({ auto: { results: labelRows } }) };
     });
-    expect(await resolveNude()).toBeNull();
+    expect(await resolveNude()).toMatchObject({ bandcampUrl: 'https://xlrecordings.bandcamp.com/track/nude', streamable: false });
     const checks = global.fetch.mock.calls.filter(([u]) => u.includes('/api/mobile/'));
     expect(checks.map(([u]) => new URL(u).searchParams.get('tralbum_id'))).toEqual(['31']);
   });

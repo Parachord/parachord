@@ -38,6 +38,8 @@
 // regression here would only show as a runtime symptom, not a test
 // failure.
 
+const { isPlayableSource } = require('../lib/playable-source');
+
 /**
  * Pure effective-volume math: base volume + resolver offset + per-track
  * offset (both in dB), converted to a linear multiplier and clamped 0-100.
@@ -114,7 +116,7 @@ function useVolume({
 
     // Check sources object first (most reliable) - prefer active resolvers
     if (track.sources && typeof track.sources === 'object') {
-      const availableSources = Object.keys(track.sources).filter(resId => active.includes(resId) && !track.sources[resId]?.noMatch);
+      const availableSources = Object.keys(track.sources).filter(resId => active.includes(resId) && isPlayableSource(track.sources[resId]));
       if (availableSources.length > 0) {
         // Return the highest priority active resolver
         const resolverOrder = resolverOrderRef.current || [];
@@ -146,7 +148,11 @@ function useVolume({
       if (typeof track.sources[0] === 'string') return track.sources[0];
     } else if (track.sources && typeof track.sources === 'object') {
       const allSources = Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch);
-      if (allSources.length > 0) return allSources[0];
+      const playable = allSources.filter(id => isPlayableSource(track.sources[id]));
+      if (playable.length > 0) return playable[0];
+      // Only purchase-only sources (a buy-only Bandcamp track): nothing plays
+      // it, so no service is named as the one playing (the playbar's line 3).
+      if (allSources.length > 0) return null;
     }
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
     if (track.amazonAsin || track.sources?.amazonmusic) return 'amazonmusic';

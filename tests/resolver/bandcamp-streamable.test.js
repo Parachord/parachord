@@ -124,10 +124,21 @@ describe('isStreamable', () => {
 });
 
 describe('resolve checks its pick', () => {
-  test('a buy-only pick is no match, and no other Bandcamp copy is tried', async () => {
+  test('a buy-only pick comes back purchase-only, and no other Bandcamp copy is tried', async () => {
     install([row(1, 'Nude', 'Radiohead'), row(2, 'Nude', 'Radiohead')], { 1: false });
-    expect(await fresh().resolve('Radiohead', 'Nude', 'In Rainbows', {})).toBeNull();
+    const found = await fresh().resolve('Radiohead', 'Nude', 'In Rainbows', {});
+    expect(found).toMatchObject({
+      bandcampTrackId: 1,
+      streamable: false,
+      bandcampUrl: 'https://x1.bandcamp.com/track/t1',
+      purchaseUrl: 'https://x1.bandcamp.com/track/t1',
+    });
     expect(mobileCalls()).toHaveLength(1);
+  });
+
+  test('a pick that streams carries no streamable flag', async () => {
+    install([row(1, 'Nude', 'Radiohead')], {});
+    expect((await fresh().resolve('Radiohead', 'Nude', '', {})).streamable).toBeUndefined();
   });
 
   test('the first pick that streams costs one check', async () => {
@@ -146,10 +157,10 @@ describe('resolve checks its pick', () => {
     const own = row(1, 'Nude', 'Radiohead', { item_url_path: 'https://radiohead.bandcamp.com/track/nude' });
     const fanCopy = row(2, 'nude', 'radiohead', { item_url_path: 'https://meanderpede.bandcamp.com/track/nude' });
     install([own, fanCopy], { 1: false });
-    expect(await fresh().resolve('Radiohead', 'Nude', '', {})).toBeNull();
+    expect(await fresh().resolve('Radiohead', 'Nude', '', {})).toMatchObject({ bandcampTrackId: 1, streamable: false });
     const label = row(3, 'Cleopatra', 'The Lumineers', { item_url_path: 'https://somelabel.bandcamp.com/track/cleopatra' });
     install([label, row(4, 'Cleopatra', 'The Lumineers')], { 3: false });
-    expect(await fresh().resolve('The Lumineers', 'Cleopatra', '', {})).toBeNull();
+    expect(await fresh().resolve('The Lumineers', 'Cleopatra', '', {})).toMatchObject({ bandcampTrackId: 3, streamable: false });
     expect(mobileCalls()).toHaveLength(1);
   });
 
@@ -240,7 +251,7 @@ describe('album pages', () => {
     global.fetch = jest.fn(async () => ({ ok: true, status: 200, text: async () => html }));
   };
 
-  test('lists every track, and a buy-only one carries no Bandcamp source', async () => {
+  test('lists every track, and a buy-only one carries a purchase-only source', async () => {
     installPage(albumPage([
       { track_id: 1, title: '15 Step', title_link: '/track/15-step', file: FILE },
       { track_id: 2, title: 'Bodysnatchers', title_link: '/track/bodysnatchers', file: null },
@@ -252,8 +263,9 @@ describe('album pages', () => {
     expect(album.tracks[0]).toMatchObject({ sources: ['bandcamp'], bandcampUrl: 'https://radiohead.bandcamp.com/track/15-step' });
     expect(album.tracks[0].streamable).toBeUndefined();
     for (const t of album.tracks.slice(1)) {
-      expect(t.sources).toEqual([]);
-      expect(t.bandcampUrl).toBeUndefined();
+      expect(t.sources).toEqual(['bandcamp']);
+      expect(t.bandcampUrl).toMatch(/^https:\/\/radiohead\.bandcamp\.com\/track\//);
+      expect(t.purchaseUrl).toBe(t.bandcampUrl);
       expect(t.streamable).toBe(false);
     }
   });
@@ -269,10 +281,12 @@ describe('album pages', () => {
     global.fetch = jest.fn(async () => { throw new Error('no request expected'); });
     expect(await r.isStreamable(20, 3)).toBe(false);
     expect(await r.isStreamable(20, 1)).toBe(true);
-    // A playlist track that knows a buy-only page gets no source from it.
-    expect(r.sourceFromUrl('https://radiohead.bandcamp.com/track/nude', { title: 'Nude', artist: 'Radiohead' })).toBeNull();
-    expect(r.sourceFromUrl('https://radiohead.bandcamp.com/track/15-step', { title: '15 Step', artist: 'Radiohead' }))
-      .toMatchObject({ bandcampUrl: 'https://radiohead.bandcamp.com/track/15-step' });
+    // A playlist track that knows a buy-only page gets a purchase-only source.
+    expect(r.sourceFromUrl('https://radiohead.bandcamp.com/track/nude', { title: 'Nude', artist: 'Radiohead' }))
+      .toMatchObject({ bandcampUrl: 'https://radiohead.bandcamp.com/track/nude', purchaseUrl: 'https://radiohead.bandcamp.com/track/nude', streamable: false });
+    const streams = r.sourceFromUrl('https://radiohead.bandcamp.com/track/15-step', { title: '15 Step', artist: 'Radiohead' });
+    expect(streams).toMatchObject({ bandcampUrl: 'https://radiohead.bandcamp.com/track/15-step' });
+    expect(streams.streamable).toBeUndefined();
   });
 
   test('a page without player data keeps every source', async () => {
@@ -295,10 +309,12 @@ describe('track pages', () => {
     return fresh().lookupUrl('https://radiohead.bandcamp.com/track/nude', {});
   };
 
-  test('a buy-only track comes back without a Bandcamp source', async () => {
+  test('a buy-only track comes back as a purchase-only source', async () => {
     const t = await lookup(trackPage(null));
-    expect(t).toMatchObject({ title: 'Nude', artist: 'Radiohead', duration: 255, sources: [], streamable: false });
-    expect(t.bandcampUrl).toBeUndefined();
+    expect(t).toMatchObject({
+      title: 'Nude', artist: 'Radiohead', duration: 255, sources: ['bandcamp'], streamable: false,
+      bandcampUrl: 'https://radiohead.bandcamp.com/track/nude', purchaseUrl: 'https://radiohead.bandcamp.com/track/nude',
+    });
   });
 
   test('a streamable track keeps its source', async () => {
@@ -307,5 +323,15 @@ describe('track pages', () => {
 
   test('no player data keeps the source', async () => {
     expect(await lookup(trackPage(undefined))).toMatchObject({ sources: ['bandcamp'], bandcampUrl: 'https://radiohead.bandcamp.com/track/nude' });
+  });
+});
+
+describe('capabilities.resolvePicks', () => {
+  // The play-time resolve asks the plug-in's resolve instead of picking among
+  // its search results: search drops buy-only rows, so a pick among them
+  // could only be another account's upload, never the purchase-only answer.
+  test('Bandcamp declares it', () => {
+    const manifest = require('../../plugins-src/bandcamp/manifest.json');
+    expect(manifest.capabilities.resolvePicks).toBe(true);
   });
 });

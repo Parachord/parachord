@@ -285,11 +285,15 @@ module.exports = {
         if (!isVariant(results[i])) candidates.push(results[i]);
       }
     }
-    // Only a track that streams is a source. An artist can make a track
-    // buy-only (Radiohead's own "Nude" and "Reckoner" on Bandcamp), and it
-    // would show a Bandcamp icon and fail when played. So the pick is checked,
-    // and if it's buy-only the track gets no Bandcamp source at all: we never
-    // go looking for another Bandcamp copy of the same song. The next match
+    // Only a track that streams is a source to play. An artist can make a
+    // track buy-only (Radiohead's own "Nude" and "Reckoner" on Bandcamp), and
+    // it would show a Bandcamp icon and fail when played. So the pick is
+    // checked, and if it's buy-only it comes back marked `streamable: false`:
+    // a purchase-only source, which the app never plays or shows an icon for
+    // (src/renderer/lib/playable-source.js) but still offers Buy from. An app
+    // that predates the flag treats it as playable, as it did every buy-only
+    // track before 1.5.0. We never go looking for another Bandcamp copy of the
+    // same song. The next match
     // down is almost always someone else's upload (Radiohead's "Nude" has a
     // "stripped mix" credited to Radiohead on another account), not the
     // artist's recording. A check that failed keeps the pick (playback still
@@ -303,7 +307,7 @@ module.exports = {
     if (Date.now() - startedAt > CHECK_DEADLINE_MS) return pick;
     var streams = await this.isStreamable(pick.bandcampBandId, pick.bandcampTrackId, pick.bandcampUrl);
     if (streams !== false) return pick;
-    return null;
+    return Object.assign({}, pick, { streamable: false });
   },
   // Whether Bandcamp lets this track stream: true, false (the artist made it
   // buy-only), or null when the check itself failed (a network or HTTP error,
@@ -379,11 +383,10 @@ module.exports = {
   // registry routes the track's link here as a track link
   // (src/renderer/lib/source-url-hint.js); track is { title, artist, album,
   // duration } from the app's track. A page already known not to stream
-  // this session gives none (null: the app falls back to resolve, which
-  // checks what it finds).
+  // this session gives a purchase-only source (`streamable: false`): Buy, but
+  // nothing to play.
   sourceFromUrl: function (url, track) {
-    if (this._bandcampStreams && this._bandcampStreams.byUrl[url] === false) return null;
-    return {
+    var source = {
       id: 'bandcamp-' + Date.now(),
       title: track.title,
       artist: track.artist,
@@ -393,6 +396,8 @@ module.exports = {
       bandcampUrl: url,
       purchaseUrl: url,
     };
+    if (this._bandcampStreams && this._bandcampStreams.byUrl[url] === false) source.streamable = false;
+    return source;
   },
   lookupUrl: async function (url, config) {
     try {
@@ -408,9 +413,10 @@ module.exports = {
       const doc = parser.parseFromString(html, 'text/html');
       // Whether the track streams, from the page's own player data (no
       // extra request): data-tralbum's trackinfo carries the audio file, and
-      // a buy-only track's has none. A buy-only track comes back without a
-      // Bandcamp source (it plays from another service, or shows as
-      // unavailable); unreadable player data is unknown and keeps the source.
+      // a buy-only track's has none. A buy-only track comes back marked
+      // `streamable: false`, a purchase-only source: the app plays it from
+      // another service (or shows it as unavailable) and still offers Buy.
+      // Unreadable player data is unknown, and the track stays playable.
       let streams = null;
       try {
         const el = doc.querySelector('[data-tralbum]');
@@ -423,10 +429,11 @@ module.exports = {
           if (typeof this.noteStreamable === 'function') this.noteStreamable(info.track_id || info.id, url, streams);
         }
       } catch (e) {}
-      const withSource = (t) =>
-        streams === false
-          ? Object.assign(t, { sources: [], purchaseUrl: url, streamable: false })
-          : Object.assign(t, { sources: ['bandcamp'], bandcampUrl: url, purchaseUrl: url });
+      const withSource = (t) => {
+        Object.assign(t, { sources: ['bandcamp'], bandcampUrl: url, purchaseUrl: url });
+        if (streams === false) t.streamable = false;
+        return t;
+      };
       const ldScripts = doc.querySelectorAll('script[type="application/ld+json"]');
       for (const ldEl of ldScripts) {
         try {
@@ -575,9 +582,10 @@ module.exports = {
       // Which tracks stream, from the page's own player data (no extra
       // request): each of data-tralbum's trackinfo entries carries its audio
       // file, and a buy-only track's has none. Every track stays in the list
-      // (an album page shows them all), but a buy-only one carries no
-      // Bandcamp source: it plays from another service or shows as
-      // unavailable. Unreadable player data is unknown and keeps every source.
+      // (an album page shows them all), and a buy-only one is marked
+      // `streamable: false`, a purchase-only source: the app plays it from
+      // another service (or shows it as unavailable) and still offers Buy.
+      // Unreadable player data is unknown, and every track stays playable.
       const streamsByPath = {};
       let trackinfo = [];
       try {
@@ -640,11 +648,7 @@ module.exports = {
                 purchaseUrl: trackUrl,
                 trackNumber: item.position || i + 1,
               };
-              if (streams === false) {
-                entry.sources = [];
-                delete entry.bandcampUrl;
-                entry.streamable = false;
-              }
+              if (streams === false) entry.streamable = false;
               return entry;
             });
             break;
