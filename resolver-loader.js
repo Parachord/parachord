@@ -289,8 +289,14 @@ class ResolverLoader {
 
   /**
    * Initialize a resolver
+   *
+   * host: what the host hands the plugin's init as its second argument. A
+   * playing plugin that reports plays (capabilities.playbackTelemetry,
+   * lib/playback-telemetry.js) gets { getConfig }, its saved settings read
+   * at each call. A host that passes none (the meta services' telemetry
+   * init, the mobile apps) leaves it undefined, and the plugin must cope.
    */
-  async initResolver(id, config = {}) {
+  async initResolver(id, config = {}, host = undefined) {
     const resolver = this.resolvers.get(id);
     if (!resolver) {
       throw new Error(`Resolver ${id} not found`);
@@ -300,7 +306,7 @@ class ResolverLoader {
 
     if (resolver.init) {
       try {
-        await resolver.init(config);
+        await resolver.init(config, host);
       } catch (error) {
         console.error(`Error initializing ${id}:`, error);
         throw error;

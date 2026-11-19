@@ -21,6 +21,9 @@
 //   StartupRow       settings.startup: open the service's app at startup
 //   InstallCallout   settings.installCallout: software to install first
 //   WatchFolders     settings.watchFolders: folders the plug-in reads
+//   PluginSwitches   settings.switches: the plug-in's own on/off options,
+//                    nested under "Enable X" (Subsonic's "Report plays to
+//                    your server", #1546)
 //
 // The layout is the dialog's one order (CLAUDE.md, "Every plug-in's settings
 // are one layout"): on/off, the account, the keys it signs in with, what
@@ -318,6 +321,44 @@ function StartupRow({ plugin, startup }) {
       e(Switch, { checked: !!startup.on, onToggle: startup.toggle, 'aria-label': `Open ${plugin.name} in the background at startup` })));
 }
 
+// The plug-in's own on/off options (settings.switches: { key: { label,
+// hint, default } }), in manifest order. Each one is a choice someone might
+// want off while the rest of the plug-in stays on, saved in the plug-in's
+// config under its key (true or false), which the plug-in reads. Outside
+// `configurable` on purpose: the mobile apps and older desktops draw every
+// configurable field as a text box, and ignore a settings field they don't
+// know.
+function switchesOf(plugin) {
+  const switches = settingsOf(plugin).switches;
+  if (!switches || typeof switches !== 'object' || Array.isArray(switches)) return [];
+  return Object.entries(switches).filter(([, sw]) => sw && typeof sw.label === 'string' && sw.label.trim());
+}
+
+// Whether a switch is on: what's saved, else its default (off unless the
+// manifest says true).
+const switchOn = (sw, config, key) => (config && typeof config[key] === 'boolean' ? config[key] : sw.default === true);
+
+// PluginSwitches: settings.switches, each a nested row with a small switch,
+// drawn under "Enable X" while it's on, like "Play from X" (#1505).
+//   config  the plug-in's saved config
+//   onSet   (key, on) saves it
+//   first   it's the first nested row (the line above needs its space)
+function PluginSwitches({ plugin, config, onSet, first = false }) {
+  const e = React.createElement;
+  const rows = switchesOf(plugin);
+  if (rows.length === 0) return null;
+  return e(React.Fragment, null, ...rows.map(([key, sw], i) => {
+    const on = switchOn(sw, config, key);
+    return e(SettingRow, {
+      key,
+      label: sw.label,
+      hint: sw.hint || undefined,
+      nested: true,
+      style: { padding: '6px 0', marginTop: first && i === 0 ? '12px' : '0' },
+    }, e(Switch, { size: 'sm', checked: on, onToggle: () => onSet(key, !on) }));
+  }));
+}
+
 // InstallCallout: settings.installCallout { title, text, url, linkLabel },
 // software the plug-in needs that Parachord can't install (Ollama).
 function InstallCallout({ plugin }) {
@@ -376,5 +417,5 @@ function WatchFolders({ watchFolders, isScanning, scanProgress, localFilesStats,
 }
 
 module.exports = {
-  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders,
-  settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT, shownKeyValues };
+  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches,
+  switchesOf, switchOn, settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT, shownKeyValues };

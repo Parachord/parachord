@@ -827,11 +827,155 @@ module.exports = {
     return !!(config && config.serverUrl && config.username && config.password);
   },
 
-  init: async function (config) {
+  // "Report plays to your server" (settings.switches.reportPlays, off by
+  // default; Parachord/parachord#1546): while it's on, a track that plays
+  // from this plug-in is reported to the server with scrobble.view, as its
+  // Now Playing when it starts (submission=false) and as a play once it
+  // passes the scrobble threshold (submission=true: the server's play count,
+  // and its own Last.fm/ListenBrainz scrobbling if set up there). Off by
+  // default because someone who already scrobbles from Parachord may not
+  // want the server to count the same play again.
+  //
+  // It rides the scrobble manager's plugin contract
+  // (window.scrobbleManager.registerPlugin), like Achordion: the manager
+  // decides when (start, threshold) and queues a failed submission for a
+  // retry. The host calls init only for a playing plug-in that declares
+  // capabilities.playbackTelemetry, and passes host.getConfig so the
+  // switch and the credentials are read at each call. A host without either
+  // (an older desktop, the mobile apps today) gets nothing registered: the
+  // plug-in works as before.
+  init: async function (config, host) {
     console.log('Subsonic resolver initialized');
+    var manager = typeof window !== 'undefined' ? window.scrobbleManager : null;
+    var getConfig = host && typeof host.getConfig === 'function' ? host.getConfig : null;
+    if (!manager || typeof manager.registerPlugin !== 'function' || !getConfig) return true;
+
+    var self = this;
+    var pluginId = self.id || 'subsonic';
+    var warned = {};
+    // One line per kind of failure per session; never the URL (it carries
+    // the token and salt).
+    var warnOnce = function (key, message) {
+      if (warned[key]) return;
+      warned[key] = true;
+      console.warn('Subsonic: ' + message);
+    };
+    var readConfig = async function () {
+      try {
+        return (await getConfig()) || {};
+      } catch (e) {
+        return {};
+      }
+    };
+    var reporting = function (cfg) {
+      return !!(cfg && cfg.reportPlays === true && cfg.serverUrl && cfg.username && cfg.password);
+    };
+    // The song id, only when this track played from this plug-in: the
+    // playing source's fields are spread onto the track, and
+    // _activeResolver names what played it. A play from anywhere else is
+    // never reported.
+    var songIdOf = function (track) {
+      if (!track || track._activeResolver !== pluginId) return null;
+      var sources = track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources) ? track.sources : null;
+      var source = sources ? sources[pluginId] : null;
+      var id = track.subsonicId || (source && source.subsonicId) || null;
+      return id ? String(id) : null;
+    };
+    // Subsonic error codes. Wrong credentials (40, 44) may be fixed in
+    // Settings, so a queued play waits for that; one the server will never
+    // take (a missing parameter, a version it won't speak, token auth it
+    // doesn't offer, a user it won't let scrobble, a song it doesn't have) is
+    // dropped instead of retried.
+    var AUTH_CODES = { 40: true, 44: true };
+    var PERMANENT_CODES = { 10: true, 20: true, 30: true, 41: true, 42: true, 43: true, 50: true, 60: true, 70: true };
+    var report = async function (cfg, songId, submission, timestamp) {
+      if (!window.__subsonicHelpers) await self.getStreamUrl({ subsonicId: 'init' }, cfg);
+      var h = window.__subsonicHelpers;
+      var extra = 'f=json&id=' + encodeURIComponent(songId) + '&submission=' + (submission ? 'true' : 'false');
+      if (submission && typeof timestamp === 'number' && timestamp > 0) extra += '&time=' + Math.floor(timestamp * 1000);
+      var url = h ? h.apiUrl(cfg, 'scrobble', extra) : null;
+      if (!url) throw new Error('Subsonic scrobble failed: no server address');
+      var resp;
+      try {
+        resp = await fetch(url);
+      } catch (e) {
+        throw new Error('Subsonic scrobble failed: the server could not be reached');
+      }
+      if (!resp || !resp.ok) {
+        var status = resp ? resp.status : 0;
+        var httpError = new Error('Subsonic scrobble failed: HTTP ' + status);
+        if (status === 401 || status === 403) httpError.authError = true;
+        if (status === 404 || status === 410 || status === 501) httpError.permanent = true;
+        throw httpError;
+      }
+      var data = null;
+      try {
+        data = await resp.json();
+      } catch (e) {}
+      var sub = data && data['subsonic-response'];
+      if (!sub) throw new Error('Subsonic scrobble failed: not a Subsonic response');
+      if (sub.status !== 'ok') {
+        var code = sub.error && typeof sub.error.code === 'number' ? sub.error.code : null;
+        var apiError = new Error(
+          'Subsonic scrobble failed: ' + (code !== null ? 'error ' + code : 'status ' + sub.status) +
+            (sub.error && sub.error.message ? ' ' + sub.error.message : ''),
+        );
+        if (code !== null && AUTH_CODES[code]) apiError.authError = true;
+        if (code !== null && PERMANENT_CODES[code]) apiError.permanent = true;
+        throw apiError;
+      }
+      return true;
+    };
+
+    manager.registerPlugin({
+      id: pluginId,
+      isEnabled: async function () {
+        return reporting(await readConfig());
+      },
+      // The server's Now Playing. A failure is only logged (once): the
+      // play itself is what counts, and it's reported at the threshold.
+      updateNowPlaying: async function (track) {
+        var songId = songIdOf(track);
+        if (!songId) return;
+        var cfg = await readConfig();
+        if (!reporting(cfg)) return;
+        try {
+          await report(cfg, songId, false);
+        } catch (e) {
+          warnOnce('now-playing', 'couldn’t send Now Playing to the server (' + e.message + ')');
+        }
+      },
+      // The play. A failure throws, so the manager queues it and retries it
+      // at the next launch (queuedTrack keeps the song id for that), except
+      // one the server will never take, which is logged and dropped.
+      scrobble: async function (track, timestamp) {
+        var songId = songIdOf(track);
+        if (!songId) return;
+        var cfg = await readConfig();
+        if (!reporting(cfg)) return;
+        try {
+          await report(cfg, songId, true, timestamp);
+        } catch (e) {
+          if (e && e.permanent) {
+            warnOnce('permanent ' + e.message, e.message + '; not retrying');
+            return;
+          }
+          throw e;
+        }
+      },
+      queuedTrack: function (track) {
+        var songId = songIdOf(track);
+        return songId ? { _activeResolver: pluginId, subsonicId: songId } : null;
+      },
+    });
     return true;
   },
   cleanup: async function () {
     console.log('Subsonic resolver cleanup');
+    try {
+      if (typeof window !== 'undefined' && window.scrobbleManager && typeof window.scrobbleManager.unregisterPlugin === 'function') {
+        window.scrobbleManager.unregisterPlugin(this.id || 'subsonic');
+      }
+    } catch (e) {}
   },
 };

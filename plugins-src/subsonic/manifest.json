@@ -2,7 +2,7 @@
   "manifest": {
     "id": "subsonic",
     "name": "Subsonic",
-    "version": "0.3.6",
+    "version": "0.3.7",
     "author": "Parachord Team",
     "description": "Stream from your own music server: Navidrome, Airsonic, Gonic or anything Subsonic-compatible.",
     "requirement": "Needs your own Subsonic-compatible server, such as Navidrome.",
@@ -24,7 +24,8 @@
     "mobile": true,
     "albumSearch": true,
     "html5Stream": true,
-    "artistImage": true
+    "artistImage": true,
+    "playbackTelemetry": true
   },
   "urlPatterns": [],
   "settings": {
@@ -46,6 +47,13 @@
         "type": "password",
         "label": "Password",
         "description": "Your Subsonic account password. It's never sent in plain text."
+      }
+    },
+    "switches": {
+      "reportPlays": {
+        "label": "Report plays to your server",
+        "hint": "Shows what’s playing on your server and adds to its play counts. If your server also scrobbles to Last.fm or ListenBrainz, a play Parachord scrobbles too may count twice.",
+        "default": false
       }
     }
   }

@@ -30,7 +30,7 @@ const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { EmptyState, ErrorState } = require('./states');
-const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
+const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'fetchDynamicModels',
@@ -340,7 +340,18 @@ React.createElement('div', {
                 hint: recs.hint,
                 nested: true,
                 style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
-              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
+              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })),
+              // The plug-in's own on/off options (settings.switches: Subsonic's
+              // "Report plays to your server", #1546), saved in its config.
+              state.checked && React.createElement(PluginSwitches, {
+                plugin: selectedResolver,
+                config: metaServiceConfigs[id],
+                first: !(play.shown || meta.shown || recs.shown),
+                onSet: (key, on) => {
+                  saveMetaServiceConfig(id, { ...metaServiceConfigs[id], [key]: on });
+                  delete resolverConfigCache.current[id];
+                },
+              }));
           })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the

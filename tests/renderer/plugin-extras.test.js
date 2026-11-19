@@ -166,6 +166,39 @@ describe('each extra section shows for its signal and not otherwise', () => {
     expect(local).not.toContain('API Configuration');
   });
 
+  test('its own switches: settings.switches, nested under Enable while it is on (#1546)', () => {
+    const plugin = base({ settings: { switches: { tellServer: { label: 'Tell the server', hint: 'It counts your plays.', default: false } } } });
+    const on = render(plugin, { activeResolvers: ['newservice'] });
+    expect(on).toContain('Tell the server');
+    expect(on).toContain('It counts your plays.');
+    // A nested row with a small switch, after Enable, like Play from.
+    const row = on.slice(on.indexOf('Tell the server') - 600, on.indexOf('Tell the server'));
+    expect(row).toContain('border-l-2 border-line');
+    expect(on.indexOf('Enable New Service')).toBeLessThan(on.indexOf('Tell the server'));
+    const sw = on.slice(on.indexOf('Tell the server'));
+    expect(sw).toMatch(/role="switch" aria-checked="false"[^>]*class="[^"]*w-9 h-5/);
+    // Saved on: checked.
+    expect(render(plugin, { activeResolvers: ['newservice'], metaServiceConfigs: { newservice: { tellServer: true } } }))
+      .toMatch(/Tell the server[\s\S]*?role="switch" aria-checked="true"/);
+    // Enable off: not drawn. No switches declared: nothing.
+    expect(render(plugin)).not.toContain('Tell the server');
+    expect(render(base(), { activeResolvers: ['newservice'] })).not.toContain('Tell the server');
+  });
+
+  test('a switch is never drawn as a text field, and the userpass fields stay as they were', () => {
+    const plugin = base({
+      settings: {
+        authType: 'userpass',
+        configurable: { serverUrl: { type: 'text', label: 'Server URL' }, username: { type: 'text', label: 'Username' }, password: { type: 'password', label: 'Password' } },
+        switches: { tellServer: { label: 'Tell the server' } },
+      },
+    });
+    const html = render(plugin, { activeResolvers: ['newservice'] });
+    expect(html).toContain('Server URL');
+    expect((html.match(/Tell the server/g) || []).length).toBe(1);
+    expect(html).not.toMatch(/aria-label="Tell the server"/);
+  });
+
   test('Remove: every plug-in but one whose manifest says settings.removable: false', () => {
     expect(render(base())).toContain('>Remove<');
     expect(render(base({ settings: { removable: false } }))).not.toContain('>Remove<');
@@ -292,6 +325,7 @@ test('the shipped manifests declare the signals their sections need', () => {
   expect(m('applemusic').settings.configurable.developerToken.advanced).toBe(true);
   expect(m('ollama').settings.installCallout.url).toBeTruthy();
   expect(m('localfiles').settings.watchFolders).toBe(true);
+  expect(m('subsonic').settings.switches.reportPlays.label).toBeTruthy();
   for (const id of ['spotify', 'localfiles']) expect(m(id).settings.removable).toBe(false);
   for (const id of ['chatgpt', 'gemini', 'claude']) {
     expect(m(id).settings.configurable.apiKey.placeholder).toBeTruthy();

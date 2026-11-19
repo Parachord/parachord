@@ -22,7 +22,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse, play, and purchase from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog
-- **Subsonic** - Stream from your own Subsonic-compatible server (Navidrome, Airsonic, Gonic, ...)
+- **Subsonic** - Stream from your own Subsonic-compatible server (Navidrome, Airsonic, Gonic, ...), and optionally report what you play back to it (Now Playing and play counts)
 - **Local Files** - Scan and play your local music library with metadata extraction
 
 ### Plug-in Architecture
