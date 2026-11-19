@@ -686,6 +686,45 @@ class ResolverLoader {
   }
 
   /**
+   * Plug-ins that list an artist's most played tracks, for Play top tracks,
+   * Add Top 10 to Queue, Spinoff's top-up and an artist-only radio seed: they
+   * declare capabilities.artistTopTracks and implement getArtistTopTracks
+   * (docs/architecture/plugins.md, "Similar artists and tracks", #1539).
+   * @returns {object[]}
+   */
+  getArtistTopTracksResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.artistTopTracks &&
+      typeof r.getArtistTopTracks === 'function'
+    );
+  }
+
+  /**
+   * Ask one plug-in for an artist's top tracks.
+   * @param {string} resolverId
+   * @param {{ name: string, mbid?: string, limit?: number }} artist
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object[]>} [{ title, artist, album?, duration? (ms),
+   *          mbid?, listens? }], most played first; [] when the plug-in lacks
+   *          the capability or has none. REJECTS when the plug-in throws.
+   */
+  async getArtistTopTracks(resolverId, artist, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.artistTopTracks || typeof resolver.getArtistTopTracks !== 'function') {
+      return [];
+    }
+    try {
+      const tracks = await resolver.getArtistTopTracks(artist || {}, configOverride || resolver.config || {});
+      return Array.isArray(tracks)
+        ? tracks.filter(t => t && typeof t.title === 'string' && t.title.trim())
+        : [];
+    } catch (error) {
+      console.error(`Artist top tracks error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
    * Ask one provider for the next page of an expandable recommendation
    * section (the provider's expandRecommendationSection). Providers that do
    * not paginate do not implement it and answer null.

@@ -28,11 +28,11 @@ function fakePlugins({ similarTracks = [], similarArtists = [], topTracks = {}, 
     similarArtists: async (q) => {
       calls.push({ name: 'similarArtists', q });
       if (fail.includes('similarArtists')) return { artists: [], failed: true };
-      return { artists: similarArtists.slice(0, q.limit).map((name, i) => ({ name, match: 100 - i * 10 })), failed: false };
+      return { artists: similarArtists.slice(0, q.limit).map((name, i) => ({ name, mbid: `mbid-${i}`, match: 100 - i * 10 })), failed: false };
     },
     // Like app.js's getArtistTopTracks: [] when it fails or the artist is unknown.
-    topTracks: async (name, limit) => {
-      calls.push({ name: 'topTracks', q: { name, limit } });
+    topTracks: async ({ name, mbid }, limit) => {
+      calls.push({ name: 'topTracks', q: { name, mbid, limit } });
       const titles = topTracks[name];
       return titles === undefined ? [] : titles.slice(0, limit).map((title) => ({ title, artist: name }));
     },
@@ -98,6 +98,8 @@ describe('buildSpinoffPool', () => {
     const tops8 = fp.calls.filter((c) => c.name === 'topTracks');
     expect(tops8).toHaveLength(8);
     expect(tops8[0].q.limit).toBe(3);
+    // Each similar artist's MBID goes along, for plug-ins that ask by MBID.
+    expect(tops8[0].q).toEqual({ name: 'James Arthur', mbid: 'mbid-0', limit: 3 });
   });
 
   test('a few similar tracks come first, then the top-up', async () => {
@@ -142,7 +144,7 @@ describe('buildSpinoffPool', () => {
 
   test('a top-tracks lookup that throws is one empty group', async () => {
     const fp = fakePlugins({ similarTracks: [], similarArtists: artists, topTracks: tops });
-    const out = await pool(fp, { topTracks: async (name, limit) => { if (name === 'James Arthur') throw new Error('x'); return fp.topTracks(name, limit); } });
+    const out = await pool(fp, { topTracks: async (a, limit) => { if (a.name === 'James Arthur') throw new Error('x'); return fp.topTracks(a, limit); } });
     expect(out.tracks).toHaveLength(21);
   });
 
@@ -221,7 +223,7 @@ describe('wiring', () => {
   test('startSpinoff builds its pool from the plug-ins, and nothing else asks track.getsimilar', () => {
     expect(engine).toContain('const pool = await buildSpinoffPool({');
     expect(engine).toContain('similarTracks: (q) => findSimilarTracksRef.current(q),');
-    expect(engine).toContain('topTracks: (name, limit) => getArtistTopTracks(name, limit),');
+    expect(engine).toContain('topTracks: (artist, limit) => getArtistTopTracks(artist, limit),');
     expect(engine).toContain('if (pool.failed) {');
     expect(engine).not.toContain('method=track.getsimilar');
     expect(app).not.toContain('method=track.getsimilar');

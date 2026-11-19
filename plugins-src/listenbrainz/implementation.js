@@ -444,5 +444,50 @@ module.exports = {
         : Math.max(95 - (index * 4), 20);
       return { name: a.name || a.artist_name, mbid: a.artist_mbid || undefined, match: match };
     });
+  },
+
+  // The artistTopTracks capability (#1539 step 2): the artist's recordings by
+  // listen count, from /1/popularity/top-recordings-for-artist/<mbid>.
+  // artist: { name, mbid?, limit? }. Without an MBID there is nothing to ask:
+  // a miss ([]). ListenBrainz answers this endpoint only for a signed-in user
+  // (it refuses anonymous requests with a 401 since 2026-11, citing scrapers),
+  // so without the user's token this THROWS, as does a failed request: the
+  // app then plays another plug-in's list rather than "no top tracks".
+  // ListenBrainz splits a song's plays across duplicate recordings, so a
+  // title is kept once (its most played recording). Answers [{ title, artist,
+  // album, duration (ms), mbid, listens }], most played first.
+  getArtistTopTracks: async function (artist, config) {
+    const mbid = artist && typeof artist.mbid === 'string' ? artist.mbid.trim() : '';
+    if (!mbid) return [];
+    const token = config && config.userToken;
+    if (!token) throw new Error('ListenBrainz top tracks need a signed-in account');
+    const limit = Math.max(1, Math.min(100, Number(artist.limit) || 10));
+    const response = await fetch('https://api.listenbrainz.org/1/popularity/top-recordings-for-artist/' + encodeURIComponent(mbid), {
+      headers: { Authorization: 'Token ' + token }
+    });
+    if (!response.ok) throw new Error('ListenBrainz top tracks failed: ' + response.status);
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error('ListenBrainz top tracks: unexpected answer');
+    const seen = new Set();
+    const out = [];
+    for (const r of data) {
+      const title = r && typeof r.recording_name === 'string' ? r.recording_name.trim() : '';
+      if (!title) continue;
+      const key = title.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const length = Number(r.length);
+      const listens = Number(r.total_listen_count);
+      out.push({
+        title: r.recording_name,
+        artist: r.artist_name || artist.name,
+        album: r.release_name || undefined,
+        duration: length > 0 ? length : undefined,
+        mbid: r.recording_mbid || undefined,
+        listens: Number.isFinite(listens) ? listens : undefined
+      });
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 };

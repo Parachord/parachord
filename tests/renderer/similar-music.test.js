@@ -7,6 +7,7 @@ const path = require('path');
 const {
   similarProviders,
   askEach,
+  firstAnswer,
   mergeSimilarArtists,
   mergeSimilarTracks,
   sourcesIn,
@@ -16,12 +17,13 @@ const ResolverLoader = require('../../resolver-loader');
 const fakeLoader = (resolvers) => ({
   getSimilarArtistsResolvers: () => resolvers.filter((r) => r.capabilities.similarArtists),
   getSimilarTracksResolvers: () => resolvers.filter((r) => r.capabilities.similarTracks),
+  getArtistTopTracksResolvers: () => resolvers.filter((r) => r.capabilities.artistTopTracks),
 });
 
 describe('similarProviders', () => {
   const loader = fakeLoader([
-    { id: 'lastfm', capabilities: { similarArtists: true, similarTracks: true } },
-    { id: 'listenbrainz', capabilities: { similarArtists: true } },
+    { id: 'lastfm', capabilities: { similarArtists: true, similarTracks: true, artistTopTracks: true } },
+    { id: 'listenbrainz', capabilities: { similarArtists: true, artistTopTracks: true } },
     { id: 'spotify', capabilities: { similarArtists: true } },
     { id: 'stray', capabilities: { similarArtists: true } },
   ]);
@@ -40,6 +42,7 @@ describe('similarProviders', () => {
 
   test('by capability', () => {
     expect(similarProviders(loader, 'similarTracks', base).map((r) => r.id)).toEqual(['lastfm']);
+    expect(similarProviders(loader, 'artistTopTracks', base).map((r) => r.id)).toEqual(['listenbrainz', 'lastfm']);
     expect(similarProviders(loader, 'nope', base)).toEqual([]);
     expect(similarProviders(null, 'similarArtists', base)).toEqual([]);
   });
@@ -70,6 +73,19 @@ describe('askEach', () => {
   test('a synchronous throw is a failure too', async () => {
     const out = await askEach([{ id: 'a' }], () => { throw new Error('boom'); });
     expect(out.failed).toBe(true);
+  });
+});
+
+describe('firstAnswer', () => {
+  test('the first plug-in with any items wins; lists are never merged', () => {
+    const lists = [
+      { id: 'listenbrainz', items: [] },
+      { id: 'lastfm', items: [{ title: 'Creep' }] },
+      { id: 'other', items: [{ title: 'Nude' }] },
+    ];
+    expect(firstAnswer(lists)).toEqual({ id: 'lastfm', items: [{ title: 'Creep' }] });
+    expect(firstAnswer([{ id: 'a', items: [] }])).toBeNull();
+    expect(firstAnswer(undefined)).toBeNull();
   });
 });
 
@@ -135,6 +151,18 @@ describe('resolver-loader', () => {
     spy.mockRestore();
   });
 
+  test('artist top tracks: by capability and method, dropping untitled rows, rejecting on a throw', async () => {
+    register('a', { artistTopTracks: true }, { getArtistTopTracks: async (q) => [{ title: 'Creep', artist: q.name }, { title: ' ' }, null] });
+    register('b', { artistTopTracks: true }, {});
+    register('c', { artistTopTracks: true }, { getArtistTopTracks: async () => { throw new Error('refused'); } });
+    expect(loader.getArtistTopTracksResolvers().map((r) => r.id)).toEqual(['a', 'c']);
+    await expect(loader.getArtistTopTracks('a', { name: 'Radiohead' })).resolves.toEqual([{ title: 'Creep', artist: 'Radiohead' }]);
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(loader.getArtistTopTracks('c', { name: 'Radiohead' })).rejects.toThrow('refused');
+    spy.mockRestore();
+    await expect(loader.getArtistTopTracks('b', { name: 'Radiohead' })).resolves.toEqual([]);
+  });
+
   test('a missing plug-in or capability answers []', async () => {
     register('a', {}, { getSimilarTracks: async () => [{ artist: 'A', title: 'B' }] });
     await expect(loader.getSimilarTracks('a', {})).resolves.toEqual([]);
@@ -148,15 +176,18 @@ describe('no similar-music call by service name in the renderer', () => {
   test('app.js and spinoff-pool.js ask the plug-ins', () => {
     for (const src of [read('app.js'), read('lib', 'spinoff-pool.js'), read('hooks', 'use-playback-engine.js')]) {
       expect(src).not.toMatch(/method=(artist|track)\.getsimilar|['"](artist|track)\.getsimilar['"]|labs\.api\.listenbrainz\.org\/similar-artists/);
+      expect(src).not.toMatch(/method=artist\.gettoptracks|top-recordings-for-artist/);
     }
     const app = read('app.js');
     expect(app).not.toMatch(/getLastfmSimilarArtists|getListenBrainzSimilarArtists/);
     expect(app).toMatch(/similarProviders\(resolverLoaderRef\.current, capability/);
+    expect(app).toMatch(/askEach\(similarProvidersFor\('artistTopTracks'\)/);
   });
 
   test('the meta-service load gate includes both capabilities', () => {
     const app = read('app.js');
     expect(app.match(/axe\.capabilities\?\.similarArtists && axe\.implementation\?\.getSimilarArtists/g)).toHaveLength(2);
     expect(app.match(/axe\.capabilities\?\.similarTracks && axe\.implementation\?\.getSimilarTracks/g)).toHaveLength(2);
+    expect(app.match(/axe\.capabilities\?\.artistTopTracks && axe\.implementation\?\.getArtistTopTracks/g)).toHaveLength(2);
   });
 });

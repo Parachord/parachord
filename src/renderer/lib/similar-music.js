@@ -15,6 +15,11 @@
 // false` in meta_service_configs). Last.fm and ListenBrainz need no sign-in to
 // answer, so a plug-in that was never set up is still asked, as before.
 //
+// An artist's top tracks (capabilities.artistTopTracks, #1539 step 2) come
+// from the same plug-ins by the same rule, but are never merged: each list is
+// ranked by its own service's play counts, so the first plug-in in the user's
+// order with a non-empty list wins (firstAnswer).
+//
 // Pure; loads under plain Node.
 
 'use strict';
@@ -25,6 +30,7 @@ const { normalizeStr } = require('../../../sync-providers/confidence-scoring');
 const LOADER_LIST = {
   similarArtists: 'getSimilarArtistsResolvers',
   similarTracks: 'getSimilarTracksResolvers',
+  artistTopTracks: 'getArtistTopTracksResolvers',
 };
 
 // The plug-ins to ask for one capability, in the user's order.
@@ -50,6 +56,12 @@ async function askEach(providers, ask) {
     if (s.status === 'fulfilled') answers.push({ id: list[i].id, items: Array.isArray(s.value) ? s.value : [] });
   });
   return { answers, failed: answers.length === 0 };
+}
+
+// The first answer with any items, in the providers' order: { id, items },
+// or null when every plug-in that answered had none.
+function firstAnswer(answers) {
+  return (answers || []).find((a) => a && Array.isArray(a.items) && a.items.length > 0) || null;
 }
 
 const artistKey = (name) => String(name || '').toLowerCase().trim();
@@ -117,6 +129,7 @@ function sourcesIn(items) {
 module.exports = {
   similarProviders,
   askEach,
+  firstAnswer,
   mergeSimilarArtists,
   mergeSimilarTracks,
   sourcesIn,
