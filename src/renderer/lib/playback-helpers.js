@@ -6,6 +6,8 @@
  * this single source.
  */
 
+const { isFoundSource, isPlayableSource } = require('./playable-source');
+
 const unsupportedAudioMessage = (ext) => {
   const e = (ext || '').toLowerCase();
   if (e === 'flac' || e === 'wav') {
@@ -78,12 +80,10 @@ async function savedPluginConfig(resolverId, inMemory, readStored) {
 // the UI's `__noMatchAll: true` marker (every resolver said so, gray the row),
 // which reaches handlePlay because rows pass trackSources[id] as track.sources.
 // Counting the marker as a source skipped the on-demand resolve and ended at
-// "No Enabled Source".
+// "No Enabled Source". A purchase-only source (`streamable: false`, a buy-only
+// Bandcamp track) is found but not playable (lib/playable-source.js).
 function playableSourceIds(sources) {
-  return Object.keys(sources || {}).filter((id) => {
-    const source = sources[id];
-    return !!source && typeof source === 'object' && !source.noMatch;
-  });
+  return Object.keys(sources || {}).filter((id) => isPlayableSource(sources[id]));
 }
 
 // What is left to try when the source `failedId` can't play (a local file
@@ -92,7 +92,7 @@ function playableSourceIds(sources) {
 // retry. Keyed on the resolver that failed, never on a named one (#1520).
 function fallbackAfter(sources, failedId) {
   const rest = Object.fromEntries(Object.entries(sources || {}).filter(([id]) => id !== failedId));
-  const ids = Object.keys(rest).filter((id) => !rest[id]?.noMatch);
+  const ids = Object.keys(rest).filter((id) => isPlayableSource(rest[id]));
   return { ids, sources: rest };
 }
 
@@ -102,7 +102,8 @@ function fallbackAfter(sources, failedId) {
 // unchanged, kept the sentinel and refreshed its timestamp, and a track rejected
 // under older scoring rules stayed that way for as long as it kept being viewed.
 function sourcesChangedOnRecheck(cachedSources, freshSources) {
-  const ids = (sources) => JSON.stringify(playableSourceIds(sources).sort());
+  // Found sources, purchase-only ones included: those are cached too.
+  const ids = (sources) => JSON.stringify(Object.keys(sources || {}).filter((id) => isFoundSource(sources[id])).sort());
   return ids(cachedSources) !== ids(freshSources);
 }
 
@@ -166,10 +167,10 @@ function shuffleAllowed({ spinoff, listenAlong }) {
 const RADIO_SEED_PROBE_COUNT = 5;
 const noPlayableSimilarTracksMessage = (title) => `Couldn't find a playable track similar to "${title}"`;
 // A track the resolver pipeline found somewhere to play (a noMatch entry is a
-// lookup that came back empty, not a source).
+// lookup that came back empty, not a source; a purchase-only one can't play).
 function hasPlayableSource(track) {
   const sources = (track && track.sources) || {};
-  return Object.keys(sources).some(id => sources[id] && !sources[id].noMatch);
+  return Object.keys(sources).some(id => isPlayableSource(sources[id]));
 }
 
 // Listen Along (parachord#1319), the mobile apps' shared rules

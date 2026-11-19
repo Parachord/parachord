@@ -7,7 +7,9 @@
 // match: confident, by the same artist and not another version (a cover,
 // remix or live cut is not the track playing, and cached sources from before
 // a plug-in's stricter resolve can still carry one). Until #1523 the playbar
-// looked Bandcamp up by id and read its bandcampUrl.
+// looked Bandcamp up by id and read its bandcampUrl. A purchase-only source
+// (`streamable: false`, a buy-only Bandcamp track; lib/playable-source.js)
+// counts like any other: those are the tracks where buying is the only way.
 //
 // Pure; loads under plain Node.
 

@@ -11,7 +11,10 @@
 //   2. drop entries that aren't sources: missing values, `{ noMatch: true }`
 //      sentinels, and the UI's `__noMatchAll: true` marker;
 //   3. keep only the resolvers that can play on this account
-//      (`playbackResolvers`, never `activeResolvers`);
+//      (`playbackResolvers`, never `activeResolvers`), and only sources that
+//      play: a purchase-only one (`streamable: false`, a buy-only Bandcamp
+//      track; lib/playable-source.js) shows no icon, so a row whose only
+//      source is purchase-only is 'unplayable' below;
 //   4. sort by the user's resolver order, leftmost plays first; a resolver
 //      not in the order goes last;
 //   5. dim a low-confidence match: a confidence below getBestSourceConfidence,
@@ -23,6 +26,8 @@
 // so every list dims a track that came back with nothing it can play.
 //
 // Pure, no React, loads under plain Node.
+
+const { isPlayableSource } = require('./playable-source');
 
 // The absolute confidence below which a source's icon renders dimmed. The
 // historical implementation returned the per-track best (relative-dim model: a
@@ -68,6 +73,7 @@ function visibleSources(track, { trackSources, playbackResolvers, resolverOrder 
   const bestConf = getBestSourceConfidence(sources);
   return Object.keys(sources)
     .filter((id) => !Array.isArray(playbackResolvers) || playbackResolvers.includes(id))
+    .filter((id) => isPlayableSource(sources[id]))
     .sort((a, b) => rank(a) - rank(b))
     .map((resolverId) => {
       const source = sources[resolverId];

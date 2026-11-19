@@ -596,6 +596,7 @@ const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbra
 const { transition } = require('./lib/motion');
 const { describeProviderError } = require('./lib/ai-provider-errors');
 const { sourceFromUrlHint } = require('./lib/source-url-hint');
+const { isPlayableSource } = require('./lib/playable-source');
 const { CardButton } = require('./components/card-button');
 const { DropZoneOverlay } = require('./components/drop-zone-overlay');
 const { FriendAvatar } = require('./components/friend-avatar');
@@ -6817,6 +6818,9 @@ const Parachord = () => {
     // The link's own source names the track too: sources are rescored by
     // title and artist, and one without them falls under the floor. Without
     // a sign-in, a SoundCloud link's source is the only one SoundCloud gets.
+    // A purchase-only answer (`streamable: false`, a buy-only Bandcamp track)
+    // stays purchase-only on the track's source (lib/playable-source.js).
+    if (Object.keys(sourceData).length > 0 && trackMeta.streamable === false) sourceData.streamable = false;
     if (Object.keys(sourceData).length > 0) {
       track.sources[resolverId] = {
         ...sourceData,
@@ -23876,7 +23880,9 @@ ${trackListXml}
         if (!track.sources || typeof track.sources !== 'object') return false;
         for (const resolverId of currentActiveResolvers) {
           const source = track.sources[resolverId];
-          if (!source || source.noMatch) continue;
+          // A purchase-only source (a buy-only Bandcamp track) plays nothing,
+          // so it doesn't spare the track from asking the other services.
+          if (!isPlayableSource(source)) continue;
           // Sources without resolvedAt are from sync — always valid
           if (!source.resolvedAt) return true;
           // Check if source is within TTL

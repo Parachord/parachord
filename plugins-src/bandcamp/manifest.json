@@ -2,7 +2,7 @@
   "manifest": {
     "id": "bandcamp",
     "name": "Bandcamp",
-    "version": "1.4.9",
+    "version": "1.5.0",
     "author": "Parachord Team",
     "description": "Find, play and purchase music on Bandcamp, through Bandcamp's own player.",
     "requirement": "Works right away. No account needed.",
@@ -22,7 +22,8 @@
     "urlLookup": true,
     "purchase": true,
     "albumSearch": true,
-    "embedPlayer": true
+    "embedPlayer": true,
+    "resolvePicks": true
   },
   "embedPlayer": {
     "adapter": "bandcamp-embed"
