@@ -1349,7 +1349,7 @@ const { pickTrackMatch } = require('../../sync-providers/track-match');
 // split store stamps every local_playlists write with the same module.
 const { stampPlaylist } = require('../../playlist-freshness');
 const { checkSpinoffAvailable } = require('./lib/spinoff-pool');
-const { similarProviders, askEach, firstAnswer, mergeSimilarArtists, mergeSimilarTracks, sourcesIn } = require('./lib/similar-music');
+const { similarProviders, askEach, askInTurn, firstAnswer, mergeSimilarArtists, mergeSimilarTracks, sourcesIn } = require('./lib/similar-music');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistShareTarget, notSyncedSharePrompt, playlistListenbrainzMbid, lbMbidOf } = require('./lib/playlist-share');
 // A ListenBrainz user's Achordion profile (every ListenBrainz user has one).
@@ -8833,8 +8833,9 @@ const Parachord = () => {
           // Related Artists and Spinoff (lib/similar-music.js, #1539).
           || (axe.capabilities?.similarArtists && axe.implementation?.getSimilarArtists)
           || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks)
-          // Artists' top tracks (#1539 step 2).
+          // Artists' top tracks and discographies (#1539 step 2).
           || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks)
+          || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases)
         );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
@@ -8969,7 +8970,8 @@ const Parachord = () => {
           || (axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes)
           || (axe.capabilities?.similarArtists && axe.implementation?.getSimilarArtists)
           || (axe.capabilities?.similarTracks && axe.implementation?.getSimilarTracks)
-          || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks));
+          || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks)
+          || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases));
         const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -20434,202 +20436,54 @@ ${trackListXml}
     return shorter.length > 0 && shorter.every(w => longer.some(lw => lw === w));
   };
 
-  // Fallback artist lookup via Spotify API (when MusicBrainz has no results)
-  const fetchArtistFromSpotify = async (artistName) => {
-    const resolvers = loadedResolversRef.current || [];
-    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
-    if (!activeIds.includes('spotify')) return null;
-
-    try {
-      const config = getResolverConfigRef.current ? await getResolverConfigRef.current('spotify') : {};
-      if (!config.token) return null;
-
-      console.log('🎵 Trying Spotify fallback for artist:', artistName);
-
-      // Search for artist
-      const searchUrl = `https://api.spotify.com/v1/search?q=artist:"${encodeURIComponent(artistName)}"&type=artist&limit=5`;
-      const searchResponse = await fetch(searchUrl, {
-        headers: { 'Authorization': `Bearer ${config.token}` }
-      });
-
-      if (!searchResponse.ok) return null;
-      const searchData = await searchResponse.json();
-      const artists = searchData.artists?.items || [];
-      // Only accept artists whose name actually matches the search
-      const artist = artists.find(a => isFallbackNameMatch(a.name, artistName));
-      if (!artist) {
-        console.log('🎵 Spotify: no matching artist name found for:', artistName);
+  // The artist page's discography from the plug-ins, when MusicBrainz is slow
+  // or doesn't know the artist (capabilities.artistReleases, #1539 step 2):
+  // Spotify, Apple Music, Last.fm and Discogs today, asked one at a time in
+  // the user's order (askInTurn) until one finds an artist whose name matches
+  // (isFallbackNameMatch). One with releases wins; with
+  // { allowEmpty: true } an artist found with none is taken if nobody has
+  // releases (the not-on-MusicBrainz path showed that before). `stop` ends
+  // the asking early (a newer page, or MusicBrainz's releases landed).
+  // Resolves to { artist, releases, source } in the page's shape, release
+  // ids prefixed with the plug-in's id as album-catalog.js expects
+  // (resolverIdFromReleaseId), or null.
+  const fetchArtistFromPlugins = async (artistName, { stop = () => false, allowEmpty = false } = {}) => {
+    const loader = resolverLoaderRef.current;
+    if (!loader?.getArtistReleases) return null;
+    const { answer, first } = await askInTurn(similarProvidersFor('artistReleases'), async (p) => {
+      const found = await loader.getArtistReleases(p.id, { name: artistName }, await configForSimilar(p.id));
+      if (!found) return null;
+      if (!isFallbackNameMatch(found.artist.name, artistName)) {
+        console.log(`🎵 ${p.id}: "${found.artist.name}" doesn't match "${artistName}"`);
         return null;
       }
-
-      // Fetch artist's albums
-      const albumsUrl = `https://api.spotify.com/v1/artists/${artist.id}/albums?include_groups=album,single&limit=50&market=US`;
-      const albumsResponse = await fetch(albumsUrl, {
-        headers: { 'Authorization': `Bearer ${config.token}` }
-      });
-
-      if (!albumsResponse.ok) return null;
-      const albumsData = await albumsResponse.json();
-      const albums = albumsData.items || [];
-
-      const releases = albums.map(album => {
-        const type = album.album_group || album.album_type || 'album';
-        return {
-          id: `spotify-${album.id}`,
-          title: album.name,
-          date: album.release_date || null,
-          releaseType: type === 'single' ? 'single' : (type === 'compilation' ? 'compilation' : 'album'),
-          secondaryTypes: [],
-          disambiguation: '',
-          albumArt: album.images?.[0]?.url || null
-        };
-      });
-
-      // Sort newest first
-      releases.sort((a, b) => (b.date || '0000').localeCompare(a.date || '0000'));
-
-      console.log(`🎵 Spotify fallback found ${releases.length} releases for ${artist.name}`);
-      return {
-        artist: {
-          name: artist.name,
-          mbid: null,
-          country: null,
-          disambiguation: null,
-          type: artist.type === 'artist' ? 'Person' : 'Group'
-        },
-        releases,
-        source: 'spotify'
-      };
-    } catch (error) {
-      console.error('🎵 Spotify artist fallback failed:', error);
-      return null;
-    }
-  };
-
-  // Fallback artist lookup via MusicKit / Apple Music catalog
-  const fetchArtistFromMusicKit = async (artistName) => {
-    const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));
-    if (!activeIds.includes('applemusic')) return null;
-
-    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-    if (!musicKitWeb?.isConfigured || !musicKitWeb?.musicKit) return null;
-
-    try {
-      console.log('🍎 Trying MusicKit fallback for artist:', artistName);
-
-      // Search for artist
-      const searchResults = await musicKitWeb.musicKit.api.music(`/v1/catalog/us/search`, {
-        term: artistName,
-        types: 'artists',
-        limit: 5
-      });
-
-      const artists = searchResults.data.results.artists?.data || [];
-      const artist = artists.find(a => isFallbackNameMatch(a.attributes.name, artistName));
-      if (!artist) {
-        console.log('🍎 MusicKit: no matching artist name found for:', artistName);
-        return null;
-      }
-
-      // Fetch artist's albums
-      const albumsResult = await musicKitWeb.musicKit.api.music(
-        `/v1/catalog/us/artists/${artist.id}/albums`,
-        { limit: 100 }
-      );
-
-      const albums = albumsResult.data.data || [];
-
-      const releases = albums.map(album => {
-        const attrs = album.attributes;
-        let releaseType = 'album';
-        if (attrs.isSingle) releaseType = 'single';
-        else if (attrs.isCompilation) releaseType = 'compilation';
-
-        return {
-          id: `applemusic-${album.id}`,
-          title: attrs.name,
-          date: attrs.releaseDate || null,
-          releaseType,
-          secondaryTypes: [],
-          disambiguation: '',
-          albumArt: attrs.artwork?.url
-            ?.replace('{w}', '500').replace('{h}', '500') || null
-        };
-      });
-
-      // Sort newest first
-      releases.sort((a, b) => (b.date || '0000').localeCompare(a.date || '0000'));
-
-      console.log(`🍎 MusicKit fallback found ${releases.length} releases for ${artist.attributes.name}`);
-      return {
-        artist: {
-          name: artist.attributes.name,
-          mbid: null,
-          country: null,
-          disambiguation: null,
-          type: null
-        },
-        releases,
-        source: 'applemusic'
-      };
-    } catch (error) {
-      console.error('🍎 MusicKit artist fallback failed:', error);
-      return null;
-    }
-  };
-
-  // Fallback artist lookup via Last.fm (artist.getTopAlbums)
-  const fetchArtistFromLastfm = async (artistName) => {
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) return null;
-
-    try {
-      console.log('📻 Trying Last.fm fallback for artist:', artistName);
-
-      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.gettopalbums&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=100`;
-      const response = await lastfmFetch(url);
-
-      if (!response.ok) return null;
-      const data = await response.json();
-
-      if (data.error || !data.topalbums?.album?.length) return null;
-
-      const albums = data.topalbums.album;
-      // Last.fm returns artist name in the response — validate it matches
-      const lfmArtistName = albums[0]?.artist?.name || artistName;
-      if (!isFallbackNameMatch(lfmArtistName, artistName)) {
-        console.log(`📻 Last.fm: returned "${lfmArtistName}" which doesn't match "${artistName}"`);
-        return null;
-      }
-
-      const releases = albums
-        .filter(album => album.name && album.name !== '(null)')
-        .map(album => ({
-          id: `lastfm-${album.mbid || album.name.toLowerCase().replace(/\s+/g, '-')}`,
-          title: album.name,
-          date: null, // Last.fm topalbums doesn't include release dates
-          releaseType: 'album',
-          secondaryTypes: [],
-          disambiguation: '',
-          albumArt: album.image?.find(img => img.size === 'extralarge')?.['#text'] || null
-        }));
-
-      console.log(`📻 Last.fm fallback found ${releases.length} releases for ${lfmArtistName}`);
-      return {
-        artist: {
-          name: lfmArtistName,
-          mbid: albums[0]?.artist?.mbid || null,
-          country: null,
-          disambiguation: null,
-          type: null
-        },
-        releases,
-        source: 'lastfm'
-      };
-    } catch (error) {
-      console.error('📻 Last.fm artist fallback failed:', error);
-      return null;
-    }
+      return found;
+    }, { accept: (found) => found.releases.length > 0, stop });
+    const pick = answer || (allowEmpty ? first : null);
+    if (!pick) return null;
+    const releases = pick.value.releases.map(r => ({
+      id: `${pick.id}-${r.id}`,
+      title: r.title,
+      date: r.date ? String(r.date) : null,
+      releaseType: ['album', 'single', 'ep', 'compilation'].includes(r.releaseType) ? r.releaseType : 'album',
+      secondaryTypes: [],
+      disambiguation: '',
+      albumArt: r.albumArt || null
+    }));
+    // Newest first; undated releases (Last.fm's) keep the plug-in's order.
+    releases.sort((a, b) => (b.date || '0000').localeCompare(a.date || '0000'));
+    console.log(`🎵 ${pluginName(pick.id)} found ${releases.length} releases for ${pick.value.artist.name}`);
+    return {
+      artist: {
+        name: pick.value.artist.name,
+        mbid: pick.value.artist.mbid || null,
+        country: null,
+        disambiguation: null,
+        type: null
+      },
+      releases,
+      source: pick.id
+    };
   };
 
   // Fallback artist lookup in the local library (#1532): an artist on the
@@ -20655,87 +20509,6 @@ ${trackListXml}
       })),
       source: 'local'
     };
-  };
-
-  // Fallback artist lookup via Discogs (artist search + releases)
-  const fetchArtistFromDiscogs = async (artistName) => {
-    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
-    // Discogs are on unless switched off). Before, the switch changed nothing.
-    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
-    try {
-      const discogsConfig = metaServiceConfigs?.discogs || {};
-      const token = discogsConfig.personalAccessToken;
-
-      console.log('📀 Trying Discogs fallback for artist:', artistName);
-
-      const headers = { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' };
-      if (token) headers['Authorization'] = `Discogs token=${token}`;
-
-      // Search for artist
-      const searchUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(artistName)}&type=artist&per_page=5`;
-      const searchResponse = await fetch(searchUrl, { headers });
-      if (!searchResponse.ok) return null;
-
-      const searchData = await searchResponse.json();
-      if (!searchData.results?.length) return null;
-
-      const artistResult = searchData.results.find(r => isFallbackNameMatch(r.title, artistName));
-      if (!artistResult) {
-        console.log('📀 Discogs: no matching artist name found for:', artistName);
-        return null;
-      }
-
-      // Fetch artist releases
-      const releasesUrl = `https://api.discogs.com/artists/${artistResult.id}/releases?sort=year&sort_order=desc&per_page=100`;
-      const releasesResponse = await fetch(releasesUrl, { headers });
-      if (!releasesResponse.ok) return null;
-
-      const releasesData = await releasesResponse.json();
-      const discogsReleases = releasesData.releases || [];
-
-      // Deduplicate by title (Discogs has many regional editions)
-      const seen = new Set();
-      const releases = [];
-      for (const rel of discogsReleases) {
-        // Only include releases where this artist is the main artist
-        if (rel.role && rel.role !== 'Main') continue;
-        const key = rel.title?.toLowerCase();
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-
-        let releaseType = 'album';
-        const format = (rel.format || '').toLowerCase();
-        if (format.includes('single') || rel.type === 'Single') releaseType = 'single';
-        else if (format.includes('ep')) releaseType = 'ep';
-        else if (format.includes('compilation')) releaseType = 'compilation';
-
-        releases.push({
-          id: `discogs-${rel.id}`,
-          title: rel.title,
-          date: rel.year ? String(rel.year) : null,
-          releaseType,
-          secondaryTypes: [],
-          disambiguation: '',
-          albumArt: rel.thumb || null
-        });
-      }
-
-      console.log(`📀 Discogs fallback found ${releases.length} releases for ${artistResult.title}`);
-      return {
-        artist: {
-          name: artistResult.title,
-          mbid: null,
-          country: null,
-          disambiguation: null,
-          type: null
-        },
-        releases,
-        source: 'discogs'
-      };
-    } catch (error) {
-      console.error('📀 Discogs artist fallback failed:', error);
-      return null;
-    }
   };
 
   // Fetch artist data and discography from MusicBrainz
@@ -20871,8 +20644,8 @@ ${trackListXml}
     // MusicBrainz slow, not failing: the discography takes an artist lookup
     // and three release-group requests in the 1.1s queue, so 4.4s at best and
     // much longer behind other lookups. If nothing has shown after
-    // ARTIST_SLOW_FALLBACK_MS, the services' discography (the sources the
-    // not-on-MusicBrainz path below uses) shows meanwhile. MusicBrainz's
+    // ARTIST_SLOW_FALLBACK_MS, the plug-ins' discography (fetchArtistFromPlugins,
+    // as the not-on-MusicBrainz path below uses) shows meanwhile. MusicBrainz's
     // first batch replaces it: showReleases builds the list from MusicBrainz's
     // releases only. If MusicBrainz ends up with none, it stays, and the empty
     // result is not cached. discographySettled: MusicBrainz's releases are
@@ -20887,27 +20660,23 @@ ${trackListXml}
     // failure that lands while the timer's pass is still asking.
     let serviceDiscographyRun = null;
     const showServiceDiscography = () => serviceDiscographyRun || (serviceDiscographyRun = (async () => {
-      for (const fetchFn of [fetchArtistFromSpotify, fetchArtistFromMusicKit, fetchArtistFromLastfm, fetchArtistFromDiscogs]) {
-        if (thisFetchId !== artistFetchId.current || discographySettled) return;
-        let result = null;
-        try { result = await fetchFn(artistName); } catch { /* next source */ }
-        if (thisFetchId !== artistFetchId.current || discographySettled) return;
-        if (!result?.releases?.length) continue;
-        serviceDiscographySource = result.source;
-        console.log(`🎵 MusicBrainz still loading or failed for "${artistName}": showing ${result.source}'s ${result.releases.length} releases`);
-        const shown = result.releases.map(release => ({
-          ...release,
-          albumArt: release.albumArt || albumArtCache.current[release.id]?.url || undefined
-        }));
-        setArtistReleases(shown);
-        setSmartReleaseTypeFilter(shown);
-        albumArtFetchId.current++; // Cancel any previous fetch session
-        isAlbumArtFetching.current = false;
-        albumArtQueue.current = withArtArtist(shown.filter(r => !r.albumArt), artistName);
-        visibleAlbumIds.current.clear();
-        processAlbumArtQueue();
-        return;
-      }
+      const stale = () => thisFetchId !== artistFetchId.current || discographySettled;
+      let result = null;
+      try { result = await fetchArtistFromPlugins(artistName, { stop: stale }); } catch { /* no discography */ }
+      if (stale() || !result?.releases?.length) return;
+      serviceDiscographySource = result.source;
+      console.log(`🎵 MusicBrainz still loading or failed for "${artistName}": showing ${result.source}'s ${result.releases.length} releases`);
+      const shown = result.releases.map(release => ({
+        ...release,
+        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || undefined
+      }));
+      setArtistReleases(shown);
+      setSmartReleaseTypeFilter(shown);
+      albumArtFetchId.current++; // Cancel any previous fetch session
+      isAlbumArtFetching.current = false;
+      albumArtQueue.current = withArtArtist(shown.filter(r => !r.albumArt), artistName);
+      visibleAlbumIds.current.clear();
+      processAlbumArtQueue();
     })());
     const slowFallbackTimer = setTimeout(showServiceDiscography, ARTIST_SLOW_FALLBACK_MS);
 
@@ -21018,22 +20787,14 @@ ${trackListXml}
         } else {
           console.log('Artist not found on MusicBrainz, trying fallback sources...');
         }
-        // Try fallback sources: enabled resolvers first, then meta-services
-        const fallbackSources = [
-          fetchArtistFromSpotify,
-          fetchArtistFromMusicKit,
-          fetchArtistFromLastfm,
-          fetchArtistFromDiscogs,
-          // Last: an artist only the user's own files know (#1532).
-          fetchArtistFromLocalLibrary
-        ];
-
-        let fallbackResult = null;
-        for (const fetchFn of fallbackSources) {
-          if (thisFetchId !== artistFetchId.current) return; // Stale check
-          fallbackResult = await fetchFn(artistName);
-          if (fallbackResult) break;
-        }
+        // The plug-ins that list an artist's releases, in the user's order;
+        // last, an artist only the user's own files know (#1532).
+        let fallbackResult = await fetchArtistFromPlugins(artistName, {
+          stop: () => thisFetchId !== artistFetchId.current,
+          allowEmpty: true
+        });
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
+        if (!fallbackResult) fallbackResult = await fetchArtistFromLocalLibrary(artistName);
 
         if (!fallbackResult && !mbCandidate) {
           // No results from any source
@@ -33703,7 +33464,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     activeIds: activeResolversRef.current || [],
     order: resolverOrderRef.current || [],
     metaIds: (metaServicesRef.current || []).map(s => s.id),
+    // Switched off (its Enable switch), or its "Use metadata from" switch is
+    // off (#1505): similar music, top tracks and discographies are metadata.
     isOff: (id) => (metaServiceConfigsRef.current?.[id] || {}).enabled === false
+      || (metadataOffRef.current || []).includes(id)
   });
   // A config whose key isn't ready yet (Last.fm before main's built-in pair
   // arrives) is a failure for this ask, never a keyless empty answer.

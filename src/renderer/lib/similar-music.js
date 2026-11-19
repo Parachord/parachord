@@ -20,6 +20,12 @@
 // ranked by its own service's play counts, so the first plug-in in the user's
 // order with a non-empty list wins (firstAnswer).
 //
+// An artist's releases (capabilities.artistReleases, #1539 step 2) fill the
+// artist page when MusicBrainz is slow or doesn't know the artist. They are
+// asked one at a time, in the same order, until one finds the artist
+// (askInTurn): this is a fallback, and asking four services at once on every
+// slow page load would spend their rate limits for nothing.
+//
 // Pure; loads under plain Node.
 
 'use strict';
@@ -31,6 +37,7 @@ const LOADER_LIST = {
   similarArtists: 'getSimilarArtistsResolvers',
   similarTracks: 'getSimilarTracksResolvers',
   artistTopTracks: 'getArtistTopTracksResolvers',
+  artistReleases: 'getArtistReleasesResolvers',
 };
 
 // The plug-ins to ask for one capability, in the user's order.
@@ -62,6 +69,34 @@ async function askEach(providers, ask) {
 // or null when every plug-in that answered had none.
 function firstAnswer(answers) {
   return (answers || []).find((a) => a && Array.isArray(a.items) && a.items.length > 0) || null;
+}
+
+// Ask providers one at a time, in order. A provider that throws is skipped;
+// null or undefined is "not found". Resolves to:
+//   answer:  { id, value } for the first value `accept` takes, or null;
+//   first:   { id, value } for the first value found before that (one
+//            `accept` turned down), so a caller can settle for it;
+//   stopped: `stop()` said to give up (checked before each ask);
+//   failed:  nobody to ask, or every provider asked threw.
+async function askInTurn(providers, ask, { accept = (v) => v != null, stop = () => false } = {}) {
+  let first = null;
+  let asked = 0;
+  let failures = 0;
+  for (const p of providers || []) {
+    if (stop()) return { answer: null, first, stopped: true, failed: false };
+    asked++;
+    let value;
+    try {
+      value = await ask(p);
+    } catch (_e) {
+      failures++;
+      continue;
+    }
+    if (value == null) continue;
+    if (accept(value)) return { answer: { id: p.id, value }, first, stopped: false, failed: false };
+    if (!first) first = { id: p.id, value };
+  }
+  return { answer: null, first, stopped: false, failed: asked === 0 || failures === asked };
 }
 
 const artistKey = (name) => String(name || '').toLowerCase().trim();
@@ -129,6 +164,7 @@ function sourcesIn(items) {
 module.exports = {
   similarProviders,
   askEach,
+  askInTurn,
   firstAnswer,
   mergeSimilarArtists,
   mergeSimilarTracks,

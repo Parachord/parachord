@@ -7,6 +7,7 @@ const path = require('path');
 const {
   similarProviders,
   askEach,
+  askInTurn,
   firstAnswer,
   mergeSimilarArtists,
   mergeSimilarTracks,
@@ -18,13 +19,14 @@ const fakeLoader = (resolvers) => ({
   getSimilarArtistsResolvers: () => resolvers.filter((r) => r.capabilities.similarArtists),
   getSimilarTracksResolvers: () => resolvers.filter((r) => r.capabilities.similarTracks),
   getArtistTopTracksResolvers: () => resolvers.filter((r) => r.capabilities.artistTopTracks),
+  getArtistReleasesResolvers: () => resolvers.filter((r) => r.capabilities.artistReleases),
 });
 
 describe('similarProviders', () => {
   const loader = fakeLoader([
     { id: 'lastfm', capabilities: { similarArtists: true, similarTracks: true, artistTopTracks: true } },
     { id: 'listenbrainz', capabilities: { similarArtists: true, artistTopTracks: true } },
-    { id: 'spotify', capabilities: { similarArtists: true } },
+    { id: 'spotify', capabilities: { similarArtists: true, artistReleases: true } },
     { id: 'stray', capabilities: { similarArtists: true } },
   ]);
   const base = { activeIds: ['spotify'], order: ['spotify', 'listenbrainz', 'lastfm'], metaIds: ['lastfm', 'listenbrainz'] };
@@ -43,6 +45,7 @@ describe('similarProviders', () => {
   test('by capability', () => {
     expect(similarProviders(loader, 'similarTracks', base).map((r) => r.id)).toEqual(['lastfm']);
     expect(similarProviders(loader, 'artistTopTracks', base).map((r) => r.id)).toEqual(['listenbrainz', 'lastfm']);
+    expect(similarProviders(loader, 'artistReleases', base).map((r) => r.id)).toEqual(['spotify']);
     expect(similarProviders(loader, 'nope', base)).toEqual([]);
     expect(similarProviders(null, 'similarArtists', base)).toEqual([]);
   });
@@ -73,6 +76,40 @@ describe('askEach', () => {
   test('a synchronous throw is a failure too', async () => {
     const out = await askEach([{ id: 'a' }], () => { throw new Error('boom'); });
     expect(out.failed).toBe(true);
+  });
+});
+
+describe('askInTurn', () => {
+  const providers = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  test('asks one at a time and stops at the first accepted answer', async () => {
+    const asked = [];
+    const out = await askInTurn(providers, async (p) => { asked.push(p.id); return p.id === 'a' ? null : { n: p.id }; });
+    expect(asked).toEqual(['a', 'b']);
+    expect(out).toEqual({ answer: { id: 'b', value: { n: 'b' } }, first: null, stopped: false, failed: false });
+  });
+
+  test('a throw is skipped; a turned-down answer is kept as `first`', async () => {
+    const out = await askInTurn(providers, async (p) => {
+      if (p.id === 'a') throw new Error('down');
+      return { releases: p.id === 'b' ? [] : [1] };
+    }, { accept: (v) => v.releases.length > 0 });
+    expect(out.answer).toEqual({ id: 'c', value: { releases: [1] } });
+    expect(out.first).toEqual({ id: 'b', value: { releases: [] } });
+  });
+
+  test('stop() ends it before the next ask', async () => {
+    const asked = [];
+    let done = false;
+    const out = await askInTurn(providers, async (p) => { asked.push(p.id); done = true; return null; }, { stop: () => done });
+    expect(asked).toEqual(['a']);
+    expect(out.stopped).toBe(true);
+  });
+
+  test('failed only when nobody answered at all', async () => {
+    expect((await askInTurn(providers, async () => { throw new Error('x'); })).failed).toBe(true);
+    expect((await askInTurn([], async () => null)).failed).toBe(true);
+    expect((await askInTurn(providers, async () => null)).failed).toBe(false);
   });
 });
 
@@ -163,6 +200,24 @@ describe('resolver-loader', () => {
     await expect(loader.getArtistTopTracks('b', { name: 'Radiohead' })).resolves.toEqual([]);
   });
 
+  test('artist releases: the artist and titled releases, null for a miss, rejecting on a throw', async () => {
+    register('a', { artistReleases: true }, {
+      getArtistReleases: async (q) => ({ artist: { name: q.name }, releases: [{ id: 'x1', title: 'Kid A' }, { id: '', title: 'No id' }, { id: 7, title: ' ' }, null] }),
+    });
+    register('b', { artistReleases: true }, { getArtistReleases: async () => ({ artist: {}, releases: [] }) });
+    register('c', { artistReleases: true }, { getArtistReleases: async () => { throw new Error('refused'); } });
+    register('d', { artistReleases: true }, {});
+    expect(loader.getArtistReleasesResolvers().map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    await expect(loader.getArtistReleases('a', { name: 'Radiohead' })).resolves.toEqual({
+      artist: { name: 'Radiohead' }, releases: [{ id: 'x1', title: 'Kid A' }],
+    });
+    await expect(loader.getArtistReleases('b', { name: 'Radiohead' })).resolves.toBeNull();
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(loader.getArtistReleases('c', { name: 'Radiohead' })).rejects.toThrow('refused');
+    spy.mockRestore();
+    await expect(loader.getArtistReleases('d', { name: 'Radiohead' })).resolves.toBeNull();
+  });
+
   test('a missing plug-in or capability answers []', async () => {
     register('a', {}, { getSimilarTracks: async () => [{ artist: 'A', title: 'B' }] });
     await expect(loader.getSimilarTracks('a', {})).resolves.toEqual([]);
@@ -177,11 +232,17 @@ describe('no similar-music call by service name in the renderer', () => {
     for (const src of [read('app.js'), read('lib', 'spinoff-pool.js'), read('hooks', 'use-playback-engine.js')]) {
       expect(src).not.toMatch(/method=(artist|track)\.getsimilar|['"](artist|track)\.getsimilar['"]|labs\.api\.listenbrainz\.org\/similar-artists/);
       expect(src).not.toMatch(/method=artist\.gettoptracks|top-recordings-for-artist/);
+      expect(src).not.toMatch(/method=artist\.gettopalbums|api\.discogs\.com\/artists\/\$\{|\/artists\/\$\{artist\.id\}\/albums/);
     }
     const app = read('app.js');
     expect(app).not.toMatch(/getLastfmSimilarArtists|getListenBrainzSimilarArtists/);
     expect(app).toMatch(/similarProviders\(resolverLoaderRef\.current, capability/);
     expect(app).toMatch(/askEach\(similarProvidersFor\('artistTopTracks'\)/);
+    // The artist page's discography fallback asks the plug-ins in turn (#1539)
+    expect(app).toMatch(/askInTurn\(similarProvidersFor\('artistReleases'\)/);
+    expect(app).not.toMatch(/fetchArtistFrom(Spotify|MusicKit|Lastfm|Discogs)\b/);
+    // A plug-in whose "Use metadata from" switch is off is not asked
+    expect(app).toMatch(/\|\| \(metadataOffRef\.current \|\| \[\]\)\.includes\(id\)/);
   });
 
   test('the meta-service load gate includes both capabilities', () => {
@@ -189,5 +250,6 @@ describe('no similar-music call by service name in the renderer', () => {
     expect(app.match(/axe\.capabilities\?\.similarArtists && axe\.implementation\?\.getSimilarArtists/g)).toHaveLength(2);
     expect(app.match(/axe\.capabilities\?\.similarTracks && axe\.implementation\?\.getSimilarTracks/g)).toHaveLength(2);
     expect(app.match(/axe\.capabilities\?\.artistTopTracks && axe\.implementation\?\.getArtistTopTracks/g)).toHaveLength(2);
+    expect(app.match(/axe\.capabilities\?\.artistReleases && axe\.implementation\?\.getArtistReleases/g)).toHaveLength(2);
   });
 });

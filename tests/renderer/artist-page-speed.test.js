@@ -101,9 +101,12 @@ describe('slow MusicBrainz: the services\' discography meanwhile', () => {
     // failure (#874) alike
     expect(fetchArtist).toMatch(/const slowFallbackTimer = setTimeout\(showServiceDiscography, ARTIST_SLOW_FALLBACK_MS\);/);
     const timer = fetchArtist.slice(fetchArtist.indexOf('const showServiceDiscography = () =>'), fetchArtist.indexOf('const slowFallbackTimer = setTimeout('));
-    expect(timer).toMatch(/\[fetchArtistFromSpotify, fetchArtistFromMusicKit, fetchArtistFromLastfm, fetchArtistFromDiscogs\]/);
-    // stale and settled checks before and after every source
-    expect(timer.match(/if \(thisFetchId !== artistFetchId\.current \|\| discographySettled\) return;/g)).toHaveLength(2);
+    // the plug-ins with artistReleases, one at a time (#1539)
+    expect(timer).toMatch(/fetchArtistFromPlugins\(artistName, \{ stop: stale \}\)/);
+    // stale and settled: checked before every plug-in is asked (askInTurn's
+    // stop) and once more after the answer
+    expect(timer).toMatch(/const stale = \(\) => thisFetchId !== artistFetchId\.current \|\| discographySettled;/);
+    expect(timer).toMatch(/if \(stale\(\) \|\| !result\?\.releases\?\.length\) return;/);
     expect(timer).toMatch(/setArtistReleases\(shown\);/);
     expect(timer).toMatch(/albumArtFetchId\.current\+\+;/);
     // only on the uncached path: the cached path returns before the timer

@@ -245,6 +245,7 @@ Bridge between MusicBrainz and Wikipedia.
 | Artist bios | `src/renderer/app.js` | `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()` |
 | Related artists | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `getRelatedArtists()`, `findSimilarArtists()`; the plug-ins' `getSimilarArtists` |
 | Artist top tracks | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `findArtistTopTracks()`, `getArtistTopTracks()`; the plug-ins' `getArtistTopTracks` (Last.fm `artist.gettoptracks`; ListenBrainz `/1/popularity/top-recordings-for-artist/{mbid}`, signed in only) |
+| Artist discography fallback | `src/renderer/app.js`, `src/renderer/lib/similar-music.js` | `fetchArtistFromPlugins()` (`askInTurn`); the plug-ins' `getArtistReleases` (Spotify, Apple Music, Last.fm `artist.gettopalbums`, Discogs) |
 | Album art | `src/renderer/app.js` | `getAlbumArt()` |
 | Charts | `src/renderer/app.js` | `loadCharts()`, `loadAppleMusicSongsCharts()`, `loadLastfmCharts()` |
 | MusicKit artist images | `musickit-web.js` | `getArtistImage()` |

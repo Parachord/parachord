@@ -11,7 +11,7 @@ const path = require('path');
 const load = (id) => {
   const axe = JSON.parse(fs.readFileSync(path.join(__dirname, `../../plugins/${id}.axe`), 'utf8'));
   const fns = {};
-  for (const name of ['getSimilarArtists', 'getSimilarTracks', 'getArtistTopTracks']) {
+  for (const name of ['getSimilarArtists', 'getSimilarTracks', 'getArtistTopTracks', 'getArtistReleases']) {
     if (axe.implementation[name]) fns[name] = new Function('return ' + axe.implementation[name])();
   }
   return { axe, ...fns };
@@ -19,6 +19,9 @@ const load = (id) => {
 
 const lastfm = load('lastfm');
 const listenbrainz = load('listenbrainz');
+const spotify = load('spotify');
+const applemusic = load('applemusic');
+const discogs = load('discogs');
 
 const KEY = 'secret-key-123';
 let calls;
@@ -254,5 +257,129 @@ describe('ListenBrainz getArtistTopTracks', () => {
     expect(err.message).not.toContain(TOKEN);
     mockFetch(() => reply({ error: 'nope' }));
     await expect(listenbrainz.getArtistTopTracks({ name: 'R', mbid: RADIOHEAD }, { userToken: TOKEN })).rejects.toThrow('unexpected');
+  });
+});
+
+describe('artistReleases (#1539 step 2)', () => {
+  test('Spotify, Apple Music, Last.fm and Discogs declare it', () => {
+    for (const p of [spotify, applemusic, lastfm, discogs]) {
+      expect(p.axe.capabilities.artistReleases).toBe(true);
+      expect(typeof p.getArtistReleases).toBe('function');
+    }
+  });
+
+  describe('Spotify', () => {
+    const ask = (q, config) => spotify.getArtistReleases.call({}, q, config);
+    const headers = { get: () => null };
+
+    test('picks the artist whose name matches, then lists their albums and singles', async () => {
+      mockFetch((url) => {
+        if (url.includes('/v1/search')) {
+          return { ...reply({ artists: { items: [{ id: 'x', name: 'Radiohead Tribute Band' }, { id: 'rh', name: 'Radiohead' }] } }), headers };
+        }
+        return { ...reply({ items: [
+          { id: 'a1', name: 'Kid A', album_group: 'album', release_date: '2000-10-02', images: [{ url: 'art' }] },
+          { id: 's1', name: 'Creep', album_type: 'single', release_date: '1992-09-21' },
+        ] }), headers };
+      });
+      const out = await ask({ name: 'Radiohead' }, { token: 't' });
+      expect(out).toEqual({ artist: { name: 'Radiohead' }, releases: [
+        { id: 'a1', title: 'Kid A', date: '2000-10-02', releaseType: 'album', albumArt: 'art' },
+        { id: 's1', title: 'Creep', date: '1992-09-21', releaseType: 'single', albumArt: null },
+      ] });
+      expect(calls[1].url).toContain('/v1/artists/rh/albums');
+      expect(calls[0].options.headers.Authorization).toBe('Bearer t');
+    });
+
+    test('signed out or a failed request throws; no artists is a miss', async () => {
+      mockFetch(() => ({ ...reply({ artists: { items: [] } }), headers }));
+      await expect(ask({ name: 'Radiohead' }, {})).rejects.toThrow('not signed in');
+      expect(calls).toHaveLength(0);
+      await expect(ask({ name: 'Nobody' }, { token: 't' })).resolves.toBeNull();
+      mockFetch(() => ({ ...reply(null, { ok: false, status: 500 }), headers }));
+      await expect(ask({ name: 'Radiohead' }, { token: 't' })).rejects.toThrow('500');
+    });
+  });
+
+  describe('Apple Music', () => {
+    afterEach(() => { delete global.window; });
+
+    test('asks the catalog through the host\'s MusicKit', async () => {
+      const paths = [];
+      global.window = { getMusicKitWeb: () => ({ isConfigured: true, musicKit: { api: { music: async (path) => {
+        paths.push(path);
+        if (path.endsWith('/search')) return { data: { results: { artists: { data: [{ id: '657515', attributes: { name: 'Radiohead' } }] } } } };
+        return { data: { data: [
+          { id: '1097861387', attributes: { name: 'OK Computer', releaseDate: '1997-05-21', artwork: { url: 'https://img/{w}x{h}.jpg' } } },
+          { id: '2', attributes: { name: 'Creep - Single', isSingle: true } },
+        ] } };
+      } } } }) };
+      const out = await applemusic.getArtistReleases({ name: 'Radiohead' }, { storefront: 'gb' });
+      expect(out).toEqual({ artist: { name: 'Radiohead' }, releases: [
+        { id: '1097861387', title: 'OK Computer', date: '1997-05-21', releaseType: 'album', albumArt: 'https://img/500x500.jpg' },
+        { id: '2', title: 'Creep - Single', date: null, releaseType: 'single', albumArt: null },
+      ] });
+      expect(paths).toEqual(['/v1/catalog/gb/search', '/v1/catalog/gb/artists/657515/albums']);
+    });
+
+    test('MusicKit not ready throws', async () => {
+      global.window = { getMusicKitWeb: () => ({ isConfigured: false }) };
+      await expect(applemusic.getArtistReleases({ name: 'Radiohead' }, {})).rejects.toThrow('MusicKit not ready');
+    });
+  });
+
+  describe('Last.fm', () => {
+    test('artist.gettopalbums, most played first, ids from the MBID or title', async () => {
+      mockFetch(() => reply({ topalbums: { album: [
+        { name: 'OK Computer', mbid: 'mb-ok', artist: { name: 'Radiohead', mbid: 'rh' }, image: [{ size: 'extralarge', '#text': 'art' }] },
+        { name: 'In Rainbows', artist: { name: 'Radiohead' } },
+        { name: '(null)' },
+      ] } }));
+      const out = await lastfm.getArtistReleases({ name: 'radiohead' }, { apiKey: KEY });
+      expect(out).toEqual({ artist: { name: 'Radiohead', mbid: 'rh' }, releases: [
+        { id: 'mb-ok', title: 'OK Computer', date: null, releaseType: 'album', albumArt: 'art' },
+        { id: 'in-rainbows', title: 'In Rainbows', date: null, releaseType: 'album', albumArt: null },
+      ] });
+      expect(new URL(calls[0].url).searchParams.get('method')).toBe('artist.gettopalbums');
+    });
+
+    test('error 6 or no albums is a miss; a failure throws', async () => {
+      mockFetch(() => reply({ error: 6 }));
+      await expect(lastfm.getArtistReleases({ name: 'Nobody' }, { apiKey: KEY })).resolves.toBeNull();
+      mockFetch(() => reply({ topalbums: { album: [] } }));
+      await expect(lastfm.getArtistReleases({ name: 'Nobody' }, { apiKey: KEY })).resolves.toBeNull();
+      mockFetch(() => reply(null, { ok: false, status: 503 }));
+      await expect(lastfm.getArtistReleases({ name: 'Radiohead' }, { apiKey: KEY })).rejects.toThrow('503');
+    });
+  });
+
+  describe('Discogs', () => {
+    test('the main artist\'s releases, one per title, with the token when set', async () => {
+      mockFetch((url) => {
+        if (url.includes('/database/search')) return reply({ results: [{ id: 1, title: 'Radiohead Fans' }, { id: 3840, title: 'Radiohead' }] });
+        return reply({ releases: [
+          { id: 10, title: 'Kid A', year: 2000, role: 'Main', format: 'CD, Album', thumb: 't' },
+          { id: 11, title: 'kid a', year: 2000, role: 'Main' },
+          { id: 12, title: 'Remixes', role: 'Remix' },
+          { id: 13, title: 'Creep', year: 1992, type: 'Single' },
+        ] });
+      });
+      const out = await discogs.getArtistReleases({ name: 'Radiohead' }, { personalAccessToken: 'pat' });
+      expect(out).toEqual({ artist: { name: 'Radiohead' }, releases: [
+        { id: '10', title: 'Kid A', date: '2000', releaseType: 'album', albumArt: 't' },
+        { id: '13', title: 'Creep', date: '1992', releaseType: 'single', albumArt: null },
+      ] });
+      expect(calls[1].url).toContain('/artists/3840/releases');
+      expect(calls[0].options.headers.Authorization).toBe('Discogs token=pat');
+    });
+
+    test('a numbered namesake ("Nirvana (2)") still matches; a failure throws', async () => {
+      mockFetch((url) => (url.includes('/database/search')
+        ? reply({ results: [{ id: 2, title: 'Nirvana (2)' }] })
+        : reply({ releases: [] })));
+      await expect(discogs.getArtistReleases({ name: 'Nirvana' }, {})).resolves.toEqual({ artist: { name: 'Nirvana (2)' }, releases: [] });
+      mockFetch(() => reply(null, { ok: false, status: 429 }));
+      await expect(discogs.getArtistReleases({ name: 'Nirvana' }, {})).rejects.toThrow('429');
+    });
   });
 });
