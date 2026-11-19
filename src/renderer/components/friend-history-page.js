@@ -21,6 +21,7 @@ const { Button } = require('./button');
 const { SortMenu } = require('./sort-menu');
 const { HeroTabs } = require('./hero-tabs');
 const { EmptyState, ErrorState } = require('./states');
+const { countOf } = require('../lib/plural');
 const { artistMenu, releaseMenu } = require('../lib/item-menus');
 
 const FRIEND_HISTORY_PAGE_HANDLERS = [
@@ -323,7 +324,7 @@ React.createElement('div', {
                             // The album column only when the list has albums (ListenBrainz's top
                             // tracks carry none, which left a blank column).
                             ...(friendHistoryTopHasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
-                            { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
+                            { key: 'plays', content: countOf(track.playCount, 'play'), width: '80px', align: 'right' }
                           ]
                         }, trackRowDrag(track)));
                       }
@@ -342,7 +343,7 @@ React.createElement('div', {
                         album: { id: album.id || null, title: album.name, artist: album.artist, imageUrl: album.image || null },
                         imageLoading: !album.imageLoaded,
                         cornerBadge: React.createElement(AlbumRankBadge, { rank: album.rank }),
-                        subtitle: `${album.playCount} plays`,
+                        subtitle: countOf(album.playCount, 'play'),
                         onOpen: () => openTopAlbum(album),
                         onOpenArtist: () => fetchArtistData(album.artist),
                         onHoverPrefetch: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
@@ -372,7 +373,7 @@ React.createElement('div', {
                         image: artist.image,
                         imageLoaded: !!artist.imageLoaded,
                         badge: React.createElement(RankBadge, { rank: artist.rank }),
-                        subtitle: `${artist.playCount} plays`,
+                        subtitle: countOf(artist.playCount, 'play'),
                         onOpen: () => fetchArtistData(artist.name),
                         onPlay: playArtistTopTracks,
                         onContextMenu: () => window.showItemMenu(artistMenu({ id: artist.id || null, name: artist.name, image: artist.image }))

@@ -19,6 +19,7 @@ const { AlbumCard, AlbumRankBadge } = require('./album-card');
 const { SortMenu } = require('./sort-menu');
 const { HeroTabs } = require('./hero-tabs');
 const { EmptyState } = require('./states');
+const { countOf } = require('../lib/plural');
 const { artistMenu, releaseMenu } = require('../lib/item-menus');
 const { historySortOptions, historyPeriodOptions } = require('../lib/history-options');
 
@@ -289,7 +290,7 @@ React.createElement('div', {
                         duration: true,
                         cells: [
                           ...(hasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
-                          { key: 'plays', content: `${track.playCount} plays`, width: '80px', align: 'right' }
+                          { key: 'plays', content: countOf(track.playCount, 'play'), width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track)));
                     }
@@ -326,7 +327,7 @@ React.createElement('div', {
                     image: artist.image,
                     imageLoaded: !!artist.imageLoaded,
                     badge: React.createElement(RankBadge, { rank: artist.rank }),
-                    subtitle: `${artist.playCount} plays`,
+                    subtitle: countOf(artist.playCount, 'play'),
                     animationDelay: Math.min(index * 30, 300),
                     onOpen: () => fetchArtistData(artist.name),
                     onPlay: playArtistTopTracks,
@@ -363,7 +364,7 @@ React.createElement('div', {
                     album: { id: album.id, title: album.name, artist: album.artist, imageUrl: typeof album.image === 'string' && album.image ? album.image : null },
                     imageLoading: album.image === undefined,
                     cornerBadge: React.createElement(AlbumRankBadge, { rank: album.rank }),
-                    subtitle: `${album.playCount} plays`,
+                    subtitle: countOf(album.playCount, 'play'),
                     animationDelay: Math.min(index * 30, 300),
                     onOpen: () => openTopAlbum(album),
                     onOpenArtist: () => fetchArtistData(album.artist),

@@ -7,6 +7,7 @@
 
 // Recreate the core classes from app.js for testing
 const { describeProviderError } = require('../../src/renderer/lib/ai-provider-errors');
+const { summarizeToolResults } = require('../../src/renderer/lib/tool-summary');
 // Ollama's own wording for its failures (plugins-src/ollama/implementation.js).
 const { describeError: ollamaDescribeError } = require('../../plugins-src/ollama/implementation');
 const djTools = [
@@ -185,20 +186,9 @@ class AIChatService {
       .replace('{{currentState}}', lines.join('\n'));
   }
 
+  // The app's own (lib/tool-summary.js), not a copy.
   summarizeToolResults(toolResults) {
-    if (!toolResults || toolResults.length === 0) return 'Done.';
-    return toolResults.map(({ tool, result }) => {
-      if (!result.success) return `Failed to ${tool}: ${result.error}`;
-      switch (tool) {
-        case 'play': return result.track ? `Now playing "${result.track.title}" by ${result.track.artist}` : 'Started playback';
-        case 'control': return `Playback ${result.action}`;
-        case 'search': return `Found ${result.results?.length || 0} results`;
-        case 'queue_add': return `Added ${result.added} track(s) to queue`;
-        case 'queue_clear': return 'Queue cleared';
-        case 'shuffle': return `Shuffle ${result.shuffle ? 'enabled' : 'disabled'}`;
-        default: return `${tool} completed`;
-      }
-    }).join('. ') + '.';
+    return summarizeToolResults(toolResults);
   }
 
   // As app.js (#1523): the plug-in's describeError first, then the
@@ -530,8 +520,18 @@ describe('AIChatService', () => {
         { tool: 'shuffle', result: { success: true, shuffle: true } }
       ]);
 
-      expect(summary).toContain('Added 3 track(s)');
+      expect(summary).toContain('Added 3 tracks to queue');
       expect(summary).toContain('Shuffle enabled');
+    });
+
+    test('counts read "1 track", never "track(s)"', () => {
+      const summary = service.summarizeToolResults([
+        { tool: 'queue_add', result: { success: true, added: 1 } },
+        { tool: 'add_to_playlist', result: { success: true, added: 1, playlist: { name: 'Mix' } } },
+        { tool: 'search', result: { success: true, results: [{}] } }
+      ]);
+
+      expect(summary).toBe('Added 1 track to queue. Added 1 track to "Mix". Found 1 result.');
     });
 
     test('includes failure messages', () => {
