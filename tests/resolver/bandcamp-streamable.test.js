@@ -124,11 +124,10 @@ describe('isStreamable', () => {
 });
 
 describe('resolve checks its pick', () => {
-  test('skips a buy-only top match for the next one that streams', async () => {
+  test('a buy-only pick is no match, and no other Bandcamp copy is tried', async () => {
     install([row(1, 'Nude', 'Radiohead'), row(2, 'Nude', 'Radiohead')], { 1: false });
-    const found = await fresh().resolve('Radiohead', 'Nude', 'In Rainbows', {});
-    expect(found.bandcampTrackId).toBe(2);
-    expect(mobileCalls()).toHaveLength(2);
+    expect(await fresh().resolve('Radiohead', 'Nude', 'In Rainbows', {})).toBeNull();
+    expect(mobileCalls()).toHaveLength(1);
   });
 
   test('the first pick that streams costs one check', async () => {
@@ -138,35 +137,20 @@ describe('resolve checks its pick', () => {
     expect(mobileCalls()).toHaveLength(1);
   });
 
-  test('no match when none of the candidates streams', async () => {
-    install([row(1, 'Nude', 'Radiohead'), row(2, 'Nude', 'Radiohead')], { 1: false, 2: false });
-    expect(await fresh().resolve('Radiohead', 'Nude', '', {})).toBeNull();
-  });
-
   test('a failed check keeps its candidate', async () => {
     install([row(1, 'Nude', 'Radiohead'), row(2, 'Nude', 'Radiohead')], { 1: () => ({ ok: false, status: 429, json: async () => ({}) }) });
     expect((await fresh().resolve('Radiohead', 'Nude', '', {})).bandcampTrackId).toBe(1);
   });
 
-  test('stops after three checks', async () => {
-    const rows = [1, 2, 3, 4, 5].map((id) => row(id, 'Nude', 'Radiohead'));
-    install(rows, { 1: false, 2: false, 3: false });
-    expect(await fresh().resolve('Radiohead', 'Nude', '', {})).toBeNull();
-    expect(mobileCalls()).toHaveLength(3);
-  });
-
-  test("a buy-only track on the artist's own page ends the search", async () => {
+  test("a buy-only pick ends the search whoever's page it's on: a fan's copy below it is never taken", async () => {
     const own = row(1, 'Nude', 'Radiohead', { item_url_path: 'https://radiohead.bandcamp.com/track/nude' });
     const fanCopy = row(2, 'nude', 'radiohead', { item_url_path: 'https://meanderpede.bandcamp.com/track/nude' });
     install([own, fanCopy], { 1: false });
     expect(await fresh().resolve('Radiohead', 'Nude', '', {})).toBeNull();
-    expect(mobileCalls()).toHaveLength(1);
-  });
-
-  test("the artist's own page counts without a leading The", async () => {
-    const own = row(1, 'Cleopatra', 'The Lumineers', { item_url_path: 'https://lumineers.bandcamp.com/track/cleopatra' });
-    install([own, row(2, 'Cleopatra', 'The Lumineers')], { 1: false });
+    const label = row(3, 'Cleopatra', 'The Lumineers', { item_url_path: 'https://somelabel.bandcamp.com/track/cleopatra' });
+    install([label, row(4, 'Cleopatra', 'The Lumineers')], { 3: false });
     expect(await fresh().resolve('The Lumineers', 'Cleopatra', '', {})).toBeNull();
+    expect(mobileCalls()).toHaveLength(1);
   });
 
   test('resolve searches without checking every row', async () => {

@@ -74,10 +74,10 @@ describe('Bandcamp search depth', () => {
   });
 
   test('a remix by another uploader never stands in for it', async () => {
-    // With the original on a label's page (so the search goes on past it),
-    // only rows that pass the artist rule are candidates: the remixes at the
-    // top ("Radiohead - Nude (Lobec Remix)" by Lobec, live) are other
-    // versions by someone else, and are never checked.
+    // With the original buy-only on a label's page, the track gets no Bandcamp
+    // source: a buy-only pick ends the search, so no other copy is checked,
+    // and the remixes at the top ("Radiohead - Nude (Lobec Remix)" by Lobec,
+    // live) are other versions by someone else and never candidates.
     const labelRows = apiRows.map((r) => (r.id === 31 ? { ...r, item_url_path: 'https://xlrecordings.bandcamp.com/track/nude' } : r));
     global.fetch.mockImplementation(async (url) => {
       if (url.includes('/api/mobile/24/tralbum_details')) {
@@ -88,6 +88,6 @@ describe('Bandcamp search depth', () => {
     });
     expect(await resolveNude()).toBeNull();
     const checks = global.fetch.mock.calls.filter(([u]) => u.includes('/api/mobile/'));
-    expect(checks.map(([u]) => new URL(u).searchParams.get('tralbum_id'))).toEqual(['31', '49']);
+    expect(checks.map(([u]) => new URL(u).searchParams.get('tralbum_id'))).toEqual(['31']);
   });
 });

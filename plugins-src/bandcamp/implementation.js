@@ -288,37 +288,21 @@ module.exports = {
     // Only a track that streams is a source. An artist can make a track
     // buy-only (Radiohead's own "Nude" and "Reckoner" on Bandcamp), and it
     // would show a Bandcamp icon and fail when played. So the pick is checked,
-    // and if it doesn't stream the next candidate is, up to MAX_CHECKS of
-    // them; none that streams is no match. A check that failed keeps its
-    // candidate (playback still falls back), and so does one too late to check:
-    // the whole resolve has RESOLVE_BUDGET_MS (8s, resolver-limiter.js), and
-    // each check gives up after 2s.
-    //
-    // A buy-only track on the artist's own Bandcamp page (radiohead.bandcamp.com)
-    // ends the search: the artist turned streaming off, and another account's
-    // upload credited to them is a fan's copy (Radiohead's "Nude" has a
-    // "stripped mix" credited to Radiohead on someone else's page).
-    var MAX_CHECKS = 3;
+    // and if it's buy-only the track gets no Bandcamp source at all: we never
+    // go looking for another Bandcamp copy of the same song. The next match
+    // down is almost always someone else's upload (Radiohead's "Nude" has a
+    // "stripped mix" credited to Radiohead on another account), not the
+    // artist's recording. A check that failed keeps the pick (playback still
+    // falls back), and so does one too late to check: the whole resolve has
+    // RESOLVE_BUDGET_MS (8s, resolver-limiter.js), and each check gives up
+    // after 2s.
     var CHECK_DEADLINE_MS = 5000;
-    var canCheck = typeof this.isStreamable === 'function';
-    var bareArtist = targetArtist.indexOf('the') === 0 ? targetArtist.slice(3) : targetArtist;
-    var onArtistsPage = function (r) {
-      var m = /^https?:\/\/([^./]+)\.bandcamp\.com\//i.exec(r.bandcampUrl || '');
-      if (!m || !targetArtist) return false;
-      var account = norm(m[1]);
-      return account === targetArtist || (!!bareArtist && account === bareArtist);
-    };
-    var checks = 0;
-    for (i = 0; i < candidates.length; i++) {
-      var c = candidates[i];
-      if (!canCheck || !c.bandcampBandId || !c.bandcampTrackId) return c;
-      if (checks >= MAX_CHECKS) return null;
-      if (Date.now() - startedAt > CHECK_DEADLINE_MS) return c;
-      checks++;
-      var streams = await this.isStreamable(c.bandcampBandId, c.bandcampTrackId, c.bandcampUrl);
-      if (streams !== false) return c;
-      if (onArtistsPage(c)) return null;
-    }
+    var pick = candidates[0];
+    if (!pick) return null;
+    if (typeof this.isStreamable !== 'function' || !pick.bandcampBandId || !pick.bandcampTrackId) return pick;
+    if (Date.now() - startedAt > CHECK_DEADLINE_MS) return pick;
+    var streams = await this.isStreamable(pick.bandcampBandId, pick.bandcampTrackId, pick.bandcampUrl);
+    if (streams !== false) return pick;
     return null;
   },
   // Whether Bandcamp lets this track stream: true, false (the artist made it
