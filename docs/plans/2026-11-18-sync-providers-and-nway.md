@@ -1,7 +1,8 @@
 # Sync providers as plug-ins, and finishing N-way
 
 **Status:** proposal for the maintainer to decide on · **Date:** 2026-11-18 · **Base:** `main` at c5911482
-**Covers:** #1515, #1518, #1519, #1445, #802, #790, #801, #911, #945, #1520, #1494
+**Covers:** #1515, #1518, #1519, #1445, #802, #790, #801, #911, #945; the Amazon library item touches #1494
+**Revised:** 2026-11-18, after @theli-ua's review on #1525: host adapters are a first step, not the end state (a new M15 moves the built-ins into their `.axe`); the first library plug-in is Subsonic, then Plex; no Jellyfin plug-in; `contract` is an API level; Amazon's library entities spelled out.
 **Out of scope:** the player adapter (#1517), except one note in "Risks".
 
 This is a decision document. Each decision below has options, a recommendation and what it costs if the recommendation is wrong. The sequence at the end is the order to build it in. Read `docs/architecture/sync.md` before implementing any milestone: its rules came from data-loss incidents, and the table in D5 points into it.
@@ -9,20 +10,20 @@ This is a decision document. Each decision below has options, a recommendation a
 ## Summary
 
 - **Where plug-in provider code runs:** in the renderer, like every `.axe`, behind a main-process proxy. The sync engines, the scheduler, the safety rules and all stored state stay in main. Main calls the plug-in through a request/response bridge, page by page.
-- **How the built-ins become plug-in providers:** each plug-in's manifest declares its sync. Spotify, Apple Music and ListenBrainz name a **host adapter** (the existing main-side code, wrapped), as `embedPlayer.adapter` does today. Their code does not move into the `.axe`. Last.fm and ListenBrainz loves use renderer-side host adapters over the existing scrobbler classes.
+- **How the built-ins become plug-in providers:** each plug-in's manifest declares its sync. Spotify, Apple Music and ListenBrainz first name a **host adapter** (the existing main-side code, wrapped), as `embedPlayer.adapter` does today: a pure move with no behaviour change. That's a step, not the end state. The goal is no plug-in-specific code in core, so a later milestone (M15) moves each built-in provider's code into its `.axe`, keeping native code only where it's genuinely better (MusicKit on Android). Last.fm and ListenBrainz loves use renderer-side host adapters over the existing scrobbler classes.
 - **The contract:** a data **descriptor** in the manifest (`capabilities.librarySync` / `playlistSync` / `lovedTracks` as booleans, details in a top-level `sync` block), plus token-free async methods. A failure always throws; nothing is ever `null`; "unchanged" is said explicitly. The host computes collection ids; a plug-in never does.
 - **Engines:** playlists go through N-way. The library stays on `calculateDiff` (it is already a per-provider set union). Loves stay on their own append-only model. All three call the same provider contract.
 - **N-way's remaining work:** `new` mode cannot create a mirror or import a playlist (both platforms), drops renames, Achordion submits and dead-mirror flags, and may leave false conflicts on a switch back to `legacy`. The desktop executor has no recorded live run. #945 is open.
 - **Gate for `new` as default:** those gaps closed, #945 and shared JSON vectors green on both engines, two release cycles of recorded clean cycles on real libraries, and mobile ready to flip in the same window. Legacy is deleted two to three releases after that.
-- **Milestones:** M1 Contract and registry · M2 Renderer asks the provider · M3 Plug-in bridge · M4 Plex library sync · M5 Loves through the contract · M6 N-way creates and imports · M7 N-way feature parity · M8 Validation record and shared vectors · M9 Live validation window · M10 Default flip · M11 Plug-in playlist providers · M12 Legacy removal · M13 Scheduler to main · M14 More library plug-ins and social reads.
+- **Milestones:** M1 Contract and registry · M2 Renderer asks the provider · M3 Plug-in bridge · M4 First library plug-in (Subsonic, then Plex) · M5 Loves through the contract · M6 N-way creates and imports · M7 N-way feature parity · M8 Validation record and shared vectors · M9 Live validation window · M10 Default flip · M11 Plug-in playlist providers · M12 Legacy removal · M13 Scheduler to main · M14 More library plug-ins (Amazon) and social reads · M15 Built-in providers move into their `.axe`.
 
 ## 1. Why
 
-Sync is the last large part of the app that is wired by service name. Three providers are hard-coded in `sync-engine/index.js`, main picks tokens with `providerId === 'spotify'` style switches in four places, and the renderer branches on the service in its push loops, setup dialog, library push and love code (`scripts/design-drift.js` counts 104 such branches on `main`). That breaks CLAUDE.md's first invariant, "Route by the plugin registry, never by service name". It is also why a Plex, Subsonic or Jellyfin library can't reach the Collection even though the Plex plug-in already pages through every track (#1515). At the same time two playlist engines run side by side: legacy is the default, N-way drives only opt-in users. Every sync change has to be made twice, and the legacy loops are where most of the renderer's service branches live. Finishing the two together means each provider is written once, against the engine that will remain.
+Sync is the last large part of the app that is wired by service name. Three providers are hard-coded in `sync-engine/index.js`, main picks tokens with `providerId === 'spotify'` style switches in four places, and the renderer branches on the service in its push loops, setup dialog, library push and love code (`scripts/design-drift.js` counts 104 such branches on `main`). That breaks CLAUDE.md's first invariant, "Route by the plugin registry, never by service name". It is also why a Subsonic or Plex library can't reach the Collection even though the Plex plug-in already pages through every track (#1515). At the same time two playlist engines run side by side: legacy is the default, N-way drives only opt-in users. Every sync change has to be made twice, and the legacy loops are where most of the renderer's service branches live. Finishing the two together means each provider is written once, against the engine that will remain.
 
 ## 2. The end state
 
-Any `.axe` can declare that it syncs a library (tracks, albums, artists), playlists, loved tracks, or any mix of those. One registry in main lists every sync provider from the loaded plug-ins' manifests. Spotify, Apple Music, ListenBrainz and Last.fm are entries in it like any other, and their state keys (`syncSources`, `syncedTo`, links, tombstones, love marks) are unchanged because their ids are unchanged. Playlists sync only through N-way, which is the default on desktop and mobile; the legacy push and import loops are gone. The library and loves keep their own engines, now fed through the same contract. The renderer asks a provider's descriptor what it can do and never tests its id. Plex is the first plug-in library, Subsonic and Jellyfin follow with no app change, and the plug-in settings dialog shows "Sync your library" for any plug-in that declares it.
+Any `.axe` can declare that it syncs a library (tracks, albums, artists), playlists, loved tracks, or any mix of those. One registry in main lists every sync provider from the loaded plug-ins' manifests. Spotify, Apple Music, ListenBrainz and Last.fm are entries in it like any other, and their state keys (`syncSources`, `syncedTo`, links, tombstones, love marks) are unchanged because their ids are unchanged. Playlists sync only through N-way, which is the default on desktop and mobile; the legacy push and import loops are gone. The library and loves keep their own engines, now fed through the same contract. The renderer asks a provider's descriptor what it can do and never tests its id. Subsonic is the first plug-in library and Plex follows with no app change (Jellyfin users get there through Jellyfin's Subsonic-compatible API, so there's no separate Jellyfin plug-in), and the plug-in settings dialog shows "Sync your library" for any plug-in that declares it.
 
 ## 3. Where things stand
 
@@ -113,7 +114,7 @@ The plan of record is `docs/plans/2026-06-28-legacy-to-nway-sync-migration.md`, 
 1. **Host adapters (recommended).** The `.axe` declares sync and names a host adapter: `"sync": { "adapter": "spotify", ... }`. The adapter is the existing provider module wrapped to the contract, with token handling moved inside it. This is the `embedPlayer.adapter` pattern, kept out of `capabilities` for the same reason (mobile decodes `capabilities` as `Map<String, Boolean>`).
 2. **Move their code into the `.axe`.** Marketplace updates could then fix sync without a release. But Spotify's and Apple Music's sync would lose window-closed sync and move about 2,000 tested lines to a new runtime boundary. It would also put Spotify's OAuth refresh and MusicKit token generation behind a bridge.
 
-**Recommendation: 1.** "Becoming a plug-in provider" means: the plug-in declares it, the registry routes by it, the descriptor describes it, and nothing branches on its id. Where the code lives is per provider. Moving one into its `.axe` later stays possible and changes nothing for the engine. Loves for Last.fm and ListenBrainz get renderer-side host adapters over `LastFmScrobbler` and `ListenBrainzScrobbler`, since loves run in the renderer until M13.
+**Recommendation: 1 first, then 2.** "Becoming a plug-in provider" means: the plug-in declares it, the registry routes by it, the descriptor describes it, and nothing branches on its id. Host adapters get there as a pure move. They are a stepping stone, not the destination: the long-term goal is no plug-in-specific code in core (@theli-ua, #1525 review), so M15 moves each built-in provider into its `.axe` once the plug-in bridge (M3) has proven itself with Subsonic and Plex. What keeps them in main today, and has to be solved per provider in M15: sync while the window is closed (`.axe` code runs in the renderer), Spotify's OAuth refresh, and Apple Music's developer token, which main generates from the private key. Native code stays only where it's genuinely better, such as MusicKit on Android. Moving one changes nothing for the engine. Loves for Last.fm and ListenBrainz get renderer-side host adapters over `LastFmScrobbler` and `ListenBrainzScrobbler`, since loves run in the renderer until M13.
 
 **Cost if wrong:** a bug in a built-in provider needs an app release rather than a plug-in update. That is today's situation, so nothing gets worse.
 
@@ -124,7 +125,7 @@ Full signatures are in Appendix A. The shape:
 **A descriptor, as data in the manifest.** Main reads manifests already (`resolvers-load-builtin`), so it can build the registry without running plug-in code. The renderer reads the same descriptor.
 - `capabilities` gains booleans only: `librarySync`, plus the existing `playlistSync` (ListenBrainz has it) and `lovedTracks` (Last.fm has it). Each needs a label in `lib/capability-labels.js`. #1515's `librarySync: { tracks, albums, artists }` object would break mobile's decoder; the details go in `sync` instead.
 - A top-level `sync` block holds the rest:
-  - `contract: 1`;
+  - `contract: 1`: the API level of the sync-provider interface the plug-in implements (like an Android API level). A host that doesn't know the level ignores the plug-in's sync instead of calling it wrongly;
   - `adapter` (optional): names a host adapter;
   - `kinds`: per kind (tracks, albums, artists, playlists, loves), whether it can be read and written and how it fetches incrementally;
   - the playlist capabilities (the existing ones, plus `snapshots`, `importAll` and `mirrorOutByDefault`);
@@ -165,7 +166,7 @@ A provider never writes local state.
 - The setup dialog offers one choice per declared kind, defaulted from `sync.defaults`. "Loved tracks" is one of them (#1445), and it reads and writes the same `scrobbler_love_push_enabled[id]` as the card's "Push newly loved tracks": one setting, two places.
 - What a plug-in syncs from (Plex's libraries) stays in the plug-in's own settings, which define the scopes.
 
-**Cost if wrong:** the descriptor is versioned (`contract: 1`). A host that doesn't know a contract version ignores the plug-in's sync, so a wrong shape costs a v2 and adapter updates, never data.
+**Cost if wrong:** the descriptor carries an API level (`contract: 1`). A host that doesn't know the level ignores the plug-in's sync, so a wrong shape costs a v2 and adapter updates, never data.
 
 ### D4. How N-way and the contract fit
 
@@ -241,7 +242,7 @@ The migration is a code move, not a data move. Three rules keep it that way:
 
 **`requires.hostBridges`:** not used for sync. That field hides a whole plug-in when a bridge it calls is missing. Sync is the host calling the plug-in, so a host without it just never calls. If a plug-in's sync code calls a new bridge, that bridge goes in `requires` as usual.
 
-**`sync.contract`:** a host ignores the sync of a plug-in whose contract version it doesn't know. A v2 plug-in can declare both versions during a transition.
+**`sync.contract` (the API level):** a host ignores the sync of a plug-in whose API level it doesn't know. A plug-in at level 2 can declare both levels during a transition.
 
 ## 5. Sequence
 
@@ -270,13 +271,15 @@ Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with 
 - No plug-in declares sync yet.
 - **Tests:** a fake plug-in provider end to end over a fake IPC: paging, cancel between pages, a timeout becomes a throw, a closed window skips the provider, a malformed or credential-bearing reply is rejected, a provider is never called twice at once.
 
-**M4. Plex library sync (the early proof).** Closes #1515.
-- **The Collection rule it must meet** (the maintainer's, for desktop and mobile alike): local albums, saved albums and plug-in library albums are merged and deduplicated in the Collection, and every track resolves to every available source. #1532 applies it to local files (and Parachord/parachord-mobile#713 on mobile). A Plex album you also have locally or saved from a service is one entry, its tracks carry the Plex source next to the others, and removing it hides it without touching the server. Identity uses the same rules as #1532 (`generateAlbumId`, the store-suffix and placeholder rules in `sync-engine/track-identity.js`).
-- Plex implements `fetchLibraryPage` for tracks (and albums and artists if its API makes them cheap), pull-only. It uses `addedAt` / `updatedAt` for deltas, a daily full listing for removals, `scope` per library, and `nativeId: 'plexRatingKey'`.
-- Bump Plex's version. No `minAppVersion` is needed (the capability is additive).
-- **Tests** (#1515's list): the engine path with Plex's real page parser over fixtures; deselecting a library removes its rows; no remote write is ever attempted (there is no method to call); a Collection removal tombstones; untagged items are skipped.
-- **Live:** the maintainer's server with two libraries: first sync, an added file, a deleted file, a library deselected, the window minimized during a sync.
-- **Mobile:** no ticket for Plex (`mobile: false`). File the contract ticket here (see 6).
+**M4. The first library plug-in: Subsonic, then Plex (the early proof).** Closes #1515.
+- **Why Subsonic first:** it's an established plug-in, pull-only, and it runs on mobile too, so it proves the contract on both platforms. Plex follows in the same milestone or the next (it already pages through every track of the selected libraries for its search index, `buildIndex`). Amazon's library is heavier (it comes through the web session) and waits for M14.
+- **The Collection rule it must meet** (the maintainer's, for desktop and mobile alike): local albums, saved albums and plug-in library albums are merged and deduplicated in the Collection, and every track resolves to every available source. #1532 applies it to local files (and Parachord/parachord-mobile#713 on mobile). An album you also have locally or saved from a service is one entry, its tracks carry the server's source next to the others, and removing it hides it without touching the server. Identity uses the same rules as #1532 (`generateAlbumId`, the store-suffix and placeholder rules in `sync-engine/track-identity.js`).
+- **Subsonic:** implements `fetchLibraryPage` for tracks (and albums and artists where the API makes them cheap), pull-only, with a daily full listing for removals and the server's own track id as `nativeId`.
+- **Plex:** the same, using `addedAt` / `updatedAt` for deltas, `scope` per library, and `nativeId: 'plexRatingKey'`.
+- Bump each plug-in's version. No `minAppVersion` is needed (the capability is additive).
+- **Tests** (#1515's list): the engine path with each plug-in's real page parser over fixtures; deselecting a library or scope removes its rows; no remote write is ever attempted (there is no method to call); a Collection removal tombstones; untagged items are skipped.
+- **Live:** a Subsonic server (Navidrome) and the maintainer's Plex server with two libraries: first sync, an added file, a deleted file, a library deselected, the window minimized during a sync.
+- **Mobile:** Subsonic is mobile-capable, so this is where mobile's plug-in provider question (section 6) stops being hypothetical: file the contract ticket here, and a ticket for mobile running a plug-in library provider (it may land later than desktop's). No ticket for Plex (`mobile: false`).
 
 **M5. Loves through the contract.** Closes #1445 and #1519's loved-tracks part.
 - Renderer-side adapters over the two scrobbler classes.
@@ -324,7 +327,7 @@ Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with 
 - Mobile flips its `DEFAULT_MODE` in the same window.
 - **Gate:** M6 to M9 done, plus mobile's equivalents of M6 and M8 merged.
 
-**M11. Plug-in playlist providers.** Subsonic, Jellyfin and Plex playlists through M3's bridge, N-way only.
+**M11. Plug-in playlist providers.** Subsonic and Plex playlists through M3's bridge, N-way only.
 - Waiting for M10 means they never touch the legacy loops, and every user who has them gets them.
 
 **M12. Legacy removal (Phase 4).** Closes #790 and the rest of #1518.
@@ -338,9 +341,13 @@ Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with 
 - Loves move with it.
 - **Re-scope #801:** the split store already gives `local_playlists` its own file, so what remains is per-record writes. Measure after M7's batching, and close it if the pinwheel is gone.
 
-**M14. More library plug-ins, and social reads.**
-- Subsonic, then Jellyfin (#742), as plug-in changes only.
-- An Amazon liked-and-purchased library is possible later on the same contract. It would validate the bridge for a plug-in that rides `webSession`.
+**M14. Amazon's library, and social reads.**
+- **No Jellyfin plug-in.** Jellyfin can expose a Subsonic-compatible API through its own plug-in, so Jellyfin users use the Subsonic plug-in; a second, near-identical plug-in isn't worth keeping (@theli-ua). #742 is answered that way.
+- **Amazon Music's library** on the same contract, which also proves the bridge for a plug-in that rides `webSession`. Amazon's library has (from @theli-ua):
+  - **Playlists, followed and created.** Followed ones are mostly editorial or auto-generated and can't be edited, only unfollowed: they import read-only (`syncedFrom`, never a push target). Created ones sync both ways.
+  - **Artists, albums and tracks:** the library, pull and push as the account allows.
+  - **Purchased:** the tracks the account owns. This is also #1494's owned list, which lets a Prime account play what it bought; build it once, for both.
+  - **Out of scope:** podcasts and audiobooks.
 - #1519's friends and charts become ordinary plug-in capabilities (`friends`, `charts`) read through `resolver-loader.js`, like `getRecommendations`. They are not sync, have no state to protect, and can land any time after M2.
 
 **Where #1487's hook moves go.** #1487 moves each area of `src/renderer/app.js` into a hook, byte for byte, one area per PR. Three of its areas are code this plan rewrites. Each is moved first, as a plain move with no behavior change, so the milestone then changes a small hook instead of `app.js`:
@@ -350,9 +357,12 @@ Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with 
 
 #1487's other areas (Search, History, AI chat, the discovery pages, Local Files) don't touch this plan and can move at any time.
 
-**Where the other issues sit:**
-- **#1494** (Amazon Prime purchases) doesn't depend on this plan. Its owned list belongs inside the plug-in.
-- **#1520** (Local Files capabilities) is independent and can land any time.
+
+**M15. Built-in providers move into their `.axe`.** The long-term goal: no plug-in-specific code in core (@theli-ua, #1525 review).
+- One provider per PR (ListenBrainz first: no OAuth refresh, no native token), each replacing its host adapter with the same contract implemented in the `.axe` over M3's bridge, behind the same conformance suite and no-op golden test as M1.
+- What each has to solve first: sync while the window is closed (the hidden plug-in host window from D1's "cost if wrong", if needed); Spotify's OAuth refresh (a token bridge the plug-in calls, so the refresh token never enters page state); Apple Music's developer token, generated in main from the private key (main keeps signing it and hands the plug-in only the short-lived token).
+- Native code stays only where it's genuinely better, such as MusicKit on Android.
+- **Gate:** M3's bridge has carried Subsonic and Plex for at least one release without a data issue.
 
 ## 6. Android
 
@@ -380,9 +390,10 @@ Desktop and mobile write the same remote playlists and libraries. A drift in ide
 | M7 merges | Rename propagation and the switch-back test (dead mirrors excluded on purpose). |
 | M8 | Vendor the new shared vectors and run them in Kotlin. |
 | M10 | Coordinated default flip: `DEFAULT_MODE = new`, and the silent switch for a no-op preview. |
-| M11, only if a sync plug-in is mobile-capable | A Kotlin `SyncProvider` over `JsRuntime` for plug-in providers. |
+| M4 (Subsonic) | A Kotlin `SyncProvider` over `JsRuntime` for plug-in library providers: Subsonic is mobile-capable, so mobile needs this for it (it may land after desktop's). |
+| M15 | Each built-in provider's move into its `.axe`, as it happens: mobile's Kotlin providers can follow or stay native where that's better. |
 
-**Could mobile run a plug-in provider?** Probably, with work. Android runs `.axe` in a headless WebView and iOS in JavaScriptCore, behind `JsRuntime.evaluate` (a string interface with a 20 s timeout in `JsBridge`). Background sync runs in WorkManager (`LibrarySyncWorker`) against Kotlin providers, and I did not check whether the headless WebView can be driven from a worker. No sync plug-in is mobile-capable yet (Plex is `mobile: false`), so this waits.
+**Could mobile run a plug-in provider?** Probably, with work. Android runs `.axe` in a headless WebView and iOS in JavaScriptCore, behind `JsRuntime.evaluate` (a string interface with a 20 s timeout in `JsBridge`). Background sync runs in WorkManager (`LibrarySyncWorker`) against Kotlin providers, and I did not check whether the headless WebView can be driven from a worker. Subsonic is mobile-capable, so M4 is where this has to be answered (Plex is `mobile: false`).
 
 ## 7. Risks and open questions
 
