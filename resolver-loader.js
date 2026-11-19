@@ -798,6 +798,29 @@ class ResolverLoader {
   }
 
   /**
+   * What a user is playing right now on one plug-in (listeningHistory's
+   * optional getNowPlaying), for a friend's radio (#1539 step 5).
+   * @param {string} resolverId
+   * @param {{ user: string }} query
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<{ title, artist, album? }|null>} null when nothing is
+   *          playing, or the plug-in lacks the method. REJECTS when it throws.
+   */
+  async getNowPlaying(resolverId, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.listeningHistory || typeof resolver.getNowPlaying !== 'function') return null;
+    try {
+      const playing = await resolver.getNowPlaying(query || {}, configOverride || resolver.config || {});
+      return playing && typeof playing.title === 'string' && playing.title.trim() && typeof playing.artist === 'string' && playing.artist.trim()
+        ? playing
+        : null;
+    } catch (error) {
+      console.error(`Now playing error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
    * A manifest's top-level `charts`, cleaned: { period?, tracks?, albums? },
    * each kind { global: boolean, countries: ['us', ...] } (lowercase ISO
    * codes). A kind with neither is left out; null when nothing is left.

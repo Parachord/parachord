@@ -470,7 +470,11 @@ module.exports = {
     var response = await fetch('https://api.listenbrainz.org/1/stats/user/' + encodeURIComponent(user) + '/' + entity +
       '?range=' + range + '&count=' + limit, { headers: headers });
     if (response.status === 204) return [];
-    if (!response.ok) throw new Error('ListenBrainz history failed: ' + response.status);
+    if (!response.ok) {
+      var failed = new Error('ListenBrainz history failed: ' + response.status);
+      failed.status = response.status;
+      throw failed;
+    }
     var data = await response.json();
     var list = data && data.payload && data.payload[entity];
     if (!Array.isArray(list)) throw new Error('ListenBrainz history: unexpected answer');
@@ -502,7 +506,12 @@ module.exports = {
     var limit = Math.max(1, Math.min(100, Number(query && query.limit) || 50));
     var headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
     var response = await fetch('https://api.listenbrainz.org/1/user/' + encodeURIComponent(user) + '/listens?count=' + limit, { headers: headers });
-    if (!response.ok) throw new Error('ListenBrainz recent listens failed: ' + response.status);
+    if (!response.ok) {
+      // The status goes along for the friend poll's backoff.
+      var failed = new Error('ListenBrainz recent listens failed: ' + response.status);
+      failed.status = response.status;
+      throw failed;
+    }
     var data = await response.json();
     var listens = data && data.payload && data.payload.listens;
     if (!Array.isArray(listens)) throw new Error('ListenBrainz recent listens: unexpected answer');
@@ -523,6 +532,27 @@ module.exports = {
         msid: l.recording_msid || undefined
       };
     });
+  },
+
+  // listeningHistory, optional: what a user is playing right now
+  // (/1/user/<user>/playing-now), for a friend's radio (#1539 step 5).
+  // query: { user }. Answers { title, artist, album? } or null; a failure
+  // THROWS, with its `status`.
+  getNowPlaying: async function (query, config) {
+    var user = String((query && query.user) || (config && config.username) || '').trim();
+    if (!user) return null;
+    var headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    var response = await fetch('https://api.listenbrainz.org/1/user/' + encodeURIComponent(user) + '/playing-now', { headers: headers });
+    if (!response.ok) {
+      var failed = new Error('ListenBrainz playing now failed: ' + response.status);
+      failed.status = response.status;
+      throw failed;
+    }
+    var data = await response.json();
+    var listen = data && data.payload && data.payload.listens && data.payload.listens[0];
+    var meta = listen && listen.track_metadata;
+    if (!meta || !meta.track_name || !meta.artist_name) return null;
+    return { title: meta.track_name, artist: meta.artist_name, album: meta.release_name || undefined };
   },
 
   // The charts capability (#1539 step 3): what everyone on ListenBrainz

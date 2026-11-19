@@ -342,16 +342,17 @@ A user's own listening stats (#1539 step 4). A plug-in declares `capabilities.li
 - `getTopItems({ user?, kind: 'tracks' | 'albums' | 'artists', period, limit? }, config)` → tracks `[{ title, artist, album?, plays, mbid?, albumArt? }]`, albums `[{ title, artist, plays, mbid?, albumArt? }]` or artists `[{ name, plays, mbid? }]`, most played first. `period` is `'week' | 'month' | 'quarter' | 'half_year' | 'year' | 'all'` (the History page's menu values, Last.fm's names because `parachord://` links carry them, map through `historyPeriodFor` in `src/renderer/lib/listening-history.js`).
 - `getRecentListens({ user?, limit? }, config)` → `[{ title, artist, album?, albumArt?, playedAt (ms, null while playing), nowPlaying, mbid?, msid? }]`, newest first.
 
-`user` defaults to the signed-in username (`config.username`), so the same methods can answer for someone else (step 5, friends). No user is `null`; the service's "no such user" is `[]`; a failure throws. A cover is sent only when the service matched it itself (ListenBrainz's, gated on `caa_id` as `lib/listenbrainz-cover.js` is; never Last.fm's grey star). `resolver-loader.js` dispatches `getListeningHistoryResolvers()` (the capability and both methods), `getTopItems(id, query, config)` and `getRecentListens(id, query, config)`, which drop unnamed rows and reject when the plug-in throws.
+`user` defaults to the signed-in username (`config.username`), so the same methods answer for friends too (#1539 step 5). An optional third method, `getNowPlaying({ user }, config)` → `{ title, artist, album? }` or `null`, says what someone is playing right now (a friend's radio); the loader answers `null` for a plug-in without it. A failed request's error carries its HTTP `status` (the friend poll's backoff reads it), and a Last.fm profile that hides its recent listening (403, error 17) throws with `hidesListening: true`, which the friend UI shows as "Listening hidden" rather than as a failure. No user is `null`; the service's "no such user" is `[]`; a failure throws. A cover is sent only when the service matched it itself (ListenBrainz's, gated on `caa_id` as `lib/listenbrainz-cover.js` is; never Last.fm's grey star). `resolver-loader.js` dispatches `getListeningHistoryResolvers()` (the capability and both methods), `getTopItems(id, query, config)` and `getRecentListens(id, query, config)`, which drop unnamed rows and reject when the plug-in throws.
 
 The app's sources (`historySourcesFor` in app.js) are the plug-ins with the capability that `similarProviders` gives (active or meta-services, minus one switched off, in the user's order) **and that you've signed in to**: a `username` in the plug-in's settings (`signedInSources`). Consumers:
 
 - **The History page:** Recently Played merges every source (`mergeRecentListens`: newest first, one per song per five minutes). The Top Tracks, Top Albums and Top Artists tabs show one source, picked in a Source menu when you have more than one, else the first in your order (`historyTopSource`). Its line under the title, and its "Connect …" offer when none is set up, are built from the plug-ins.
 - **The AI's listening context** (`fetchListeningContext`): every source's top items for four periods plus recent listens, merged.
 - **The Fresh Drops and Concerts seeds**: every source's top artists (a year, half a year), merged (`mergeArtistNames`).
+- **Friends** (#1539 step 5): a friend's listening comes from their own service's plug-in (`friend.service` is its id) through `askFriend` in app.js, with `user` set to their username: the friend poll (`fetchFriendRecentTrack`, one recent listen), their weekly stats for the AI (`fetchFriendWeeklyStats`), their page's Recent, Top Tracks, Top Albums and Top Artists tabs, and the radio's "playing now" (`getNowPlaying`). A plug-in that isn't loaded is a failure there (the tab says it couldn't reach the service), never an empty list.
 
-- **Last.fm** (1.2.12): `user.gettoptracks`, `user.gettopalbums`, `user.gettopartists` (periods `7day` … `overall`) and `user.getrecenttracks`. Needs the API key.
-- **ListenBrainz** (1.6.10): `/1/stats/user/<user>/{recordings,releases,artists}` (ranges `week`, `month`, `quarter`, `half_yearly`, `year`, `all_time`: the last full one of each) and `/1/user/<user>/listens`; the user's token goes along when there is one.
+- **Last.fm** (1.2.12; `getNowPlaying`, error statuses and hidden profiles 1.2.13): `user.gettoptracks`, `user.gettopalbums`, `user.gettopartists` (periods `7day` … `overall`) and `user.getrecenttracks`. Needs the API key.
+- **ListenBrainz** (1.6.10; `getNowPlaying` and error statuses 1.6.11): `/1/stats/user/<user>/{recordings,releases,artists}` (ranges `week`, `month`, `quarter`, `half_yearly`, `year`, `all_time`: the last full one of each) and `/1/user/<user>/listens` (and `/playing-now`); the user's token goes along when there is one.
 
 ### Charts (`getCharts`, optional)
 
@@ -371,7 +372,7 @@ The app asks every plug-in with the capability at once, by the same rule as simi
 
 - **Wikipedia** (1.1.1, the preferred source): the artist's Wikidata id (Wikidata's own P434 search, MusicBrainz url-rels as the fallback in the background lane; kept on the instance), its English article, trimmed to the lead and the prose sections (`this.lib.bioFromExtract`). Needs the MBID; no account.
 - **Discogs** (1.2.0): artist search, the same-named result, its profile with references resolved to names (`markup: 'bbcode'`). A personal access token (Advanced) raises the rate limit.
-- **Last.fm** (1.2.13): `artist.getinfo`, by name, without the "Read more on Last.fm" link and licence line (the app's old check for that phrase dropped every Last.fm bio). Needs the API key.
+- **Last.fm** (1.2.14): `artist.getinfo`, by name, without the "Read more on Last.fm" link and licence line (the app's old check for that phrase dropped every Last.fm bio). Needs the API key.
 
 ### Settings
 

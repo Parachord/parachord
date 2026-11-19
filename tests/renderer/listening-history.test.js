@@ -43,6 +43,15 @@ describe('resolver-loader', () => {
   beforeEach(() => loader.resolvers.clear());
   const register = (id, impl, capabilities = { listeningHistory: true }) => loader.resolvers.set(id, { id, capabilities, config: {}, ...impl });
 
+  test('getNowPlaying is optional: null without the method, a checked answer with it', async () => {
+    register('a', { getTopItems: async () => [], getRecentListens: async () => [], getNowPlaying: async (q) => ({ title: 'T', artist: q.user }) });
+    register('b', { getTopItems: async () => [], getRecentListens: async () => [] });
+    register('c', { getTopItems: async () => [], getRecentListens: async () => [], getNowPlaying: async () => ({ title: '', artist: 'x' }) });
+    await expect(loader.getNowPlaying('a', { user: 'friend' })).resolves.toEqual({ title: 'T', artist: 'friend' });
+    await expect(loader.getNowPlaying('b', { user: 'friend' })).resolves.toBeNull();
+    await expect(loader.getNowPlaying('c', { user: 'friend' })).resolves.toBeNull();
+  });
+
   test('lists plug-ins with the capability and both methods', () => {
     register('a', { getTopItems: async () => [], getRecentListens: async () => [] });
     register('b', { getTopItems: async () => [] });
@@ -99,5 +108,23 @@ describe('app.js and the History page ask the plug-ins', () => {
     // Every "Connect …" offer lists the plug-ins that keep history.
     expect(page.match(/historyErrorState\(/g)).toHaveLength(4);
     expect(page.match(/, services\)\n/g)).toHaveLength(4);
+  });
+
+  test('a friend\'s listening comes from their plug-in, never a service by name (#1539 step 5)', () => {
+    for (const [start, end] of [
+      ['const fetchFriendRecentTrack = async', '\n  };\n'],
+      ['const fetchFriendWeeklyStats = async', '\n  };\n'],
+      ['const fetchTransientFriendNowPlaying = async', '\n  };\n'],
+      ['const loadFriendRecentTracks = async', '\n  };\n'],
+      ['const fetchFriendTopTracksList = async', '\n  };\n'],
+      ['const loadFriendTopArtists = async', '\n  };\n'],
+      ['const loadFriendTopAlbums = async', '\n  };\n'],
+    ]) {
+      const body = fn(start, end);
+      expect([start, body.length > 100]).toEqual([start, true]);
+      expect([start, /ws\.audioscrobbler\.com|api\.listenbrainz\.org|service === '(lastfm|listenbrainz)'/.test(body)]).toEqual([start, false]);
+      expect([start, body.includes('askFriend(')]).toEqual([start, true]);
+    }
+    expect(app).toContain("const out = await resolverLoaderRef.current[method](friend.service, { ...query, user: friend.username }, await configForSimilar(friend.service));");
   });
 });

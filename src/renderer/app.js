@@ -1337,7 +1337,6 @@ const { createDebouncedSaver } = require('./lib/debounced-saver');
 const TRACK_SOURCES_SAVE_DELAY_MS = 15 * 1000;
 const TRACK_SOURCES_SAVE_MAX_WAIT_MS = 60 * 1000;
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
-const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { cachedCoversToSeed, coverAttemptKey, coverFetchOrder } = require('./lib/playlist-cover-queue');
 const { holdPreviousPlaybarArt, trackArtKey, playbarShowsTrack } = require('./lib/playbar-art');
@@ -29534,6 +29533,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // 404) and rate limits, plus one weekly-stats attempt per 30 min.
   const friendPollBackoffRef = useRef(null);
   if (!friendPollBackoffRef.current) friendPollBackoffRef.current = createFriendPollBackoff();
+  // A friend's listening comes from their own service's plug-in
+  // (friend.service is its id; listeningHistory, #1539 step 5), asked about
+  // their username. A plug-in that isn't loaded, or lacks the capability,
+  // is a failure here, never an empty answer.
+  const askFriend = async (friend, method, query = {}) => {
+    const out = await resolverLoaderRef.current[method](friend.service, { ...query, user: friend.username }, await configForSimilar(friend.service));
+    if (out == null && method !== 'getNowPlaying') throw userError(`${pluginName(friend.service)} isn’t available.`);
+    return out;
+  };
+
   const recordFriendPollStatus = (friend, status) => {
     const delay = friendPollBackoffRef.current.recordStatus(friend.id, status);
     if (delay > 0) {
@@ -29548,61 +29557,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // error, or ListenBrainz, which has no such setting).
   const fetchFriendRecentTrack = async (friend) => {
     try {
-      if (friend.service === 'lastfm') {
-        const apiKey = getLastfmApiKey();
-        if (!apiKey) return { track: null, hidesListening: null };
-
-        const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=1`;
-        const response = await lastfmFetch(url);
-        recordFriendPollStatus(friend, response.status);
-        if (!response.ok) {
-          const body = response.status === 403 ? await response.json().catch(() => null) : null;
-          return { track: null, hidesListening: isLastfmHiddenListening(response.status, body) ? true : null };
-        }
-
-        const data = await response.json();
-        const track = data.recenttracks?.track?.[0];
-        if (!track) return { track: null, hidesListening: false };
-
-        // Check if currently playing (no date means currently playing)
-        const isNowPlaying = track['@attr']?.nowplaying === 'true';
-        const timestamp = isNowPlaying ? Date.now() : (track.date?.uts ? parseInt(track.date.uts) * 1000 : null);
-
-        return {
-          track: {
-            name: track.name,
-            artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
-            album: track.album?.['#text'] || null,
-            timestamp: timestamp,
-            albumArt: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'] || null
-          },
-          hidesListening: false
-        };
-      } else if (friend.service === 'listenbrainz') {
-        const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/listens?count=1`;
-        const response = await fetch(url);
-        recordFriendPollStatus(friend, response.status);
-        if (!response.ok) return { track: null, hidesListening: null };
-
-        const data = await response.json();
-        const listen = data.payload?.listens?.[0];
-        if (!listen) return { track: null, hidesListening: null };
-
-        return {
-          track: {
-            name: listen.track_metadata?.track_name || 'Unknown Track',
-            artist: listen.track_metadata?.artist_name || 'Unknown Artist',
-            album: listen.track_metadata?.release_name || null,
-            timestamp: listen.listened_at ? listen.listened_at * 1000 : null,
-            // The cover ListenBrainz matched; without one, fetched via getAlbumArt
-            albumArt: listenBrainzCoverUrl(listen.track_metadata?.mbid_mapping)
-          },
-          hidesListening: null
-        };
-      }
-      return { track: null, hidesListening: null };
+      const listens = await askFriend(friend, 'getRecentListens', { limit: 1 });
+      recordFriendPollStatus(friend, 200);
+      const newest = listens[0];
+      if (!newest) return { track: null, hidesListening: false };
+      return {
+        track: {
+          name: newest.title,
+          artist: newest.artist || 'Unknown Artist',
+          album: newest.album || null,
+          // Playing now has no date: it's now.
+          timestamp: newest.nowPlaying ? Date.now() : (newest.playedAt || null),
+          // The cover the service matched; without one, fetched via getAlbumArt
+          albumArt: newest.albumArt || null
+        },
+        hidesListening: false
+      };
     } catch (error) {
-      console.error(`Error fetching recent track for ${friend.username}:`, error);
+      // The plug-in's error carries the HTTP status (the backoff's input),
+      // and says when the profile hides its recent listening.
+      if (error && error.status) recordFriendPollStatus(friend, error.status);
+      if (error && error.hidesListening) return { track: null, hidesListening: true };
+      console.warn(`Couldn't fetch the recent track for ${friend.username}:`, error?.message || error);
       return { track: null, hidesListening: null };
     }
   };
@@ -29617,52 +29593,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch friend's weekly stats (top artists + tracks) for AI context caching
   const fetchFriendWeeklyStats = async (friend) => {
     try {
-      let topArtists = [];
-      let topTracks = [];
-
-      if (friend.service === 'lastfm') {
-        const apiKey = getLastfmApiKey();
-        if (!apiKey) return null;
-
-        // Fetch top artists and tracks in parallel
-        const [artistsRes, tracksRes] = await Promise.all([
-          lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`),
-          lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`)
-        ]);
-
-        if (artistsRes.ok) {
-          const data = await artistsRes.json();
-          topArtists = (data.topartists?.artist || []).map(a => a.name);
-        }
-        if (tracksRes.ok) {
-          const data = await tracksRes.json();
-          topTracks = (data.toptracks?.track || []).map(t => ({
-            title: t.name,
-            artist: t.artist?.name || t.artist
-          }));
-        }
-      } else {
-        // ListenBrainz - fetch in parallel
-        const [artistsRes, tracksRes] = await Promise.all([
-          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/artists?range=week&count=5`),
-          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/recordings?range=week&count=5`)
-        ]);
-
-        if (artistsRes.ok && artistsRes.status !== 204) {
-          const data = await artistsRes.json();
-          topArtists = (data.payload?.artists || []).map(a => a.artist_name);
-        }
-        if (tracksRes.ok && tracksRes.status !== 204) {
-          const data = await tracksRes.json();
-          topTracks = (data.payload?.recordings || []).map(t => ({
-            title: t.track_name,
-            artist: t.artist_name
-          }));
-        }
-      }
-
+      const [artists, tracks] = await Promise.all([
+        askFriend(friend, 'getTopItems', { kind: 'artists', period: 'week', limit: 5 }).catch(() => []),
+        askFriend(friend, 'getTopItems', { kind: 'tracks', period: 'week', limit: 5 }).catch(() => [])
+      ]);
+      const topArtists = artists.map(a => a.name);
+      const topTracks = tracks.map(t => ({ title: t.title, artist: t.artist }));
       if (topArtists.length === 0 && topTracks.length === 0) return null;
-
       return { topArtists, topTracks, fetchedAt: Date.now() };
     } catch (error) {
       console.error(`Error fetching weekly stats for ${friend.username}:`, error);
@@ -30547,42 +30484,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   const fetchTransientFriendNowPlaying = async (service, user) => {
-    if (service === 'listenbrainz') {
-      const resp = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(user)}/playing-now`);
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const listen = data?.payload?.listens?.[0];
-      if (!listen) return null;
-      const m = listen.track_metadata;
-      if (!m?.track_name || !m?.artist_name) return null;
-      return {
-        name: m.track_name,
-        artist: m.artist_name,
-        album: m.release_name,
-        timestamp: Date.now(),
-      };
-    }
-    if (service === 'lastfm') {
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) return null;
-      const resp = await fetch(
-        `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(user)}&api_key=${apiKey}&format=json&limit=1`
-      );
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const t = data?.recenttracks?.track;
-      const newest = Array.isArray(t) ? t[0] : t;
-      if (!newest) return null;
-      const isNowPlaying = newest['@attr']?.nowplaying === 'true';
-      if (!isNowPlaying) return null;
-      return {
-        name: newest.name,
-        artist: newest.artist?.['#text'] || newest.artist,
-        album: newest.album?.['#text'],
-        timestamp: Date.now(),
-      };
-    }
-    return null;
+    const playing = await askFriend({ service, username: user }, 'getNowPlaying').catch(() => null);
+    return playing
+      ? { name: playing.title, artist: playing.artist, album: playing.album, timestamp: Date.now() }
+      : null;
   };
 
   // Activate listen-along mode for a friend
@@ -30744,63 +30649,29 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     setFriendHistoryLoading(true);
 
     try {
-      let tracks = [];
-
-      if (friend.service === 'lastfm') {
-        const apiKey = getLastfmApiKey();
-        if (!apiKey) throw new Error('Last.fm API key not configured');
-
-        const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=50`;
-        const response = await lastfmFetch(url);
-        if (!response.ok) {
-          const body = response.status === 403 ? await response.json().catch(() => null) : null;
-          if (isLastfmHiddenListening(response.status, body)) {
-            // Not a failure: the profile hides its recent listening, and the
-            // Recent tab says so (the other tabs still load).
-            updateFriendHidesListening(friend, true);
-            setFriendHistoryData(prev => ({ ...prev, recent: [], recentHidden: true, errors: { ...(prev.errors || {}), recent: false } }));
-            return;
-          }
-          throw new Error(`Failed to fetch recent tracks: ${response.status}`);
-        }
-        updateFriendHidesListening(friend, false);
-
-        const data = await response.json();
-        const recentTracks = data.recenttracks?.track || [];
-
-        tracks = recentTracks.map((track, index) => ({
-          id: `friend-recent-${index}-${track.name}`.replace(/\s+/g, '-'),
-          title: track.name,
-          artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
-          album: track.album?.['#text'] || null,
-          albumArt: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'] || null,
-          timestamp: track.date?.uts ? parseInt(track.date.uts) * 1000 : Date.now(),
-          nowPlaying: track['@attr']?.nowplaying === 'true',
-          sources: {}
-        }));
-      } else if (friend.service === 'listenbrainz') {
-        const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/listens?count=50`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch listens: ${response.status}`);
-
-        const data = await response.json();
-        const listens = data.payload?.listens || [];
-
-        tracks = listens.map((listen, index) => ({
-          id: `friend-recent-${index}-${listen.track_metadata?.track_name}`.replace(/\s+/g, '-'),
-          title: listen.track_metadata?.track_name || 'Unknown Track',
-          artist: listen.track_metadata?.artist_name || 'Unknown Artist',
-          album: listen.track_metadata?.release_name || null,
-          albumArt: listenBrainzCoverUrl(listen.track_metadata?.mbid_mapping),
-          timestamp: listen.listened_at ? listen.listened_at * 1000 : Date.now(),
-          nowPlaying: false,
-          sources: {}
-        }));
-      }
+      const listens = await askFriend(friend, 'getRecentListens', { limit: 50 });
+      updateFriendHidesListening(friend, false);
+      const tracks = listens.map((t, index) => ({
+        id: `friend-recent-${index}-${t.title}`.replace(/\s+/g, '-'),
+        title: t.title,
+        artist: t.artist || 'Unknown Artist',
+        album: t.album || null,
+        albumArt: t.albumArt || null,
+        timestamp: t.playedAt || Date.now(),
+        nowPlaying: !!t.nowPlaying,
+        sources: {}
+      }));
 
       // Resolution handled by scheduler via IntersectionObserver
       setFriendHistoryData(prev => ({ ...prev, recent: tracks, recentHidden: false, errors: { ...(prev.errors || {}), recent: false } }));
     } catch (error) {
+      if (error && error.hidesListening) {
+        // Not a failure: the profile hides its recent listening, and the
+        // Recent tab says so (the other tabs still load).
+        updateFriendHidesListening(friend, true);
+        setFriendHistoryData(prev => ({ ...prev, recent: [], recentHidden: true, errors: { ...(prev.errors || {}), recent: false } }));
+        return;
+      }
       console.error('Failed to load friend recent tracks:', error);
       // Shown in the tab, with Try again, instead of an empty list that
       // reads as "they have none" (renderer: friendTabError).
@@ -30815,38 +30686,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // ListenBrainz). Throws when the service fails; [] when it has none. The
   // profile's Top tracks tab and the Listener cards' Play both use it.
   const fetchFriendTopTracksList = async (friend, period, limit = 50) => {
-    if (friend.service === 'lastfm') {
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) throw new Error('Last.fm API key not configured');
-      const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=${limit}`;
-      const response = await lastfmFetch(url);
-      if (!response.ok) throw new Error(`Failed to fetch top tracks: ${response.status}`);
-      const data = await response.json();
-      return (data.toptracks?.track || []).map((track, index) => ({
-        id: `friend-top-track-${index}-${track.name}`.replace(/\s+/g, '-'),
-        title: track.name,
-        artist: track.artist?.name || 'Unknown Artist',
-        // Never Last.fm's image: for a track it's the grey-star placeholder.
-        // The art pipeline (getAlbumArt / getTrackArt) fills it in.
-        albumArt: null,
-        playCount: parseInt(track.playcount) || 0,
-        rank: index + 1,
-        sources: {}
-      }));
-    }
-    const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
-    const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/recordings?range=${range}&count=${limit}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Failed to fetch top recordings: ${response.status}`);
-    // 204 No Content: no stats for this period.
-    if (response.status === 204) return [];
-    const data = await response.json();
-    return (data.payload?.recordings || []).map((rec, index) => ({
-      id: `friend-top-track-${index}-${rec.track_name}`.replace(/\s+/g, '-'),
-      title: rec.track_name || 'Unknown Track',
-      artist: rec.artist_name || 'Unknown Artist',
-      albumArt: null,
-      playCount: rec.listen_count || 0,
+    const items = await askFriend(friend, 'getTopItems', { kind: 'tracks', period: historyPeriodFor(period), limit });
+    return items.map((track, index) => ({
+      id: `friend-top-track-${index}-${track.title}`.replace(/\s+/g, '-'),
+      title: track.title,
+      artist: track.artist || 'Unknown Artist',
+      // Only a cover the service matched itself; the art pipeline
+      // (getAlbumArt / getTrackArt) fills in the rest.
+      albumArt: track.albumArt || null,
+      playCount: Number(track.plays) || 0,
       rank: index + 1,
       sources: {}
     }));
@@ -30900,51 +30748,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     setFriendHistoryLoading(true);
 
     try {
-      let artists = [];
-
-      if (friend.service === 'lastfm') {
-        const apiKey = getLastfmApiKey();
-        if (!apiKey) throw new Error('Last.fm API key not configured');
-
-        const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-        const response = await lastfmFetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
-
-        const data = await response.json();
-        const topArtistsList = data.topartists?.artist || [];
-
-        artists = topArtistsList.map((artist, index) => ({
-          id: `friend-top-artist-${index}-${artist.name}`.replace(/\s+/g, '-'),
-          name: artist.name,
-          image: null,
-          playCount: parseInt(artist.playcount) || 0,
-          rank: index + 1
-        }));
-      } else {
-        const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
-        const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/artists?range=${range}&count=50`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
-
-        // Handle 204 No Content (no stats available for this period)
-        if (response.status === 204) {
-          setFriendHistoryData(prev => ({ ...prev, topArtists: [], errors: { ...(prev.errors || {}), topArtists: false } }));
-          setFriendHistoryLoading(false);
-          return;
-        }
-
-        const data = await response.json();
-        const artistList = data.payload?.artists || [];
-
-        artists = artistList.map((artist, index) => ({
-          id: `friend-top-artist-${index}-${artist.artist_name}`.replace(/\s+/g, '-'),
-          name: artist.artist_name || 'Unknown Artist',
-          image: null,
-          playCount: artist.listen_count || 0,
-          rank: index + 1
-        }));
-      }
-
+      const items = await askFriend(friend, 'getTopItems', { kind: 'artists', period: historyPeriodFor(period), limit: 50 });
+      const artists = items.map((artist, index) => ({
+        id: `friend-top-artist-${index}-${artist.name}`.replace(/\s+/g, '-'),
+        name: artist.name || 'Unknown Artist',
+        image: null,
+        playCount: Number(artist.plays) || 0,
+        rank: index + 1
+      }));
       setFriendHistoryData(prev => ({ ...prev, topArtists: artists, errors: { ...(prev.errors || {}), topArtists: false } }));
 
       // Fetch artist images in background
@@ -30990,52 +30801,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     setFriendHistoryLoading(true);
 
     try {
-      let albums = [];
-
-      if (friend.service === 'lastfm') {
-        const apiKey = getLastfmApiKey();
-        if (!apiKey) throw new Error('Last.fm API key not configured');
-
-        const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-        const response = await lastfmFetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch top albums: ${response.status}`);
-
-        const data = await response.json();
-        const topAlbumsList = data.topalbums?.album || [];
-
-        albums = topAlbumsList.map((album, index) => ({
-          id: `friend-top-album-${index}-${album.name}`.replace(/\s+/g, '-'),
-          name: album.name,
-          artist: album.artist?.name || 'Unknown Artist',
-          image: album.image?.[3]?.['#text'] || album.image?.[2]?.['#text'] || null,
-          playCount: parseInt(album.playcount) || 0,
-          rank: index + 1
-        }));
-      } else {
-        const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
-        const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/releases?range=${range}&count=50`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch top releases: ${response.status}`);
-
-        // Handle 204 No Content (no stats available for this period)
-        if (response.status === 204) {
-          setFriendHistoryData(prev => ({ ...prev, topAlbums: [], errors: { ...(prev.errors || {}), topAlbums: false } }));
-          setFriendHistoryLoading(false);
-          return;
-        }
-
-        const data = await response.json();
-        const releaseList = data.payload?.releases || [];
-
-        albums = releaseList.map((release, index) => ({
-          id: `friend-top-album-${index}-${release.release_name}`.replace(/\s+/g, '-'),
-          name: release.release_name || 'Unknown Album',
-          artist: release.artist_name || 'Unknown Artist',
-          image: listenBrainzCoverUrl(release),
-          playCount: release.listen_count || 0,
-          rank: index + 1
-        }));
-      }
+      const items = await askFriend(friend, 'getTopItems', { kind: 'albums', period: historyPeriodFor(period), limit: 50 });
+      const albums = items.map((album, index) => ({
+        id: `friend-top-album-${index}-${album.title}`.replace(/\s+/g, '-'),
+        name: album.title || 'Unknown Album',
+        artist: album.artist || 'Unknown Artist',
+        image: album.albumArt || null,
+        playCount: Number(album.plays) || 0,
+        rank: index + 1
+      }));
 
       setFriendHistoryData(prev => ({
         ...prev,
