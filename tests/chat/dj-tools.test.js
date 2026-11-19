@@ -473,10 +473,10 @@ describe('DJ Tools - executeDjTool', () => {
       });
 
       test('the chat summary names what was skipped', () => {
-        const app = require('fs').readFileSync(
-          require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
-        const start = app.indexOf('summarizeToolResults(toolResults) {');
-        expect(app.slice(start, app.indexOf("case 'queue_clear'", start))).toContain('Could not find ${skipped}');
+        // The app's summary (src/renderer/lib/tool-summary.js), run.
+        const { summarizeToolResults } = require('../../src/renderer/lib/tool-summary');
+        expect(summarizeToolResults([{ tool: 'queue_add', result: { success: true, added: 1, notFound: [{ title: 'Creep', artist: 'Radiohead' }] } }]))
+          .toBe('Added 1 track to queue. Could not find "Creep" by Radiohead.');
       });
     });
 

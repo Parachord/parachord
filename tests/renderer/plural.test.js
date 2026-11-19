@@ -14,15 +14,15 @@ test('singular for one, plural otherwise, grouped digits', () => {
   expect(countOf(undefined, 'album')).toBe('0 albums');
 });
 
-test('UI text never hard-codes "${n} tracks"', () => {
+test('UI text never hard-codes "${n} tracks" or "${n} track(s)"', () => {
   const dir = path.join(__dirname, '../../src/renderer');
-  const files = ['app.js', ...fs.readdirSync(path.join(dir, 'components')).map((f) => `components/${f}`)];
+  const files = ['app.js', ...['components', 'lib'].flatMap((d) => fs.readdirSync(path.join(dir, d)).filter((f) => f.endsWith('.js')).map((f) => `${d}/${f}`))];
   const hits = [];
   for (const f of files) {
     fs.readFileSync(path.join(dir, f), 'utf8').split('\n').forEach((line, i) => {
       // AI-facing context lines are for the model, not the reader.
       if (/lines\.push|error: `Invalid index|console\./.test(line)) return;
-      if (/\$\{[^}]+\} (tracks|songs|albums|playlists|plays)\b/.test(line) && !/\$\{[^}]*(title|name)\} tracks/.test(line)) hits.push(`${f}:${i + 1}`);
+      if ((/\$\{[^}]+\} (tracks|songs|albums|playlists|plays|results)\b/.test(line) || /\$\{[^}]+\} [a-z]+\(s\)/.test(line)) && !/\$\{[^}]*(title|name)\} tracks/.test(line)) hits.push(`${f}:${i + 1}`);
     });
   }
   expect(hits).toEqual([]);
