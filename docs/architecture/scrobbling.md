@@ -25,13 +25,23 @@ The three OAuth-based scrobblers (Last.fm, ListenBrainz, Libre.fm) live **inline
 
 ### What CAN come from an `.axe`
 
-The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, scrobble, updateNowPlaying })` — public, stable. Achordion uses it via `capabilities.playbackTelemetry: true` (see Achordion Pre-resolution Plugin below). Anything that's:
+The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, scrobble, updateNowPlaying })` — public, stable — plus an optional `queuedTrack(track)` (what a queued retry needs beyond title, artist, album and length). Achordion uses it via `capabilities.playbackTelemetry: true` (see Achordion Pre-resolution Plugin below), and so does Subsonic, a playing plug-in (see "A playing plug-in reporting its own plays" below). Anything that's:
 
 - Additive (a new write target — Maloja, Spotify-history-as-a-source, custom analytics)
 - Mostly stateless (no OAuth, no persistent retry queue)
 - Doesn't need new main.js IPC
 
 …can ship as a `.axe`. The capability filter + `initResolver()` invocation lives in app.js's cold-load (`initResolvers`, ~L9216) and marketplace hot-reload (`handlePluginsUpdated`, ~L9325) paths — keep those two in lockstep when adding any new playback-telemetry-shaped plugin (same rule as `withGenerate` / `withChat` / `withConcerts`).
+
+### A playing plug-in reporting its own plays
+
+A content resolver can report plays to its own service through the same contract. Subsonic does (#1546): with "Report plays to your server" on (`settings.switches.reportPlays` in its manifest, off by default, saved in `meta_service_configs.subsonic.reportPlays`), a track that played **from Subsonic** is sent to the server's `scrobble.view` with the song id, `submission=false` from `updateNowPlaying` at the start (the server's Now Playing) and `submission=true&time=<start, ms>` from `scrobble` at the threshold (the server's play count, and its own scrobbling if set up there). It's off by default because someone who also scrobbles from Parachord may not want the server counting the same play, or scrobbling it a second time.
+
+- **How it starts.** `capabilities.playbackTelemetry` on a content resolver: once the resolvers load (and after an install or update), `initPlaybackTelemetry` (`src/renderer/lib/playback-telemetry.js`) calls the plug-in's `init(config, host)` through `resolverLoader.initResolver(id, config, host)`, with `host.getConfig()` reading its saved settings at each call (`getResolverConfig`), so the switch and the password apply to the next play without a reload. The init registers `{ id, isEnabled, updateNowPlaying, scrobble, queuedTrack }`; `cleanup` unregisters it. Without `window.scrobbleManager` or `host.getConfig` (an older desktop, the mobile apps today, whose telemetry init passes `{}` and nothing else) it registers nothing.
+- **Only its own plays.** The manager calls every registered plugin for every track, so the plug-in reads `track._activeResolver` (the resolver actually playing) and reports only its own; the song id is the playing source's `subsonicId` (spread onto the track), else `track.sources.subsonic.subsonicId`. Every other play returns quietly, which the manager reads as success, and is never queued.
+- **Failures.** A Now Playing failure is logged once a session and swallowed. A failed submission throws, so the manager queues it. An error the server will never take back (Subsonic codes 10, 20, 30, 41–43, 50, 60, 70, or HTTP 404/410/501) is logged once and dropped instead. Wrong credentials (40, 44, HTTP 401/403) throw with `authError`, so a retry pass stops at the first one and keeps the rest (no loop). No log line carries the request URL: it has the token and salt.
+- **What the queue keeps.** A queued item keeps the track's title, artist, album and length, plus what the plugin's optional `queuedTrack(track)` returns (plain values only): Subsonic's song id and `_activeResolver`, without which the retry couldn't name the song.
+- **Retries and late registration.** The startup retry pass (`initializeScrobblers`) runs before plugins load, so it now keeps an item whose plugin hasn't registered (it used to drop it; one that never registers expires after 14 days), and a plugin that registers after that pass gets its own items retried then (`registerPlugin` → `retryFailedScrobbles(pluginId)`). The queue's read-change-write runs one at a time (`_queueTask`), so a retry pass and a new failure can't write over each other.
 
 ### Where to look
 
@@ -43,6 +53,7 @@ The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, s
 | Libre.fm scrobbler | [scrobbler-loader.js](../../scrobbler-loader.js) — `LibreFmScrobbler` |
 | Recommendations / library metadata for those services | `plugins/lastfm.axe`, `listenbrainz.axe`, `librefm.axe` (meta-service) |
 | Playback-telemetry plugin (Achordion) | [plugins/achordion.axe](../../plugins/achordion.axe) |
+| A playing plug-in reporting its own plays (Subsonic) | `init` in [plugins-src/subsonic/implementation.js](../../plugins-src/subsonic/implementation.js), started by [src/renderer/lib/playback-telemetry.js](../../src/renderer/lib/playback-telemetry.js) |
 | Loved-tracks push toggles + backfill, and the import action (`runLoveImport`) | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` / `love_import_cursor`; pure helpers in `src/renderer/lib/love-import.js` |
 | Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 

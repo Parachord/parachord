@@ -83,8 +83,13 @@ test('every capability a plug-in declares has a label or is hidden (no code name
 test('no raw URL or developer text in a settings field\'s label or help', () => {
   const out = [];
   for (const [id, m] of manifests()) {
-    for (const [key, field] of Object.entries((m.settings && m.settings.configurable) || {})) {
-      for (const prop of ['label', 'description']) {
+    // settings.switches too: a switch's label and hint show in the dialog (#1546).
+    const fields = [
+      ...Object.entries((m.settings && m.settings.configurable) || {}),
+      ...Object.entries((m.settings && m.settings.switches) || {}),
+    ];
+    for (const [key, field] of fields) {
+      for (const prop of ['label', 'description', 'hint']) {
         const v = field && field[prop];
         if (typeof v !== 'string') continue;
         for (const [re, why] of DEV_TEXT) if (re.test(v)) out.push(`${id}.${key}.${prop}: ${why}`);

@@ -30,7 +30,7 @@ const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { EmptyState, ErrorState } = require('./states');
-const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
+const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'fetchDynamicModels',
@@ -527,6 +527,19 @@ React.createElement('div', {
                 React.createElement(Icons.Check, { className: 'w-4 h-4', 'aria-hidden': 'true' }), 'Credentials saved')
             );
           })(),
+
+          // The plug-in's own on/off options (settings.switches: Subsonic's
+          // "Report plays to your server", #1546), while it's on: what needs
+          // the sign-in, so after the account and its keys (the server and
+          // credentials above), nested under them. Saved in its config.
+          switchState.checked && React.createElement(PluginSwitches, {
+            plugin: selectedResolver,
+            config: metaServiceConfigs[selectedResolver.id],
+            onSet: (key, on) => {
+              saveMetaServiceConfig(selectedResolver.id, { ...metaServiceConfigs[selectedResolver.id], [key]: on });
+              delete resolverConfigCache.current[selectedResolver.id];
+            },
+          }),
 
           // Software the plug-in needs installed first (settings.installCallout: Ollama).
           settingsOf(selectedResolver).installCallout && React.createElement(InstallCallout, { plugin: selectedResolver }),

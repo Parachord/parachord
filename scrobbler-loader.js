@@ -18,6 +18,14 @@ class ScrobbleManager {
     this.nowPlayingSent = false;
     this.progressCheckInterval = null;
     this.onScrobbleCallback = null; // Callback for when scrobble is submitted
+    // The failed-scrobble queue is read, changed and written back by both
+    // queueFailedScrobble and retryFailedScrobbles: they run one at a time
+    // (_queueTask), or one would write over what the other just saved.
+    this._queueChain = Promise.resolve();
+    // Set once a retry pass has run this session: a plugin that registers
+    // after it (a playing plug-in's init, Subsonic's play reporting, #1546)
+    // gets its own queued items retried then.
+    this._retriedThisSession = false;
   }
 
   // Set callback to be notified when a scrobble is submitted
@@ -33,6 +41,14 @@ class ScrobbleManager {
     }
     this.plugins.set(plugin.id, plugin);
     console.log(`[ScrobbleManager] Registered plugin: ${plugin.id}`);
+    // Registered after this session's retry pass (the built-in scrobblers
+    // register before it; a plugin's init runs once plugins load): retry
+    // what was queued for it, which that pass kept waiting for it.
+    if (this._retriedThisSession) {
+      this.retryFailedScrobbles(plugin.id).catch((err) => {
+        console.error(`[ScrobbleManager] Retry for ${plugin.id} failed:`, err);
+      });
+    }
   }
 
   // Unregister a plugin
@@ -185,18 +201,53 @@ class ScrobbleManager {
     this.trackStartTime = null;
   }
 
+  // Run a read-change-write of the failed-scrobble queue after any that's
+  // already running.
+  _queueTask(fn) {
+    const run = this._queueChain.then(fn, fn);
+    this._queueChain = run.catch(() => {});
+    return run;
+  }
+
+  // What a queued item keeps of the track: its title, artist, album and
+  // length, plus what the plugin says its retry needs (an optional
+  // plugin.queuedTrack(track) returning a small plain object: Subsonic's
+  // song id and the source that played it). Never the whole track.
+  _queuedTrackFor(pluginId, track) {
+    const kept = {
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      duration: track.duration
+    };
+    const plugin = this.plugins.get(pluginId);
+    if (plugin && typeof plugin.queuedTrack === 'function') {
+      try {
+        const extra = plugin.queuedTrack(track);
+        if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
+          for (const [key, value] of Object.entries(extra)) {
+            if (key in kept) continue;
+            if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) kept[key] = value;
+          }
+        }
+      } catch (err) {
+        console.error(`[ScrobbleManager] queuedTrack failed for ${pluginId}:`, err);
+      }
+    }
+    return kept;
+  }
+
   // Queue failed scrobble for retry
-  async queueFailedScrobble(pluginId, track, timestamp, error) {
+  queueFailedScrobble(pluginId, track, timestamp, error) {
+    return this._queueTask(() => this._queueFailedScrobble(pluginId, track, timestamp, error));
+  }
+
+  async _queueFailedScrobble(pluginId, track, timestamp, error) {
     try {
       const queue = await window.electron.store.get('scrobble-failed-queue') || [];
       queue.push({
         pluginId,
-        track: {
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          duration: track.duration
-        },
+        track: this._queuedTrackFor(pluginId, track),
         timestamp,
         error,
         attempts: 1,
@@ -213,18 +264,27 @@ class ScrobbleManager {
     }
   }
 
-  // Retry failed scrobbles (call periodically or on app start)
-  async retryFailedScrobbles() {
+  // Retry failed scrobbles (call periodically or on app start). onlyPluginId:
+  // retry that plugin's items only (it registered after this session's pass).
+  retryFailedScrobbles(onlyPluginId = null) {
+    this._retriedThisSession = true;
+    return this._queueTask(() => this._retryFailedScrobbles(onlyPluginId));
+  }
+
+  async _retryFailedScrobbles(onlyPluginId) {
     const queue = await window.electron.store.get('scrobble-failed-queue') || [];
     if (queue.length === 0) return;
+    const mine = onlyPluginId ? queue.filter(item => item.pluginId === onlyPluginId).length : queue.length;
+    if (mine === 0) return;
 
-    console.log(`[ScrobbleManager] Retrying ${queue.length} failed scrobbles`);
+    console.log(`[ScrobbleManager] Retrying ${mine} failed scrobbles${onlyPluginId ? ` for ${onlyPluginId}` : ''}`);
     const remaining = [];
     const failedPlugins = new Set(); // Skip remaining items after auth error for a plugin
 
     // Pre-check which plugins are enabled (one check per plugin, not per item)
     const pluginEnabled = new Map();
     for (const item of queue) {
+      if (onlyPluginId && item.pluginId !== onlyPluginId) continue;
       if (!pluginEnabled.has(item.pluginId)) {
         const plugin = this.plugins.get(item.pluginId);
         pluginEnabled.set(item.pluginId, plugin && await plugin.isEnabled());
@@ -238,8 +298,18 @@ class ScrobbleManager {
         continue;
       }
 
-      // Drop items for plugins that no longer exist
+      // Another plugin's item, on a pass for one plugin: untouched.
+      if (onlyPluginId && item.pluginId !== onlyPluginId) {
+        remaining.push(item);
+        continue;
+      }
+
+      // A plugin that hasn't registered (yet): keep the item. A playing
+      // plug-in registers once plugins load, after the startup pass, and its
+      // registration retries it then; one that never comes back expires
+      // with the 14 days above. These used to be dropped here.
       if (!this.plugins.has(item.pluginId)) {
+        remaining.push(item);
         continue;
       }
 

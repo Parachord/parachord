@@ -21,6 +21,10 @@
 //   StartupRow       settings.startup: open the service's app at startup
 //   InstallCallout   settings.installCallout: software to install first
 //   WatchFolders     settings.watchFolders: folders the plug-in reads
+//   PluginSwitches   settings.switches: the plug-in's own on/off options
+//                    that need its sign-in, nested under the account and
+//                    its keys (Subsonic's "Report plays to your server",
+//                    #1546)
 //
 // The layout is the dialog's one order (CLAUDE.md, "Every plug-in's settings
 // are one layout"): on/off, the account, the keys it signs in with, what
@@ -318,6 +322,50 @@ function StartupRow({ plugin, startup }) {
       e(Switch, { checked: !!startup.on, onToggle: startup.toggle, 'aria-label': `Open ${plugin.name} in the background at startup` })));
 }
 
+// The plug-in's own on/off options (settings.switches: { key: { label,
+// hint, default } }), in manifest order. Each one is a choice someone might
+// want off while the rest of the plug-in stays on, saved in the plug-in's
+// config under its key (true or false), which the plug-in reads. Outside
+// `configurable` on purpose: the mobile apps and older desktops draw every
+// configurable field as a text box, and ignore a settings field they don't
+// know.
+function switchesOf(plugin) {
+  const switches = settingsOf(plugin).switches;
+  if (!switches || typeof switches !== 'object' || Array.isArray(switches)) return [];
+  return Object.entries(switches).filter(([, sw]) => sw && typeof sw.label === 'string' && sw.label.trim());
+}
+
+// Whether a switch is on: what's saved, else its default (off unless the
+// manifest says true).
+const switchOn = (sw, config, key) => (config && typeof config[key] === 'boolean' ? config[key] : sw.default === true);
+
+// PluginSwitches: settings.switches, while the plug-in is on. They need
+// its sign-in (Subsonic's reports go to the server it signs in to), so the
+// dialog draws them in "what needs the sign-in": after the account and the
+// keys it signs in with, each a nested row with a small switch tying it to
+// the account above, the way "Play from X" sits under "Enable X" (#1505).
+// No line of their own: they belong to the section above.
+//   config  the plug-in's saved config
+//   onSet   (key, on) saves it
+function PluginSwitches({ plugin, config, onSet }) {
+  const e = React.createElement;
+  const rows = switchesOf(plugin);
+  if (rows.length === 0) return null;
+  // Part of the section above: its 16px bottom padding is taken back, so
+  // the rows sit as close under the last field (a field keeps 12px under
+  // it) as "Play from X" sits under "Enable X", and the padding moves below.
+  return e('div', { 'data-section': 'plugin-switches', style: { marginTop: '-16px', paddingBottom: '16px' } }, ...rows.map(([key, sw]) => {
+    const on = switchOn(sw, config, key);
+    return e(SettingRow, {
+      key,
+      label: sw.label,
+      hint: sw.hint || undefined,
+      nested: true,
+      style: { padding: '6px 0' },
+    }, e(Switch, { size: 'sm', checked: on, onToggle: () => onSet(key, !on) }));
+  }));
+}
+
 // InstallCallout: settings.installCallout { title, text, url, linkLabel },
 // software the plug-in needs that Parachord can't install (Ollama).
 function InstallCallout({ plugin }) {
@@ -376,5 +424,5 @@ function WatchFolders({ watchFolders, isScanning, scanProgress, localFilesStats,
 }
 
 module.exports = {
-  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders,
-  settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT, shownKeyValues };
+  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches,
+  switchesOf, switchOn, settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT, shownKeyValues };

@@ -646,6 +646,7 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 // review, note 7: initResolvers, the fallback load, and the install/reload
 // paths).
 const { hideAxesLackingHostBridges } = require('./lib/host-bridges-hide');
+const { initPlaybackTelemetry } = require('./lib/playback-telemetry');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates, localSearchRows,
@@ -8841,6 +8842,11 @@ const Parachord = () => {
         setLoadedResolvers(resolvers);
         resolverLoaderRef.current = resolverLoader.current;
         console.log(`✅ Loaded ${resolvers.length} resolver plugins:`, resolvers.map(r => r.name).join(', '));
+        // A playing plug-in that reports plays to its own service
+        // (capabilities.playbackTelemetry: Subsonic, #1546) registers with
+        // window.scrobbleManager in its init; it reads its settings through
+        // host.getConfig at each call (lib/playback-telemetry.js).
+        await initPlaybackTelemetry(resolverLoader.current, resolvers, (id) => getResolverConfigRef.current ? getResolverConfigRef.current(id) : {});
 
         // Load meta services in parallel (URL lookup, AI generate, chat are independent)
         await Promise.all([
@@ -25490,6 +25496,8 @@ ${trackListXml}
         // Wrap the newly-loaded resolver's search through the global limiter
         // (parachord#797) — same treatment as the primary load path.
         window.wrapResolverSearchesWithLimiter([newResolverInstance]);
+        // And its play reporting, same as the primary load path (#1546).
+        await initPlaybackTelemetry(resolverLoader.current, [newResolverInstance], (id) => getResolverConfigRef.current ? getResolverConfigRef.current(id) : {});
 
         if (existing) {
           // Replace existing resolver
@@ -25813,6 +25821,8 @@ ${trackListXml}
         // Wrap content-resolver search through the global limiter
         // (parachord#797). Idempotent.
         window.wrapResolverSearchesWithLimiter([newResolverInstance]);
+        // And its play reporting, same as the primary load path (#1546).
+        await initPlaybackTelemetry(resolverLoader.current, [newResolverInstance], (id) => getResolverConfigRef.current ? getResolverConfigRef.current(id) : {});
 
         if (existing) {
           setLoadedResolvers(prev => prev.map(r =>
