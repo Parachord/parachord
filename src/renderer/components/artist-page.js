@@ -46,7 +46,7 @@ const { trackSlug, slug } = require('../lib/track-slug');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
-const { parseBioMarkup } = require('../lib/discogs-markup');
+const { parseBioMarkup } = require('../lib/bio-markup');
 const { countOf } = require('../lib/plural');
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -65,6 +65,7 @@ const ARTIST_PAGE_HANDLERS = [
   'handleSearchInput',
   'loadArtistConcerts',
   'openAlbumVersions',
+  'pickArtistBioSource',
   'prefetchReleaseTracks',
   'reprioritizeAlbumArtQueue',
   'resolveRelatedArtistImages',
@@ -125,6 +126,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     loadingRelated,
     loadingRelease,
     openAlbumVersions,
+    pickArtistBioSource,
     playbackContext,
     prefetchReleaseTracks,
     prefetchedReleasesRef,
@@ -1384,10 +1386,18 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               )
             ),
 
-            // RIGHT COLUMN: Biography
+            // RIGHT COLUMN: Biography. Every plug-in with a bio for this artist
+            // (capabilities.biography, #1539 step 6) is in artistBio.sources,
+            // in the user's order; the first is shown, and the Source menu
+            // (SortMenu, as on Pop of the Tops) switches to another. The
+            // source line stands at the top at one height whether it is the
+            // menu or, with a single source, its name, and the skeleton
+            // keeps a bar for it.
             React.createElement('div', { className: 'flex-1 min-w-0 max-w-2xl' },
-              // Loading state - skeleton paragraphs
+              // Loading state: the source line, then skeleton paragraphs
               loadingBio && React.createElement('div', { className: 'space-y-4' },
+                // The Source picker (a small secondary button)
+                React.createElement('div', { className: 'h-8 w-40 shimmer-light rounded-lg animate-shimmer', style: { backgroundSize: '200% 100%' } }),
                 // First paragraph skeleton (longer)
                 React.createElement('div', { className: 'space-y-2' },
                   React.createElement('div', { className: 'h-4 shimmer-light rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%' } }),
@@ -1408,39 +1418,59 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 )
               ),
               // Bio content (artistBio is an object when bio exists)
-              !loadingBio && artistBio && artistBio !== false && React.createElement('div', { className: 'space-y-4' },
-                React.createElement('div', {
-                  className: 'text-sm text-ink-secondary leading-relaxed whitespace-pre-wrap'
-                }, artistBio.source === 'discogs'
-                  // Discogs keeps its [b]/[i]/[u]/[url=] formatting tags.
-                  ? parseBioMarkup(artistBio.bio).map((seg, i) => {
-                      const style = {
-                        fontWeight: seg.bold ? 600 : undefined,
-                        fontStyle: seg.italic ? 'italic' : undefined,
-                        textDecoration: seg.underline ? 'underline' : undefined,
-                      };
-                      return seg.href
-                        ? React.createElement('a', { key: i, href: seg.href, target: '_blank', rel: 'noopener noreferrer', className: 'text-accent hover:text-accent', style }, seg.text)
-                        : React.createElement('span', { key: i, style }, seg.text);
-                    })
-                  : artistBio.bio),
-                // Source attribution and link
-                React.createElement('div', { className: 'flex items-center gap-2 mt-4' },
-                  React.createElement('span', {
-                    className: 'text-xs text-ink-tertiary'
-                  }, `From ${artistBio.source === 'wikipedia' ? 'Wikipedia' : artistBio.source === 'discogs' ? 'Discogs' : 'Last.fm'}`),
-                  artistBio.url && React.createElement('a', {
-                    href: artistBio.url,
-                    target: '_blank',
-                    rel: 'noopener noreferrer',
-                    className: 'text-accent hover:text-accent text-sm'
-                  }, 'Read more →')
-                )
-              ),
+              !loadingBio && artistBio && artistBio !== false && (() => {
+                const bioSources = Array.isArray(artistBio.sources) && artistBio.sources.length > 0
+                  ? artistBio.sources
+                  : [artistBio];
+                const sourceName = pluginName(artistBio.source);
+                return React.createElement('div', { className: 'space-y-4' },
+                  // Source: the menu when more than one plug-in has a bio
+                  bioSources.length > 1
+                    ? React.createElement('div', { className: 'h-8 flex items-center' },
+                        React.createElement(SortMenu, {
+                          variant: 'button',
+                          value: artistBio.source,
+                          options: bioSources.map(src => ({ value: src.source, label: pluginName(src.source) })),
+                          label: 'Biography source',
+                          prefix: 'Source:',
+                          // Shows it and remembers it for every artist (app.js).
+                          onChange: pickArtistBioSource,
+                        })
+                      )
+                    : React.createElement('div', { className: 'h-8 flex items-center text-sm text-ink-tertiary' },
+                        React.createElement('span', { className: 'mr-1' }, 'Source:'),
+                        React.createElement('span', null, sourceName)
+                      ),
+                  React.createElement('div', {
+                    className: 'text-sm text-ink-secondary leading-relaxed whitespace-pre-wrap'
+                  }, artistBio.markup === 'bbcode'
+                    // A bio with [b]/[i]/[u]/[url=] tags (lib/bio-markup.js).
+                    ? parseBioMarkup(artistBio.text).map((seg, i) => {
+                        const style = {
+                          fontWeight: seg.bold ? 600 : undefined,
+                          fontStyle: seg.italic ? 'italic' : undefined,
+                          textDecoration: seg.underline ? 'underline' : undefined,
+                        };
+                        return seg.href
+                          ? React.createElement('a', { key: i, href: seg.href, target: '_blank', rel: 'noopener noreferrer', className: 'text-accent hover:text-accent', style }, seg.text)
+                          : React.createElement('span', { key: i, style }, seg.text);
+                      })
+                    : artistBio.text),
+                  // The source's own page
+                  artistBio.url && React.createElement('div', { className: 'mt-4' },
+                    React.createElement('a', {
+                      href: artistBio.url,
+                      target: '_blank',
+                      rel: 'noopener noreferrer',
+                      className: 'text-accent hover:text-accent text-sm'
+                    }, `Read more on ${sourceName} →`)
+                  )
+                );
+              })(),
               // No bio found (artistBio === false means we fetched but found nothing)
               !loadingBio && artistBio === false && React.createElement(EmptyState, {
                 title: 'No biography for this artist',
-                body: 'None of your services has one yet.'
+                body: 'None of your plug-ins has one yet.'
               })
             )
           ),

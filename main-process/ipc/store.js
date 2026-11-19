@@ -31,6 +31,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'meta_service_configs', 'pinnedFriendIds', 'playback_abr', 'playback_quality', 'playback_spatial', 'playlists_view_mode',
   'recommendation_blocklist', 'remember_queue', 'resolver_blocklist',
   'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'metadata_off_resolvers', 'resolver_sync_settings', 'resolver_volume_offsets',
+  'artist_bio_source',
   'saved_playback_context', 'saved_queue', 'saved_queue_position', 'saved_shuffle_state', 'saved_volume', 'repeat_mode',
   'scrobble-failed-queue', 'scrobbler-config-lastfm', 'scrobbler-config-librefm',
   'scrobbler-config-listenbrainz', 'scrobbler_love_push_enabled', 'scrobbling-enabled',

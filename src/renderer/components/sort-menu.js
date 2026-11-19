@@ -15,12 +15,19 @@
 // aria-label, e.g. "Sort playlists"), prefix (a quiet label before the
 // value, e.g. "Source:"), placeholder (shown when nothing
 // matches; default "Sort"), align 'left' | 'right', className (the
-// trigger's extra classes). Props-driven; hooks are qualified; loads under
-// plain Node.
+// trigger's extra classes), variant: 'text' (default: quiet text, for a
+// toolbar of sort and filter menus) or 'button' (the trigger is the
+// secondary Button, small: a picker that stands on its own, such as the
+// Biography tab's source, #1539 step 6). Props-driven; hooks are qualified;
+// loads under plain Node.
 
 const Icons = require('./icons');
+const { buttonClassName } = require('./button');
 
-function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align = 'left', className, prefix }) {
+const TEXT_TRIGGER = 'no-drag flex items-center gap-1 whitespace-nowrap px-3 py-1.5 text-sm rounded-lg text-ink-tertiary hover:text-ink-secondary transition-colors '
+  + 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
+
+function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align = 'left', className, prefix, variant = 'text' }) {
   const e = React.createElement;
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(0);
@@ -67,12 +74,13 @@ function SortMenu({ value, options, onChange, label, placeholder = 'Sort', align
       'aria-label': label ? `${label}: ${current ? current.label : placeholder}` : undefined,
       onClick: (ev) => { ev.stopPropagation(); setOpen((o) => !o); },
       onKeyDown: (ev) => { if (ev.key === 'ArrowDown' && !open) { ev.preventDefault(); setOpen(true); } },
-      className: ['no-drag flex items-center gap-1 whitespace-nowrap px-3 py-1.5 text-sm rounded-lg text-ink-tertiary hover:text-ink-secondary transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent', className].filter(Boolean).join(' '),
+      className: variant === 'button'
+        ? buttonClassName({ variant: 'secondary', size: 'sm', className: ['whitespace-nowrap gap-1', className].filter(Boolean).join(' ') })
+        : [TEXT_TRIGGER, className].filter(Boolean).join(' '),
     },
-    prefix && e('span', { className: 'text-ink-tertiary mr-1' }, prefix),
+    prefix && e('span', { className: variant === 'button' ? 'text-ink-secondary font-normal mr-0.5' : 'text-ink-tertiary mr-1' }, prefix),
     e('span', null, current ? current.label : placeholder),
-    e(Icons.ChevronDown, { className: 'w-4 h-4' })),
+    e(Icons.ChevronDown, { className: variant === 'button' ? 'w-4 h-4 text-ink-secondary' : 'w-4 h-4' })),
     open && e('ul', {
       ref: listRef,
       id: `${id}-list`,

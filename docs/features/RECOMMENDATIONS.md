@@ -175,7 +175,7 @@ From the manifests in `plugins/*.axe`. The app reads `generate`, `chat`, `concer
 
 | Plugin | Capabilities | Auth |
 |---|---|---|
-| lastfm | recommendations, similarUsers, metadata, listeningHistory | username, optional API key and secret |
+| lastfm | recommendations, similarUsers, metadata, listeningHistory, biography | username, optional API key and secret |
 | listenbrainz | recommendations, similarUsers, metadata, listeningHistory | username, optional user token |
 | librefm | scrobbling | OAuth |
 | achordion | playbackTelemetry | none |

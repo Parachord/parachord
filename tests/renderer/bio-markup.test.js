@@ -1,13 +1,18 @@
 /**
  * Discogs profile markup (2026-10): a band whose profile listed its members
  * by id showed "[a17632854] – vocals" and literal [b] tags on the artist page.
+ * The references are resolved in the Discogs plug-in (its _lib, #1539 step 6);
+ * the tags are rendered by the app (src/renderer/lib/bio-markup.js).
  */
 
 const fs = require('fs');
 const path = require('path');
-const {
-  discogsRefIds, normalizeDiscogsProfile, parseBioMarkup, stripDisambiguation,
-} = require('../../src/renderer/lib/discogs-markup');
+const { parseBioMarkup } = require('../../src/renderer/lib/bio-markup');
+
+// The Discogs plug-in's library, as the loader materializes it.
+const axe = JSON.parse(fs.readFileSync(path.join(__dirname, '../../plugins/discogs.axe'), 'utf8'));
+const lib = new Function('return ' + axe.implementation._lib)()();
+const { refIds: discogsRefIds, normalizeProfile: normalizeDiscogsProfile, stripDisambiguation } = lib;
 
 // The live profile for renie cares (Discogs artist 15225678).
 const PROFILE = 'renie cares is a Ukrainian indie rock band, formed in 2021 in Kyiv, Ukraine.\r\n\r\n[b]Main official members (in a chronological order):[/b]\r\n[a17632854] – vocals, lyrics (2019-present)\r\n[a17632857] – guitar, producer (2019-04.09.2025)\r\n[a17632959] – drums (2019-2024)';
@@ -62,9 +67,10 @@ describe('parseBioMarkup', () => {
   });
 });
 
-test('the Discogs fetch resolves references and the artist page renders the markup', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  expect(app).toMatch(/const cleanProfile = normalizeDiscogsProfile\(artistData\.profile, refNames\)/);
+test('the Discogs plug-in resolves references and the artist page renders a bbcode bio', () => {
+  expect(axe.implementation.getArtistBio).toMatch(/lib\.normalizeProfile\(data\.profile, refNames\)/);
+  expect(axe.implementation.getArtistBio).toContain("markup: 'bbcode'");
   const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/artist-page.js'), 'utf8');
-  expect(page).toMatch(/artistBio\.source === 'discogs'[\s\S]{0,120}parseBioMarkup\(artistBio\.bio\)/);
+  expect(page).toMatch(/artistBio\.markup === 'bbcode'[\s\S]{0,120}parseBioMarkup\(artistBio\.text\)/);
+  expect(page).not.toMatch(/artistBio\.source === '/);
 });

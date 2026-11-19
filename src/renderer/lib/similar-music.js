@@ -26,6 +26,11 @@
 // (askInTurn): this is a fallback, and asking four services at once on every
 // slow page load would spend their rate limits for nothing.
 //
+// An artist's bio (capabilities.biography, #1539 step 6) comes from the same
+// plug-ins by the same rule, all asked at once (askEach): the Biography tab
+// offers every bio found, and shows the first in the user's order
+// (lib/artist-bio.js, bioWithSources).
+//
 // Pure; loads under plain Node.
 
 'use strict';
@@ -39,6 +44,7 @@ const LOADER_LIST = {
   artistTopTracks: 'getArtistTopTracksResolvers',
   artistReleases: 'getArtistReleasesResolvers',
   listeningHistory: 'getListeningHistoryResolvers',
+  biography: 'getBiographyResolvers',
 };
 
 // The plug-ins to ask for one capability, in the user's order.

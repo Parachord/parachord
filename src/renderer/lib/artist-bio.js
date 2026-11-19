@@ -10,6 +10,10 @@
 // artist id itself (property P434), so it is asked first; the MusicBrainz
 // url-rels are the fallback for an artist Wikidata has no P434 for.
 //
+// A bio comes from the plug-ins with capabilities.biography (#1539 step 6):
+// all of them are asked at once, and bioWithSources keeps every bio found,
+// in the user's order, so the Biography tab can offer each one.
+//
 // Bios were also fetched from scratch by every caller: the playbar had Wild
 // Pink's bio from Wikipedia while the artist page, opened a minute later,
 // fetched it again and got nothing.
@@ -126,7 +130,48 @@ function createArtistBioCache({ now = () => Date.now(), ttlMs = BIO_TTL_MS, maxE
   };
 }
 
+// askEach's answers (lib/similar-music.js: [{ id, items: [bio] or [] }], in
+// the user's order) into the bio the app shows: the first plug-in's bio
+// ({ text, summary?, url?, markup?, source: its id }) with `sources`, every
+// plug-in's bio in the same order, for the Biography tab's Source menu.
+// null when none had one.
+function bioWithSources(answers) {
+  const sources = (answers || [])
+    .filter((a) => a && Array.isArray(a.items) && a.items[0] && typeof a.items[0].text === 'string' && a.items[0].text)
+    .map((a) => ({ ...a.items[0], source: a.id }));
+  return sources.length ? { ...sources[0], sources } : null;
+}
+
+// The bio on screen switched to another of its sources (the Source menu):
+// that source's text, url and markup, the same list of sources.
+function bioFromSource(bio, sourceId) {
+  const pick = bio && Array.isArray(bio.sources) && bio.sources.find((s) => s.source === sourceId);
+  return pick ? { ...pick, sources: bio.sources } : bio;
+}
+
+// The plug-ins whose bio to show first, best first: the source the user last
+// picked in the Biography tab (`pick`, saved as artist_bio_source), then the
+// plug-ins whose manifest says `biography: { preferred: true }` (Wikipedia),
+// in the order given. resolvers: the biography plug-ins, in the user's order.
+function bioPreference(pick, resolvers) {
+  const preferred = (resolvers || []).filter((r) => r && r.biography && r.biography.preferred).map((r) => r.id);
+  return [...new Set([pick, ...preferred].filter((id) => typeof id === 'string' && id))];
+}
+
+// The bio to show: the first plug-in in `prefer` that has a bio for this
+// artist, else the bio as it came (the first in the user's order). The cache
+// keeps the bio as fetched, so a new pick applies to bios fetched before it.
+function preferredBio(bio, prefer) {
+  if (!bio || !Array.isArray(bio.sources)) return bio;
+  const id = (prefer || []).find((p) => bio.sources.some((s) => s.source === p));
+  return id && id !== bio.source ? bioFromSource(bio, id) : bio;
+}
+
 module.exports = {
+  bioPreference,
+  preferredBio,
+  bioWithSources,
+  bioFromSource,
   isMbid,
   wikidataSearchUrl,
   wikidataIdFromSearch,

@@ -2,15 +2,17 @@
  * A Wikipedia article into an artist bio: the lead plus the prose sections,
  * without lists, reference sections or heading markup. Desktop took only the
  * lead (19 words for Wild Pink), Android the whole article, lists and
- * "== History ==" markup included.
+ * "== History ==" markup included. parachord-mobile loads the same plug-in.
  */
 
-const {
-  bioFromWikipediaExtract,
-  splitExtract,
-  isProse,
-  DROP_SECTION_RE,
-} = require('../../src/renderer/lib/wikipedia-bio');
+// The Wikipedia plug-in's library, as the loader materializes it (the
+// trimming moved there from src/renderer/lib/wikipedia-bio.js, #1539 step 6).
+const fs = require('fs');
+const path = require('path');
+const axe = JSON.parse(fs.readFileSync(path.join(__dirname, '../../plugins/wikipedia.axe'), 'utf8'));
+const lib = new Function('return ' + axe.implementation._lib)()();
+const { splitExtract, isProse, DROP_SECTION_RE } = lib;
+const bioFromWikipediaExtract = lib.bioFromExtract;
 
 const words = (n, end = '.') => Array.from({ length: n }, (_, i) => `w${i}`).join(' ') + end;
 const wordCount = (text) => text.split(/\s+/).filter(Boolean).length;

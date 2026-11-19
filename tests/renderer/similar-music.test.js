@@ -19,13 +19,15 @@ const fakeLoader = (resolvers) => ({
   getSimilarArtistsResolvers: () => resolvers.filter((r) => r.capabilities.similarArtists),
   getSimilarTracksResolvers: () => resolvers.filter((r) => r.capabilities.similarTracks),
   getArtistTopTracksResolvers: () => resolvers.filter((r) => r.capabilities.artistTopTracks),
+  getBiographyResolvers: () => resolvers.filter((r) => r.capabilities.biography),
   getArtistReleasesResolvers: () => resolvers.filter((r) => r.capabilities.artistReleases),
 });
 
 describe('similarProviders', () => {
   const loader = fakeLoader([
-    { id: 'lastfm', capabilities: { similarArtists: true, similarTracks: true, artistTopTracks: true } },
+    { id: 'lastfm', capabilities: { similarArtists: true, similarTracks: true, artistTopTracks: true, biography: true } },
     { id: 'listenbrainz', capabilities: { similarArtists: true, artistTopTracks: true } },
+    { id: 'wikipedia', capabilities: { biography: true } },
     { id: 'spotify', capabilities: { similarArtists: true, artistReleases: true } },
     { id: 'stray', capabilities: { similarArtists: true } },
   ]);
@@ -46,6 +48,9 @@ describe('similarProviders', () => {
     expect(similarProviders(loader, 'similarTracks', base).map((r) => r.id)).toEqual(['lastfm']);
     expect(similarProviders(loader, 'artistTopTracks', base).map((r) => r.id)).toEqual(['listenbrainz', 'lastfm']);
     expect(similarProviders(loader, 'artistReleases', base).map((r) => r.id)).toEqual(['spotify']);
+    // Bios (#1539 step 6): a meta-service missing from metaIds isn't asked.
+    expect(similarProviders(loader, 'biography', base).map((r) => r.id)).toEqual(['lastfm']);
+    expect(similarProviders(loader, 'biography', { ...base, metaIds: ['wikipedia', 'lastfm'], order: ['wikipedia', 'lastfm'] }).map((r) => r.id)).toEqual(['wikipedia', 'lastfm']);
     expect(similarProviders(loader, 'nope', base)).toEqual([]);
     expect(similarProviders(null, 'similarArtists', base)).toEqual([]);
   });
@@ -251,5 +256,6 @@ describe('no similar-music call by service name in the renderer', () => {
     expect(app.match(/axe\.capabilities\?\.similarTracks && axe\.implementation\?\.getSimilarTracks/g)).toHaveLength(2);
     expect(app.match(/axe\.capabilities\?\.artistTopTracks && axe\.implementation\?\.getArtistTopTracks/g)).toHaveLength(2);
     expect(app.match(/axe\.capabilities\?\.artistReleases && axe\.implementation\?\.getArtistReleases/g)).toHaveLength(2);
+    expect(app.match(/axe\.capabilities\?\.biography && axe\.implementation\?\.getArtistBio/g)).toHaveLength(2);
   });
 });

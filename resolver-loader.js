@@ -214,6 +214,12 @@ class ResolverLoader {
       // kind { global?, countries? }), for Pop of the Tops' source and region
       // menus. Outside `capabilities` for the same reason. null when none.
       charts: ResolverLoader.chartsInfo(axe.charts),
+      // Artist bios (capabilities.biography, #1539 step 6): the manifest's
+      // top-level `biography` ({ preferred: true }), outside `capabilities`
+      // for the same reason. A preferred plug-in's bio is shown first until
+      // the user picks a source. null when none.
+      biography: axe.biography && typeof axe.biography === 'object' && axe.biography.preferred === true
+        ? { preferred: true } : null,
 
       // Settings
       requiresAuth: settings?.requiresAuth || false,
@@ -915,6 +921,50 @@ class ResolverLoader {
       console.error(`Artist releases error for ${resolverId}:`, error?.message || error);
       throw error;
     }
+  }
+
+  /**
+   * Plug-ins that write an artist's biography, for the artist page's
+   * Biography tab, the playbar's bio tooltip and Search's artist preview:
+   * they declare capabilities.biography and implement getArtistBio
+   * (docs/architecture/plugins.md, "Artist bios", #1539 step 6).
+   * @returns {object[]}
+   */
+  getBiographyResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.biography &&
+      typeof r.getArtistBio === 'function'
+    );
+  }
+
+  /**
+   * Ask one plug-in for an artist's biography.
+   * @param {string} resolverId
+   * @param {{ name: string, mbid?: string }} artist
+   * @param {object} configOverride - the plug-in's config
+   * @returns {Promise<object|null>} { text, summary?, url?, markup? }: url
+   *          only when https, markup only 'bbcode'; null when the plug-in
+   *          lacks the capability or has no bio. REJECTS when it throws.
+   */
+  async getArtistBio(resolverId, artist, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.biography || typeof resolver.getArtistBio !== 'function') {
+      return null;
+    }
+    let bio;
+    try {
+      bio = await resolver.getArtistBio(artist || {}, configOverride || resolver.config || {});
+    } catch (error) {
+      console.error(`Artist bio error for ${resolverId}:`, error?.message || error);
+      throw error;
+    }
+    const text = bio && typeof bio.text === 'string' ? bio.text.trim() : '';
+    if (!text) return null;
+    const out = { text };
+    if (typeof bio.summary === 'string' && bio.summary.trim()) out.summary = bio.summary.trim();
+    if (typeof bio.url === 'string' && /^https:\/\//i.test(bio.url)) out.url = bio.url;
+    if (bio.markup === 'bbcode') out.markup = 'bbcode';
+    return out;
   }
 
   /**

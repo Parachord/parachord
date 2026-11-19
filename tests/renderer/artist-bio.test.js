@@ -12,6 +12,10 @@ const {
   wikidataIdFromMbRelations,
   createWikidataIdLookup,
   createArtistBioCache,
+  bioWithSources,
+  bioFromSource,
+  bioPreference,
+  preferredBio,
 } = require('../../src/renderer/lib/artist-bio');
 
 const WILD_PINK = '94fdf751-0644-4b78-9e72-dbdce539b5b7';
@@ -200,5 +204,70 @@ describe('createArtistBioCache', () => {
     const fetchBio = jest.fn();
     await expect(cache.load('', WILD_PINK, fetchBio)).resolves.toBeNull();
     expect(fetchBio).not.toHaveBeenCalled();
+  });
+});
+
+describe('bioWithSources (#1539 step 6)', () => {
+  const answers = [
+    { id: 'wikipedia', items: [] },
+    { id: 'discogs', items: [{ text: 'From Discogs.', url: 'https://d', markup: 'bbcode' }] },
+    { id: 'lastfm', items: [{ text: 'From Last.fm.', summary: 'Short.' }] },
+    { id: 'broken', items: [{ text: '' }] },
+  ];
+
+  test('the first plug-in with a bio, in the given order, with every bio in sources', () => {
+    const bio = bioWithSources(answers);
+    expect(bio).toMatchObject({ text: 'From Discogs.', url: 'https://d', markup: 'bbcode', source: 'discogs' });
+    expect(bio.sources).toEqual([
+      { text: 'From Discogs.', url: 'https://d', markup: 'bbcode', source: 'discogs' },
+      { text: 'From Last.fm.', summary: 'Short.', source: 'lastfm' },
+    ]);
+  });
+
+  test('none with a bio is null', () => {
+    expect(bioWithSources([{ id: 'a', items: [] }])).toBeNull();
+    expect(bioWithSources(undefined)).toBeNull();
+  });
+
+  test('bioFromSource switches to another source and keeps the list', () => {
+    const bio = bioWithSources(answers);
+    const lastfm = bioFromSource(bio, 'lastfm');
+    expect(lastfm).toMatchObject({ text: 'From Last.fm.', summary: 'Short.', source: 'lastfm' });
+    expect(lastfm.markup).toBeUndefined();
+    expect(lastfm.sources).toBe(bio.sources);
+    expect(bioFromSource(bio, 'nope')).toBe(bio);
+  });
+});
+
+describe('the bio shown first: the last pick, then a preferred plug-in (#1539 step 6)', () => {
+  const resolvers = [{ id: 'discogs' }, { id: 'lastfm' }, { id: 'wikipedia', biography: { preferred: true } }];
+  const bio = bioWithSources([
+    { id: 'discogs', items: [{ text: 'D' }] },
+    { id: 'lastfm', items: [{ text: 'L' }] },
+    { id: 'wikipedia', items: [{ text: 'W' }] },
+  ]);
+
+  test('bioPreference: the pick, then the manifest-preferred plug-ins, no repeats', () => {
+    expect(bioPreference(null, resolvers)).toEqual(['wikipedia']);
+    expect(bioPreference('lastfm', resolvers)).toEqual(['lastfm', 'wikipedia']);
+    expect(bioPreference('wikipedia', resolvers)).toEqual(['wikipedia']);
+    expect(bioPreference(undefined, undefined)).toEqual([]);
+  });
+
+  test('with no pick, the preferred plug-in (Wikipedia) is shown', () => {
+    expect(preferredBio(bio, bioPreference(null, resolvers))).toMatchObject({ text: 'W', source: 'wikipedia' });
+  });
+
+  test('the pick wins when it has a bio for the artist; otherwise the next preference', () => {
+    expect(preferredBio(bio, bioPreference('lastfm', resolvers))).toMatchObject({ text: 'L', source: 'lastfm' });
+    const noLastfm = bioWithSources([{ id: 'discogs', items: [{ text: 'D' }] }, { id: 'wikipedia', items: [{ text: 'W' }] }]);
+    expect(preferredBio(noLastfm, bioPreference('lastfm', resolvers))).toMatchObject({ source: 'wikipedia' });
+    const discogsOnly = bioWithSources([{ id: 'discogs', items: [{ text: 'D' }] }]);
+    expect(preferredBio(discogsOnly, bioPreference('lastfm', resolvers))).toBe(discogsOnly);
+  });
+
+  test('no bio stays null; every source is kept', () => {
+    expect(preferredBio(null, ['wikipedia'])).toBeNull();
+    expect(preferredBio(bio, ['lastfm']).sources).toBe(bio.sources);
   });
 });

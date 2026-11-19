@@ -1349,7 +1349,6 @@ const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { stampPlaylist } = require('../../playlist-freshness');
 const { checkSpinoffAvailable } = require('./lib/spinoff-pool');
 const { similarProviders, askEach, askInTurn, firstAnswer, mergeSimilarArtists, mergeSimilarTracks, sourcesIn } = require('./lib/similar-music');
-const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistShareTarget, notSyncedSharePrompt, playlistListenbrainzMbid, lbMbidOf } = require('./lib/playlist-share');
 // A ListenBrainz user's Achordion profile (every ListenBrainz user has one).
 const achordionUserUrl = (username) => `https://achordion.xyz/user/${encodeURIComponent(username)}`;
@@ -1363,11 +1362,12 @@ const { formatCalendarDate } = require('./lib/calendar-date');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
 const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
-const { createWikidataIdLookup, createArtistBioCache } = require('./lib/artist-bio');
-const { bioFromWikipediaExtract } = require('./lib/wikipedia-bio');
-// Wikidata first, MusicBrainz url-rels as the fallback, so the Wikipedia bio
-// and image survive a MusicBrainz outage; bios are shared by the playbar and
-// the artist page (src/renderer/lib/artist-bio.js).
+const { createWikidataIdLookup, createArtistBioCache, bioWithSources, bioFromSource, bioPreference, preferredBio, isMbid } = require('./lib/artist-bio');
+const { bioPlainText } = require('./lib/bio-markup');
+// Wikidata first, MusicBrainz url-rels as the fallback, so the Wikipedia
+// image survives a MusicBrainz outage (the Wikipedia plug-in's bio does the
+// same itself); bios are shared by the playbar, Search's preview and the
+// artist page (src/renderer/lib/artist-bio.js).
 const lookupWikidataId = createWikidataIdLookup({
   fetch: (...args) => fetch(...args),
   userAgent: 'Parachord/1.0 (https://parachord.app)',
@@ -3670,7 +3670,9 @@ const Parachord = () => {
   const [artistSearchOpen, setArtistSearchOpen] = useState(false);
   const [artistSearch, setArtistSearch] = useState('');
   const [artistSort, setArtistSort] = useState('date-desc'); // date-desc, date-asc, alpha-asc, alpha-desc
-  const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm (for artist page)
+  const [artistBio, setArtistBio] = useState(null); // The artist page's bio ({ text, source, sources, ... }), false when none
+  // The bio source the user last picked (artist_bio_source, #1539 step 6).
+  const artistBioPickRef = useRef(null);
   const [playbarArtistBio, setPlaybarArtistBio] = useState(null); // Artist bio for playbar tooltip (current track's artist)
   const [artistExtendedInfo, setArtistExtendedInfo] = useState(null); // Extended info from MusicBrainz (founded, location, URLs, members)
   const [loadingExtendedInfo, setLoadingExtendedInfo] = useState(false);
@@ -8850,6 +8852,8 @@ const Parachord = () => {
           || (axe.capabilities?.charts && axe.implementation?.getCharts)
           // Your listening history (#1539 step 4).
           || (axe.capabilities?.listeningHistory && axe.implementation?.getTopItems)
+          // Artist bios (#1539 step 6).
+          || (axe.capabilities?.biography && axe.implementation?.getArtistBio)
         );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
@@ -8987,7 +8991,8 @@ const Parachord = () => {
           || (axe.capabilities?.artistTopTracks && axe.implementation?.getArtistTopTracks)
           || (axe.capabilities?.artistReleases && axe.implementation?.getArtistReleases)
           || (axe.capabilities?.charts && axe.implementation?.getCharts)
-          || (axe.capabilities?.listeningHistory && axe.implementation?.getTopItems));
+          || (axe.capabilities?.listeningHistory && axe.implementation?.getTopItems)
+          || (axe.capabilities?.biography && axe.implementation?.getArtistBio));
         const withPlaybackTelemetry = visibleAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -19001,6 +19006,7 @@ ${trackListXml}
         'cache_critics_picks',
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'resolver_order_memory', 'playback_off_resolvers', 'recommendations_off_resolvers', 'metadata_off_resolvers', 'meta_service_configs',
+        'artist_bio_source',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
         'autoPinnedFriendIds', 'hidden_friend_keys', 'collection_hidden_local_albums', 'resolver_volume_offsets', 'saved_volume',
         'skip_external_prompt', 'skip_unplayable_prompt',
@@ -19553,6 +19559,7 @@ ${trackListXml}
       if (Array.isArray(d['playback_off_resolvers'])) setPlaybackOffResolvers(d['playback_off_resolvers']);
       if (Array.isArray(d['recommendations_off_resolvers'])) setRecommendationsOffResolvers(d['recommendations_off_resolvers']);
       if (Array.isArray(d['metadata_off_resolvers'])) setMetadataOffResolvers(d['metadata_off_resolvers']);
+      if (typeof d['artist_bio_source'] === 'string' && d['artist_bio_source']) artistBioPickRef.current = d['artist_bio_source'];
       const savedResolverOrder = d['resolver_order'];
       const savedMetaServiceConfigs = d['meta_service_configs'];
       const savedAppleMusicDevToken = d['applemusic_developer_token'];
@@ -31821,33 +31828,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     };
 
-    // Fetch artist bio snippet from Last.fm (lightweight version, no loading state)
+    // The artist's bio, short (no loading state): the same bio as the artist
+    // page and the playbar (fetchArtistBio, any plug-in with
+    // capabilities.biography, #1539 step 6), its summary when the plug-in
+    // wrote one, cut to about 200 characters. A MusicBrainz row's id is the
+    // artist's MBID, which the Wikipedia plug-in needs.
     const fetchArtistBioSnippet = async () => {
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) {
-        setSearchPreviewArtistBio(null);
-        return;
-      }
-
+      const candidate = searchPreviewItem.mbid || searchPreviewItem.id;
       try {
-        const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
-        const response = await lastfmFetch(url);
-        if (!response.ok) {
-          setSearchPreviewArtistBio(null);
-          return;
-        }
-
-        const data = await response.json();
-        if (data.artist?.bio) {
-          // Use summary for preview (shorter than content)
-          const bioSummary = data.artist.bio.summary || data.artist.bio.content || '';
-          // Strip HTML tags and limit to ~200 chars for preview
-          const cleanBio = bioSummary.replace(/<[^>]*>/g, '').trim();
-          const truncatedBio = cleanBio.length > 200 ? cleanBio.substring(0, 200) + '…' : cleanBio;
-          setSearchPreviewArtistBio(truncatedBio);
-        } else {
-          setSearchPreviewArtistBio(null);
-        }
+        const bio = await fetchArtistBio(artistName, isMbid(candidate) ? candidate : undefined);
+        const text = (bio && (bio.summary || bioPlainText(bio)) || '').trim();
+        setSearchPreviewArtistBio(text ? (text.length > 200 ? text.substring(0, 200).trim() + '…' : text) : null);
       } catch (error) {
         console.error('Failed to fetch artist bio snippet:', error);
         setSearchPreviewArtistBio(null);
@@ -31928,126 +31919,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     queueReleaseDateLookups(criticsPicks.map(album => ({ artist: album.artist, title: album.title })));
   }, [activeView, criticsPicks.length]);
 
-  // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
-  const getLastfmBio = async (artistName) => {
-    if (!artistName) return null;
-
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) {
-      console.warn('⚠️ Last.fm API key not available, cannot fetch artist bio');
-      return null;
-    }
-
-    try {
-      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
-
-      const response = await lastfmFetch(url);
-      if (!response.ok) {
-        console.error('Last.fm artist info request failed:', response.status);
-        return null;
-      }
-
-      const data = await response.json();
-      if (data.artist?.bio) {
-        // Strip HTML tags from bio content
-        const bioContent = data.artist.bio.content || data.artist.bio.summary || '';
-        const cleanBio = bioContent.replace(/<[^>]*>/g, '').trim();
-
-        // Check if bio has meaningful content (not just "Read more on Last.fm" or similar)
-        // Last.fm often returns empty bios with just a link
-        if (!cleanBio || cleanBio.length < 50 || cleanBio.toLowerCase().includes('read more on last.fm')) {
-          console.log('🎧 Last.fm bio is empty or too short, skipping');
-          return null;
-        }
-
-        // Also get the Last.fm URL for "Read more" link
-        const lastfmUrl = data.artist.url || null;
-
-        return { bio: cleanBio, url: lastfmUrl, source: 'lastfm' };
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Failed to fetch artist bio from Last.fm:', error);
-      return null;
-    }
-  };
-
-  // Fetch artist biography from Wikipedia via Wikidata (uses MBID)
-  const getWikipediaBio = async (artistMbid) => {
-    // Switched off in its plug-in settings (lib/plugin-switch.js: Wikipedia and
-    // Discogs are on unless switched off). Before, the switch changed nothing.
-    if (metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
-    if (!artistMbid) {
-      console.log('📚 Wikipedia bio skipped: no MBID');
-      return null;
-    }
-
-    try {
-      // Step 1: the artist's Wikidata id (Wikidata's own MusicBrainz id
-      // property first, MusicBrainz url-rels as the fallback)
-      const wikidataId = await lookupWikidataId(artistMbid);
-
-      if (!wikidataId) {
-        console.log('📚 No Wikidata entry found for artist');
-        return null;
-      }
-
-      // Step 2: Query Wikidata for Wikipedia article title
-      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`;
-      const wdResponse = await fetch(wdUrl);
-
-      if (!wdResponse.ok) {
-        console.log('📚 Wikidata lookup failed:', wdResponse.status);
-        return null;
-      }
-
-      const wdData = await wdResponse.json();
-      const wikiTitle = wdData.entities?.[wikidataId]?.sitelinks?.enwiki?.title;
-
-      if (!wikiTitle) {
-        console.log('📚 No English Wikipedia article found');
-        return null;
-      }
-
-      // Step 3: Fetch the whole article as plain text; bioFromWikipediaExtract
-      // keeps the lead plus the prose sections (src/renderer/lib/wikipedia-bio.js)
-      const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(wikiTitle)}&prop=extracts&explaintext=1&format=json&origin=*`;
-      const wpResponse = await fetch(wpUrl);
-
-      if (!wpResponse.ok) {
-        console.log('📚 Wikipedia extract fetch failed:', wpResponse.status);
-        return null;
-      }
-
-      const wpData = await wpResponse.json();
-      const pages = wpData.query?.pages;
-      const pageId = pages ? Object.keys(pages)[0] : null;
-      const extract = pageId && pageId !== '-1' ? pages[pageId].extract : null;
-
-      const formattedBio = extract ? bioFromWikipediaExtract(extract) : null;
-      if (formattedBio) {
-        console.log('📚 Wikipedia bio fetched successfully');
-        return {
-          bio: formattedBio,
-          url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
-          source: 'wikipedia'
-        };
-      }
-
-      return null;
-    } catch (error) {
-      console.error('📚 Failed to fetch Wikipedia bio:', error);
-      return null;
-    }
-  };
-
   // Fetch artist image from Wikipedia/Wikidata (fallback when Spotify has no image)
   const getWikipediaArtistImage = async (artistMbid) => {
     if (!artistMbid || metaServiceConfigsRef.current?.wikipedia?.enabled === false) return null;
 
     try {
-      // Step 1: the artist's Wikidata id (see getWikipediaBio)
+      // Step 1: the artist's Wikidata id (lookupWikidataId, lib/artist-bio.js)
       const wikidataId = await lookupWikidataId(artistMbid);
 
       if (!wikidataId) return null;
@@ -32079,104 +31956,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       return null;
     } catch (error) {
       console.error('📚 Failed to fetch Wikipedia artist image:', error);
-      return null;
-    }
-  };
-
-  // Fetch artist biography from Discogs (uses MBID or artist name)
-  const getDiscogsBio = async (artistMbid, artistName) => {
-    if (metaServiceConfigsRef.current?.discogs?.enabled === false) return null;
-    if (!artistMbid && !artistName) {
-      console.log('📀 Discogs bio skipped: no MBID or name');
-      return null;
-    }
-
-    try {
-      // Get Discogs token from metaservice config if available
-      const discogsConfig = metaServiceConfigs?.discogs || {};
-      const token = discogsConfig.personalAccessToken;
-
-      const headers = {
-        'User-Agent': 'Parachord/1.0 (https://parachord.app)'
-      };
-      if (token) {
-        headers['Authorization'] = `Discogs token=${token}`;
-      }
-
-      // Search for artist on Discogs
-      const searchQuery = artistName || artistMbid;
-      const searchUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(searchQuery)}&type=artist&per_page=5`;
-
-      const searchResponse = await fetch(searchUrl, { headers });
-
-      if (!searchResponse.ok) {
-        console.log('📀 Discogs search failed:', searchResponse.status);
-        return null;
-      }
-
-      const searchData = await searchResponse.json();
-
-      if (!searchData.results?.length) {
-        console.log('📀 No Discogs results found');
-        return null;
-      }
-
-      // Find best match - prefer exact name match
-      let artistResult = searchData.results.find(r =>
-        r.title?.toLowerCase() === artistName?.toLowerCase()
-      );
-
-      // Fall back to first result if no exact match
-      if (!artistResult) {
-        artistResult = searchData.results[0];
-      }
-
-      // Fetch full artist profile
-      const artistUrl = artistResult.resource_url;
-      const artistResponse = await fetch(artistUrl, { headers });
-
-      if (!artistResponse.ok) {
-        console.log('📀 Discogs artist fetch failed:', artistResponse.status);
-        return null;
-      }
-
-      const artistData = await artistResponse.json();
-
-      if (artistData.profile) {
-        // Resolve Discogs references to names; formatting tags ([b], [i],
-        // [u], [url=]) are kept and rendered by the artist page
-        // (src/renderer/lib/discogs-markup.js). Ids name members, labels and
-        // releases: the artist record's own member/group/alias lists cover
-        // most, the rest are looked up (at most MAX_REF_LOOKUPS).
-        const refNames = {};
-        for (const list of [artistData.members, artistData.groups, artistData.aliases]) {
-          for (const e of list || []) if (e && e.id && e.name) refNames['a' + e.id] = e.name;
-        }
-        const missingRefs = discogsRefIds(artistData.profile)
-          .filter(r => !refNames[r.type + r.id])
-          .slice(0, DISCOGS_MAX_REF_LOOKUPS);
-        await Promise.all(missingRefs.map(async (r) => {
-          try {
-            const res = await fetch(`https://api.discogs.com/${DISCOGS_REF_PATH[r.type]}/${r.id}`, { headers });
-            if (!res.ok) return;
-            const data = await res.json();
-            const name = data.name || data.title;
-            if (name) refNames[r.type + r.id] = name;
-          } catch (_) { /* dropped from the bio */ }
-        }));
-        const cleanProfile = normalizeDiscogsProfile(artistData.profile, refNames);
-
-        console.log('📀 Discogs bio fetched successfully');
-        return {
-          bio: cleanProfile,
-          url: artistData.uri || `https://www.discogs.com/artist/${artistData.id}`,
-          source: 'discogs'
-        };
-      }
-
-      return null;
-    } catch (error) {
-      console.error('📀 Failed to fetch Discogs bio:', error);
       return null;
     }
   };
@@ -32235,42 +32014,44 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Fetch artist biography from all sources with priority: Wikipedia > Discogs > Last.fm
+  // An artist's bio from every plug-in that writes one (capabilities.biography,
+  // #1539 step 6), all asked at once, in the user's order (similarProvidersFor):
+  // the first plug-in's bio is shown and every bio found is kept in `sources`
+  // for the Biography tab's Source menu (lib/artist-bio.js). A plug-in that
+  // fails is left out; none with a bio is null, which the cache never keeps.
   const fetchArtistBioUncached = async (artistName, artistMbid) => {
-    try {
-      // Fetch from all sources in parallel
-      const [wikipediaBio, discogsBio, lastfmBio] = await Promise.all([
-        getWikipediaBio(artistMbid),
-        getDiscogsBio(artistMbid, artistName),
-        getLastfmBio(artistName)
-      ]);
-
-      // Store all sources for potential future use
-      const allSources = {};
-      if (wikipediaBio) allSources.wikipedia = wikipediaBio;
-      if (discogsBio) allSources.discogs = discogsBio;
-      if (lastfmBio) allSources.lastfm = lastfmBio;
-
-      // Select best bio based on priority: Wikipedia > Discogs > Last.fm
-      const selected = wikipediaBio ?? discogsBio ?? lastfmBio;
-
-      if (selected) {
-        console.log(`🎤 Selected bio from ${selected.source}`);
-        return { ...selected, allSources };
-      }
-
-      console.log('🎤 No biography found from any source');
-      return null;
-    } catch (error) {
-      console.error('Failed to fetch artist bio:', error);
-      return null;
-    }
+    const loader = resolverLoaderRef.current;
+    const artist = artistMbid ? { name: artistName, mbid: artistMbid } : { name: artistName };
+    const { answers, failed } = await askEach(similarProvidersFor('biography'), async (p) => {
+      const bio = await loader.getArtistBio(p.id, artist, await configForSimilar(p.id));
+      return bio ? [bio] : [];
+    });
+    const bio = bioWithSources(answers);
+    console.log(bio
+      ? `🎤 Bio for "${artistName}" from ${bio.source} (${countOf(bio.sources.length, 'source')})`
+      : `🎤 No biography for "${artistName}"${failed ? ': no plug-in answered' : ''}`);
+    return bio;
   };
 
   // Shared by the playbar and the artist page; a bio found by one is reused
-  // by the other. Touches no loading state.
-  const fetchArtistBio = (artistName, artistMbid) =>
-    artistBioCache.load(artistName, artistMbid, fetchArtistBioUncached);
+  // by the other. Touches no loading state. The bio shown is the user's last
+  // pick when it has one for this artist, else a preferred plug-in's
+  // (Wikipedia's manifest), else the first in the user's order (bioPreference).
+  const fetchArtistBio = async (artistName, artistMbid) => {
+    const bio = await artistBioCache.load(artistName, artistMbid, fetchArtistBioUncached);
+    const resolvers = resolverLoaderRef.current?.getBiographyResolvers?.() || [];
+    return preferredBio(bio, bioPreference(artistBioPickRef.current, resolvers));
+  };
+
+  // The Biography tab's Source picker: show that plug-in's bio, and remember
+  // it (artist_bio_source) so it is shown first for every artist that has one.
+  const pickArtistBioSource = (sourceId) => {
+    if (!sourceId) return;
+    artistBioPickRef.current = sourceId;
+    window.electron?.store?.set('artist_bio_source', sourceId)
+      ?.catch?.(err => console.error('[Bio] Could not save the bio source:', err));
+    setArtistBio(prev => (prev && typeof prev === 'object' ? bioFromSource(prev, sourceId) : prev));
+  };
 
   // The artist page's fetch: drives its Biography tab skeleton. The playbar
   // calls fetchArtistBio instead, so its fetch can't leave the tab's
@@ -35822,7 +35603,7 @@ useEffect(() => {
     addToQueue, copyParachordLink, fetchArtistData, fetchReleaseData, getArtistBio,
     getArtistTopTracks, getRelatedArtists, handlePlay,
     handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, openAlbumVersions,
-    playArtistTopTracks, prefetchReleaseTracks, getServiceColor, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
+    pickArtistBioSource, playArtistTopTracks, prefetchReleaseTracks, getServiceColor, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
     retryReleaseLoad, selectAlbumVersion, setQueueWithContext,
   });
 

@@ -2,7 +2,7 @@
 
 **Release date:** not yet released
 
-> Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists, top tracks, discographies, charts and your listening history come from every plug-in that has them.
+> Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists, top tracks, discographies, charts, your listening history and artist bios come from every plug-in that has them.
 
 ---
 
@@ -18,6 +18,7 @@
 - **Artist pages when MusicBrainz can't help.** When MusicBrainz is slow or doesn't know an artist, the artist page fills in their albums from your plug-ins: Spotify, Apple Music, Last.fm or Discogs, in your source order. A plug-in whose "Use metadata from" switch is off isn't asked. This comes with updates to those four plug-ins and needs this version of Parachord.
 - **Pop of the Tops: pick the chart.** Both tabs now have a Source and a Region menu. Albums and tracks come from Apple Music (by country), Last.fm (tracks, worldwide or by country) and, new, ListenBrainz (what everyone on ListenBrainz played this week). The Albums tab can show other countries than the US now too. Apple Music's charts show whether or not you've turned the plug-in on, as before. When the first source in your order can't load its chart, the next one's shows. This comes with the Apple Music, Last.fm and ListenBrainz plug-in updates and needs this version of Parachord.
 - **History works with ListenBrainz alone.** Top Tracks, Top Albums and Top Artists used to need a Last.fm account; they now come from whichever service you're signed in to, Last.fm or ListenBrainz, with a Source menu to switch when you use both. Recently Played still combines both. This comes with the Last.fm and ListenBrainz plug-in updates and needs this version of Parachord.
+- **Artist bios: pick the source.** An artist's Biography tab now has a Source picker listing every plug-in with a bio for that artist (Wikipedia, Discogs and, new, Last.fm), so you can read another one's. Parachord remembers your pick and shows that source first for every artist that has a bio from it; until you pick, Wikipedia's comes first, as before. Last.fm's bios never showed before. The playbar's artist tooltip and Search's artist preview use the same bios. This comes with the Wikipedia, Discogs and Last.fm plug-in updates and needs this version of Parachord.
 
 ---
 
