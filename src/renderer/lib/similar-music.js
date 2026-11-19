@@ -45,6 +45,7 @@ const LOADER_LIST = {
   artistReleases: 'getArtistReleasesResolvers',
   listeningHistory: 'getListeningHistoryResolvers',
   biography: 'getBiographyResolvers',
+  friends: 'getFriendsResolvers',
 };
 
 // The plug-ins to ask for one capability, in the user's order.

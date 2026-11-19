@@ -14,6 +14,8 @@ Desktop and Android both keep the local `friends` list aligned with each service
 | **Outbound push (follow)** | ❌ API deprecated 2018 | `POST /user/{name}/follow` |
 | **Outbound push (unfollow)** | ❌ API deprecated 2018 | `DELETE /user/{name}/follow` |
 
+Since #1539 step 5 every row of this table is a plug-in method, not app code: `getFollowing`, `follow` and `unfollow` of the `friends` capability (docs/architecture/plugins.md "Friends"). Last.fm's plug-in has no `follow` / `unfollow`, which is what makes it pull-only. A service with a friends plug-in gets sync, Add Friend and the Friends row with no app change.
+
 ### Data Model
 
 Every friend carries (app.js friend shape):
@@ -33,13 +35,15 @@ Every friend carries (app.js friend shape):
 1. **Startup:** single pull after `cacheLoaded` + 5s delay, only if Last.fm or ListenBrainz has a configured username. Guarded by `friendStartupSyncDoneRef` so it doesn't re-fire.
 2. **Periodic:** every 30 minutes (`FRIEND_GRAPH_SYNC_MS`) while Last.fm or ListenBrainz has a configured username, on its own timer next to the startup sync. Friend graphs change orders of magnitude less often than recent tracks, so it doesn't share the 2-minute friend-activity poll (`refreshPinnedFriends`). It used to run on every 15th tick of that poll, which only runs once a friend is saved or pinned: with no friends yet, someone followed mid-session never arrived until a restart. The timer calls the latest `syncFriendsFromServices` through a ref, because the function reads `metaServiceConfigs` from its render and the timer outlives it.
 3. **Opening the Friends tab:** opening Collection → Friends syncs too, like mobile's Friends screen (`FriendsViewModel.init`), since that's where someone looks for a friend they just followed. A sync that started in the last 5 minutes from any trigger counts (`FRIEND_TAB_SYNC_MIN_GAP_MS`): tab switches are cheap and the Last.fm friend list is paginated. The startup sync skips too if a launch restored onto the Friends tab already synced.
-4. **Inline on local action:** `addFriend` calls `followOnService` after local insert; `removeFriend` calls `unfollowOnService` before local delete. Fire-and-forget; local state is authoritative.
+4. **Inline on local action:** `addFriend` calls `followOnService` after local insert; `removeFriend` calls `unfollowOnService` before local delete. Fire-and-forget; local state is authoritative. Both go to the friend's own plug-in (`setFollowing`), a no-op where it can't follow.
+
+The startup and periodic syncs need a friend service you're signed in to (any plug-in with a `username`), and the startup one waits for the plug-ins to load.
 
 ### Inbound Pull Algorithm
 
 ```
-for each service with credentials:
-  fetch friend list from service
+for each friend service you're signed in to (friendAccountsFor):
+  fetch who you follow there (its plug-in's getFollowing)
   for each user in list:
     key = `${service}:${username_lowercase}`
     if key matches any existing friend: skip
@@ -58,14 +62,18 @@ New friends are added with `savedToCollection: false` — same default as manual
 **`addFriend`:** after local insert succeeds
 1. Remove `${service}:${username}` from `hiddenFriendKeys` (un-hide if the user is re-adding someone they previously removed).
 2. `followOnService(friend)`:
-   - ListenBrainz: `POST /follow` with `Authorization: Token ${userToken}`. Warn toast on failure; local add stands.
-   - Last.fm: no-op (log only). API deprecated.
+   - The friend's plug-in's `follow` (ListenBrainz: `POST /follow` with `Authorization: Token ${userToken}`). A warning on failure; local add stands.
+   - Last.fm: no-op, the plug-in has no `follow` (API deprecated).
 
 **`removeFriend`:** before local delete
 1. Add `${service}:${username}` to `hiddenFriendKeys`. Persisted immediately via the useEffect save path.
 2. `unfollowOnService(friend)`:
-   - ListenBrainz: `DELETE /follow`. Swallow 404s (user deleted their account). Proceed with local removal regardless.
-   - Last.fm: no-op. Allowlist is what enforces the removal.
+   - The friend's plug-in's `unfollow` (ListenBrainz: `DELETE /follow`; a 404, the account gone, counts as done). Proceed with local removal regardless.
+   - Last.fm: no-op, the plug-in has no `unfollow`. Allowlist is what enforces the removal.
+
+### Adding a friend
+
+Add Friend takes a username or a profile link (`addFriend`). Each friend service's plug-in is asked in turn (`findUser`): the ones you're signed in to first, then the rest, in your order. A profile link is only its own service's (the other plug-ins answer `null` without a request); a plain name goes to the first service that has someone by it. Before #1539 step 5 a plain name always tried Last.fm first. `addFriendCore({ service, username })` adds on one named service and refuses one that isn't a friend service (a plug-in with `capabilities.friends`).
 
 ### Sort Options
 
@@ -89,7 +97,7 @@ A friend page tab whose load fails (the service unreachable) shows "Couldn't rea
 
 ### Where a friend's listening comes from
 
-A friend's now playing (the 2-minute poll), weekly stats, profile tabs (Recent, Top Tracks, Top Albums, Top Artists) and "playing now" for their radio come from their own service's plug-in, through the `listeningHistory` capability (#1539 step 5; docs/architecture/plugins.md "Listening history"): `askFriend(friend, method, query)` in app.js calls `getRecentListens`, `getTopItems` or `getNowPlaying` on the plug-in whose id is `friend.service`, with `user` set to their username. The plug-in's error carries the HTTP status, which the poll's backoff records (`recordFriendPollStatus`; a success counts as 200), and Last.fm's hidden-profile 403 (error 17) as `hidesListening`. The friend graph (pulling who you follow, following and unfollowing) and adding a friend by username or profile link still call the two services by name; that's the next part of #1539 step 5.
+A friend's now playing (the 2-minute poll), weekly stats, profile tabs (Recent, Top Tracks, Top Albums, Top Artists) and "playing now" for their radio come from their own service's plug-in, through the `listeningHistory` capability (#1539 step 5; docs/architecture/plugins.md "Listening history"): `askFriend(friend, method, query)` in app.js calls `getRecentListens`, `getTopItems` or `getNowPlaying` on the plug-in whose id is `friend.service`, with `user` set to their username. The plug-in's error carries the HTTP status, which the poll's backoff records (`recordFriendPollStatus`; a success counts as 200), and Last.fm's hidden-profile 403 (error 17) as `hidesListening`. The friend graph and adding a friend go through the same plug-in's `friends` methods (see "Adding a friend" and the table above).
 
 ### Invariants for Cross-Platform Consistency
 

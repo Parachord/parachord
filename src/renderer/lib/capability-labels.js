@@ -36,6 +36,7 @@ const LABELS = {
   artistTopTracks: 'Artists’ top tracks',
   artistReleases: 'Discographies',
   charts: 'Charts',
+  friends: 'Friends',
   listeningHistory: 'Listening history',
   lovedTracks: 'Loved tracks',
   playlistSync: 'Playlist sync',

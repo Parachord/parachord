@@ -23,9 +23,9 @@ describe('periodic friend-graph sync', () => {
     expect(app).not.toMatch(/friendSyncTickCounterRef|SYNC_TICK_INTERVAL/);
   });
 
-  test('runs every 30 minutes on its own timer, gated only on a Last.fm or ListenBrainz account', () => {
+  test('runs every 30 minutes on its own timer, gated only on a friend service account (any plug-in with a username, #1539 step 5)', () => {
     expect(app).toMatch(/const FRIEND_GRAPH_SYNC_MS = 30 \* 60 \* 1000;/);
-    expect(app).toMatch(/const hasFriendServiceAccount = !!\(metaServiceConfigs\.lastfm\?\.username \|\| metaServiceConfigs\.listenbrainz\?\.username\);/);
+    expect(app).toContain('const hasFriendServiceAccount = Object.values(metaServiceConfigs || {}).some(c => c && c.username);');
     expect(app).toMatch(/if \(!cacheLoaded \|\| !hasFriendServiceAccount\) return;\s*const id = setInterval\(\(\) => \{\s*syncFriendsFromServicesRef\.current\?\.\(\{ silent: true \}\);\s*\}, FRIEND_GRAPH_SYNC_MS\);\s*return \(\) => clearInterval\(id\);\s*\}, \[cacheLoaded, hasFriendServiceAccount\]\);/);
   });
 

@@ -18,10 +18,13 @@ const {
   flattenRecommendationItems,
   weeklyHomeEntries,
   shuffleupagusSection,
-  FRIEND_SERVICES
 } = require('../../src/renderer/lib/recommendation-model');
 const recommendationModel = require('../../src/renderer/lib/recommendation-model');
 const { trackSlug } = require('../../src/renderer/lib/track-slug');
+
+// The friend services: the plug-ins with capabilities.friends, which the app
+// passes in (#1539 step 5).
+const FRIEND_SERVICES = new Set(['lastfm', 'listenbrainz']);
 
 describe('normalizeRecommendationItem', () => {
   test('normalizes a song with a track object whose id matches the item', () => {
@@ -346,7 +349,7 @@ describe('buildRecommendationPage', () => {
     ];
 
     test('drops followed, removed and self; each service most similar first, the services alternating', () => {
-      const exclude = { friendKeys: new Set(['lastfm:bob']), selfKeys: new Set(['listenbrainz:me']) };
+      const exclude = { friendKeys: new Set(['lastfm:bob']), selfKeys: new Set(['listenbrainz:me']), friendServices: FRIEND_SERVICES };
       const friends = buildRecommendationPage({ similarUsers, exclude }).find(s => s.type === 'friend');
       expect(friends.subsections).toHaveLength(1);
       const row = friends.subsections[0];
@@ -361,7 +364,7 @@ describe('buildRecommendationPage', () => {
         { resolverId: 'lastfm', resolverName: 'Last.fm', users: [{ username: 'A', similarity: 0.1 }, { username: 'B' }, { username: 'C', similarity: 0.5, topArtists: ['X', 'Y', 'Z', 'W'] }] },
         { resolverId: 'listenbrainz', resolverName: 'ListenBrainz', users: [{ username: 'E', similarity: 0.5 }, { username: 'D', similarity: 0.9, topArtists: 'nope' }] }
       ];
-      const row = buildRecommendationPage({ similarUsers: su }).find(s => s.type === 'friend').subsections[0];
+      const row = buildRecommendationPage({ similarUsers: su, exclude: { friendServices: FRIEND_SERVICES } }).find(s => s.type === 'friend').subsections[0];
       // Last.fm: C, A, B; ListenBrainz: D, E; alternated.
       expect(row.items.map(i => i.name)).toEqual(['C', 'D', 'A', 'E', 'B']);
       expect(row.items[0].topArtists).toEqual(['X', 'Y', 'Z']);
@@ -369,7 +372,7 @@ describe('buildRecommendationPage', () => {
     });
 
     test('with one provider is a single-source row', () => {
-      const row = buildRecommendationPage({ similarUsers: [similarUsers[0]] }).find(s => s.type === 'friend').subsections[0];
+      const row = buildRecommendationPage({ similarUsers: [similarUsers[0]], exclude: { friendServices: FRIEND_SERVICES } }).find(s => s.type === 'friend').subsections[0];
       expect(row.blended).toBe(false);
       expect(row.sources).toEqual([{ id: 'lastfm', name: 'Last.fm' }]);
     });
@@ -379,24 +382,25 @@ describe('buildRecommendationPage', () => {
         { resolverId: 'lastfm', resolverName: 'Last.fm', users: [{ username: 'Zed', similarity: 1 }] },
         { resolverId: 'listenbrainz', resolverName: 'ListenBrainz', users: [{ username: 'zed', similarity: 1 }] }
       ];
-      const row = buildRecommendationPage({ similarUsers: su }).find(s => s.type === 'friend').subsections[0];
+      const row = buildRecommendationPage({ similarUsers: su, exclude: { friendServices: FRIEND_SERVICES } }).find(s => s.type === 'friend').subsections[0];
       expect(row.items).toHaveLength(2);
     });
 
     test('only a friend service makes Friends entries (Follow can only look up Last.fm or ListenBrainz)', () => {
-      expect(FRIEND_SERVICES).toEqual(['lastfm', 'listenbrainz']);
+      // Without the friend services, nobody is offered.
+      expect(buildRecommendationPage({ similarUsers })).toEqual([]);
       const su = [
         { resolverId: 'someservice', resolverName: 'Some Service', users: [{ username: 'Zed', similarity: 1 }] },
         similarUsers[0]
       ];
-      const row = buildRecommendationPage({ similarUsers: su }).find(s => s.type === 'friend').subsections[0];
+      const row = buildRecommendationPage({ similarUsers: su, exclude: { friendServices: FRIEND_SERVICES } }).find(s => s.type === 'friend').subsections[0];
       expect(row.items.map(i => i.service)).toEqual(['lastfm', 'lastfm', 'lastfm']);
       expect(row.sources).toEqual([{ id: 'lastfm', name: 'Last.fm' }]);
-      expect(buildRecommendationPage({ similarUsers: [su[0]] })).toEqual([]);
+      expect(buildRecommendationPage({ similarUsers: [su[0]], exclude: { friendServices: FRIEND_SERVICES } })).toEqual([]);
     });
 
     test('everyone excluded leaves no Friends section', () => {
-      const exclude = { friendKeys: new Set(['lastfm:bob', 'lastfm:cy', 'lastfm:di', 'listenbrainz:ed']), selfKeys: new Set(['listenbrainz:me']) };
+      const exclude = { friendKeys: new Set(['lastfm:bob', 'lastfm:cy', 'lastfm:di', 'listenbrainz:ed']), selfKeys: new Set(['listenbrainz:me']), friendServices: FRIEND_SERVICES };
       expect(buildRecommendationPage({ similarUsers, exclude })).toEqual([]);
     });
   });
