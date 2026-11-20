@@ -16,6 +16,15 @@ test('the full button and the compact one', () => {
   expect(compact).toMatch(/>Play Radio<\/button>$/);
 });
 
+// #1577: the gap between the disc and the label is on the spacing scale
+// (8px in both sizes; 10px is only for card padding).
+test('the gap is on the spacing scale', () => {
+  for (const compact of [false, true]) {
+    const html = renderToStaticMarkup(React.createElement(CollectionRadioButton, { onClick: () => {}, compact }));
+    expect(html).toContain('gap:8px');
+  }
+});
+
 test('Home and both Collection headers use it; no hand-built copy is left', () => {
   const dir = path.join(__dirname, '../../src/renderer/components');
   const home = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');

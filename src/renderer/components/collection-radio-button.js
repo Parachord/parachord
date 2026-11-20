@@ -25,7 +25,7 @@ function CollectionRadioButton({ onClick, compact = false }) {
     onClick,
     style: {
       font: 'inherit', fontSize: compact ? '13px' : '14px', fontWeight: 600, border: 'none', borderRadius: '999px', cursor: 'pointer',
-      display: 'flex', alignItems: 'center', gap: compact ? '8px' : '10px',
+      display: 'flex', alignItems: 'center', gap: '8px',
       padding: compact ? '4px 12px 4px 4px' : '6px 16px 6px 6px', minHeight: compact ? '30px' : '40px',
       backgroundColor: FILL, color: ON_FILL, whiteSpace: 'nowrap',
     },
