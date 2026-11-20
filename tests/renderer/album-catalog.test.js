@@ -167,9 +167,14 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum([group('top', 'X', ['A']), group('live', 'X', ['A'], { secondary: ['Live'] })], { artist: 'A' }).id).toBe('top');
   });
 
-  test('nothing matching: the closest title, then the artist\'s own releases, then the top result; empty input gives null', () => {
+  test('nothing by that artist: null, never another artist\'s album; empty input gives null', () => {
     expect(pickReleaseGroupForAlbum([group('a', 'X', ['A']), group('b', 'Y', ['B'])], { artist: 'B', title: 'Z' }).id).toBe('b');
-    expect(pickReleaseGroupForAlbum([group('top', 'X', ['A'])], { artist: 'B', title: 'Z' }).id).toBe('top');
+    // A brand-new album MusicBrainz doesn't have answers same-words albums by
+    // other artists ("Another Day Once Called Tomorrow" returned the top 5 of
+    // "Tomorrow's Another Day"): the answer is null, and the opener tries the
+    // services' catalogs instead.
+    expect(pickReleaseGroupForAlbum([group('top', 'X', ['A'])], { artist: 'B', title: 'Z' })).toBeNull();
+    expect(pickReleaseGroupForAlbum([group('a', 'X', ['A'])], { artist: 'B' })).toBeNull();
     expect(pickReleaseGroupForAlbum([], { artist: 'A', title: 'X' })).toBeNull();
     expect(pickReleaseGroupForAlbum(undefined, { artist: 'A' })).toBeNull();
   });

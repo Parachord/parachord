@@ -231,12 +231,18 @@ const spokenOut = (one, other) => {
 // opened the first studio album in the list, whatever it was. The title and
 // artist decide first (albumMatchScore: creditMatches for the artist, store
 // edition suffixes aside), and only among results for that album does a
-// studio album win over a live or compilation edition of it. With no result
-// matching, the closest title comes next (MusicBrainz often spells an album's
-// title out — "Back to the Beginning: The Final Show, Live from Villa Park"
-// for the album a source calls "Back to the Beginning" — and without this a
-// studio album of another name still won), then the artist's own releases
-// (studio first), then what MusicBrainz ranked first.
+// studio album win over a live or compilation edition of it.
+//
+// A result is only ever the album if its credit matches the artist asked for:
+// when nothing does, this answers null and the caller tries the services'
+// catalogs. It never hands back "whatever MusicBrainz ranked first" — a search
+// for an album MusicBrainz doesn't have (a brand-new release) answers
+// same-words albums by other artists, and opening one of those is worse than
+// saying the album wasn't found. Among the artist's own results, the closest
+// title wins (MusicBrainz often spells an album's title out — "Back to the
+// Beginning: The Final Show, Live from Villa Park" for the album a source
+// calls "Back to the Beginning" — at a subtitle separator only, so "Go" is
+// not "Goodbye").
 //
 // `title` defaults to empty, and then only the artist decides (a caller that
 // knows nothing but the artist — the album-card actions pass the title too).
@@ -270,24 +276,42 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
     || (Number(isStudioReleaseGroup(b.r)) - Number(isStudioReleaseGroup(a.r)))
     || (Number(isAlbumGroup(b.r)) - Number(isAlbumGroup(a.r)))
     || (a.index - b.index))[0].r;
-  const matched = scored.filter((entry) => entry.score > 0);
-  if (matched.length > 0) return best(matched);
-  const byArtist = scored.filter((entry) => creditMatches(artist, releaseGroupCredit(entry.r)));
-  if (byArtist.length > 0) return best(byArtist);
-  return best(scored);
+  // The artist's own results only — or every result when the caller knows no
+  // artist (nothing to check against, the title alone decides).
+  const byArtist = normalizeArtistName(artist)
+    ? scored.filter((entry) => creditMatches(artist, releaseGroupCredit(entry.r)))
+    : scored;
+  if (byArtist.length === 0) return null;
+  const matched = byArtist.filter((entry) => entry.score > 0);
+  return best(matched.length > 0 ? matched : byArtist);
+}
+
+// A title without any trailing parenthesised or bracketed part, repeatedly:
+// "Back to the Beginning (Live)" and "Back to the Beginning" name the same
+// album for the edition list, as "Dulling the Horns (Deluxe)" already did.
+// Only a suffix is dropped, so "Queen II" is still not "Queen I".
+function bareEditionTitle(title) {
+  let out = String(title || '').trim();
+  for (let i = 0; i < 3; i++) {
+    const next = out.replace(/\s*[([][^()[\]]*[)\]]\s*$/, '').trim();
+    if (!next || next === out) break;
+    out = next;
+  }
+  return normalizeAlbumTitle(out);
 }
 
 // A catalog album that is the same album the page shows, edition aside —
 // the album page's source dropdown lists these (#1238): "Queen I (2011
 // Remaster)" is a version of "Queen I", "Queen II" is not. The title must be
-// EQUAL after edition suffixes were stripped (albumMatchScore's containment
-// pass is deliberately looser: "Queen I" contains into "Queen II", which is
-// fine for picking a fallback but wrong for a version list), and the artist
-// must pass any of the match rules — checked via albumMatchScore > 0, whose
-// title axis is already satisfied, so only the artist rules can fail it.
+// EQUAL once trailing parenthetical parts are dropped (albumMatchScore's
+// containment pass is deliberately looser: "Queen I" contains into "Queen
+// II", which is fine for picking a fallback but wrong for a version list), and
+// the artist must pass any of the match rules — checked via
+// albumMatchScore > 0, whose title axis is already satisfied, so only the
+// artist rules can fail it.
 function isCatalogAlbumEdition(target, album) {
   if (!target || !album || !target.title || !album.name) return false;
-  if (normalizeAlbumTitle(target.title) !== normalizeAlbumTitle(album.name)) return false;
+  if (bareEditionTitle(target.title) !== bareEditionTitle(album.name)) return false;
   return albumMatchScore(target, album) > 0;
 }
 

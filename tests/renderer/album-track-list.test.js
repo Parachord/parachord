@@ -72,9 +72,12 @@ describe('pickReleaseGroup', () => {
     ];
     expect(pickReleaseGroup(results, 'portishead').id).toBe('studio');
   });
-  test('then anything credited to the artist, then the top result', () => {
+  test('another artist\'s results are never returned, and empty input gives null', () => {
     expect(pickReleaseGroup([{ id: 'x', 'artist-credit': credit('A') }, { id: 'ep', 'primary-type': 'EP', 'artist-credit': credit('B') }], 'B').id).toBe('ep');
-    expect(pickReleaseGroup([{ id: 'top', 'artist-credit': credit('A') }], 'B').id).toBe('top');
+    // An album MusicBrainz doesn't have answers same-words albums by other
+    // artists: opening one of those is worse than answering "not found" (the
+    // callers then try the services' catalogs).
+    expect(pickReleaseGroup([{ id: 'top', 'artist-credit': credit('A') }], 'B')).toBeNull();
     expect(pickReleaseGroup([], 'B')).toBeNull();
   });
   test('with the album title, the album asked for wins over a studio album of the artist', () => {

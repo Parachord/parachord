@@ -228,6 +228,14 @@ describe('album-catalog: which catalog results are editions of the album', () =>
     // a joint credit with a suffixed title still counts (the artist rules pass
     // through albumMatchScore's split even when the bare titles differ)
     expect(isCatalogAlbumEdition({ artist: 'Erykah Badu', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman (Deluxe)', artist: 'Erykah Badu & The Alchemist' })).toBe(true);
+    // any trailing parenthetical, not only the edition words: a service lists a
+    // live record as "Back To The Beginning (Live)" and the page (MusicBrainz)
+    // as "Back to the Beginning" — the same album, and it was dropped from the
+    // source dropdown (2026-11-20).
+    expect(isCatalogAlbumEdition(
+      { artist: 'Ozzy Osbourne, Black Sabbath', title: 'Back to the Beginning' },
+      { name: 'Back To The Beginning (Live)', artist: 'Ozzy Osbourne, Black Sabbath' }
+    )).toBe(true);
     // a dash-form suffix ("Queen I - Collector's Edition") is NOT stripped by
     // normalizeAlbumTitle's bracket-only EDITION rule — same limitation
     // pickCatalogAlbum has always had; not this feature's to change.
