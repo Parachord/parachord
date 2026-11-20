@@ -3,7 +3,7 @@
     "id": "gemini",
     "name": "Google Gemini",
     "type": "meta-service",
-    "version": "2.3.4",
+    "version": "2.3.5",
     "author": "Parachord Team",
     "description": "Ask Shuffleupagus for playlists and talk music with it, using Google Gemini.",
     "requirement": "Needs your own Google AI Studio API key.",
