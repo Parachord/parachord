@@ -66,13 +66,21 @@ const closeEnough = (a, b, ratio) => {
 // A name as written, for the boundary checks below: case and accents folded,
 // punctuation and spacing kept (normalizeArtistName drops them).
 const looseName = (s) => stripMarks(s).trim().replace(/\s+/g, ' ');
-const isNameChar = (ch) => !!ch && /[\p{L}\p{N}]/u.test(ch);
+
+// What can sit between two names in an artist credit. A hyphen cannot: it is
+// part of a name ("Blink-182" is not "Blink" with a guest).
+const isCreditSeparator = (ch) => !!ch && /[\s,;&/+:|]/u.test(ch);
+// What can separate a title from its subtitle ("Rumours: Live from the Forum
+// 1977", "(Live)"). A hyphen cannot either: "Go-Go" is not "Go".
+const isTitleSeparator = (ch) => !!ch && /[\s:;,.!?([{''"«“”—–]/u.test(ch);
 
 // One credit is the other plus a guest, with the whole shorter name at a name
 // boundary and most of the longer one: "Tyler, The Creator" in "Tyler, The
 // Creator & Kali Uchis", "AC/DC" in "AC/DC & X". A single act whose own name
 // carries a separator is not a joint credit to split, so this catches it. Not
-// any containment: "Red" is not most of "Red Hot Chili Peppers".
+// any containment: "Red" is not most of "Red Hot Chili Peppers", and a
+// hyphen is part of a name, not a guest (this rule alone does not match
+// "Blink" with "Blink-182"; closeEnough's older containment still may).
 function creditContains(one, other) {
   const a = looseName(one);
   const b = looseName(other);
@@ -82,9 +90,9 @@ function creditContains(one, other) {
   const l = Array.from(long);
   if (s.length >= l.length || s.length < l.length * 0.5) return false;
   const startsIt = s.every((ch, i) => l[i] === ch);
-  if (startsIt && !isNameChar(l[s.length])) return true;
+  if (startsIt && isCreditSeparator(l[s.length])) return true;
   const endsIt = s.every((ch, i) => l[l.length - s.length + i] === ch);
-  return endsIt && !isNameChar(l[l.length - s.length - 1]);
+  return endsIt && isCreditSeparator(l[l.length - s.length - 1]);
 }
 
 // Whether two artist credits name the same act. Every source writes a joint
@@ -98,7 +106,8 @@ function creditContains(one, other) {
 //
 // When one side is a single name, one artist of the other side's joint credit
 // is enough (the long-standing rule: an edition a service credits to both
-// artists is still the album's). When BOTH sides are joint credits, the same
+// artists is still the album's). A credit that is the other plus a guest
+// (creditContains) matches too. When BOTH sides are joint credits, the same
 // names in any order are required — "A, B" is "A & B", but "A & B" is not
 // "A & C", which only share a member: sharing one would make any album of a
 // collaboration an edition of an album of another.
@@ -209,8 +218,7 @@ const spokenOut = (one, other) => {
   const s = Array.from(short);
   const l = Array.from(long);
   if (s.length >= l.length || !s.every((ch, i) => l[i] === ch)) return false;
-  // "(", "[", ":" and the like separate a subtitle; a space does too.
-  return /[\s:;,.!?([{'"«—–]/.test(l[s.length] || '');
+  return isTitleSeparator(l[s.length]);
 };
 
 // Which release-group search result is the album that was asked for.
