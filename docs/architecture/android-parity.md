@@ -397,6 +397,20 @@ Mobile must mirror three things:
 
 What breaks if a client drifts: a plugin that needs a bridge the host doesn't supply loads and throws not-ready on every resolve (and mobile's retry re-asks it forever), or — the other direction — a host that advertises a bridge it doesn't really supply has plugins that load and fail at the call site.
 
+### Android Parity Requirements (plugin host contract, `this.host`)
+
+Agreed in parachord#1561 with the Android side; not built on desktop yet. The spec is "The plug-in host contract" in [plugins.md](plugins.md). Mobile's plugin manager builds the same object, so the same `.axe` runs on every host without impersonating Electron's `window.electron`.
+
+Mobile must mirror:
+
+- **`this.host` on every resolver instance**, set before `init` and frozen. It holds the core every host supplies: `appVersion()`, `platform` (`'android'` / `'ios'`), `getConfig()` (the plugin's saved settings, read fresh each call) and `openExternal(url)`. It also holds one key per name in the plugin's `requires.hostBridges` and, when this host has it, `requires.optionalHostBridges`, named exactly as declared. Nothing undeclared, even when the host supplies it.
+- **`init(config, host)`'s second argument is the same object.**
+- **`host` is a reserved implementation key**, like `lib`.
+- **`requires.optionalHostBridges`:** a missing optional bridge never hides the plugin; the key is just absent.
+- **Each bridge's semantics match desktop's doc for it**, starting with `webSession` ([web-session.md](web-session.md), "The IPC bridge").
+
+What breaks if a client drifts: a plugin written to the contract finds `this.host` missing, or a bridge under a different name, and falls back to `window.electron.*`, which mobile doesn't have, so it fails on the phones only. A host that puts undeclared bridges on `this.host` lets a plugin depend on one it never declared, which then fails on every host that follows the rule.
+
 ### Android Parity Requirements (Collection: local and saved merged)
 
 Desktop #1534 (parachord#1532). Mobile ticket: [Parachord/parachord-mobile#713](https://github.com/Parachord/parachord-mobile/issues/713). Reference module: `src/renderer/lib/local-albums.js`; how desktop shows it: "In the Collection" in [local-files.md](local-files.md).

@@ -140,7 +140,7 @@ The marketplace serves only the latest copy of each plugin, and every installed 
 
 ### Required host bridges
 
-A plugin that calls a host bridge (`window.electron.webSession`, `window.electron.widevine`, …) declares the ones it needs as a top-level `.axe` field (#1355):
+A plugin that calls a host bridge (`webSession`, …) declares the ones it needs as a top-level `.axe` field (#1355). Each declared name is also the bridge's key on `this.host` (see "The plug-in host contract" below; until that is built, plug-ins reach the bridge at `window.electron.<name>`):
 
 ```json
 "requires": { "hostBridges": ["webSession"] }
@@ -152,6 +152,88 @@ Each host advertises what it supplies — desktop's `preload.js` sets `window.__
 - On desktop the hiding happens in the renderer's plugin loading — one rule, every `.axe` load path: the main `initResolvers` load, the fallback resolver load, the install/reload paths (install-from-file, marketplace install), and the meta-service hot-reload after a marketplace sync (`handlePluginsUpdated`), all through `hideAxesLackingHostBridges` (`src/renderer/lib/host-bridges-hide.js`), which reads the advertised list and runs the hide-filter the rules module carries (`hostBridgesHideFilter`); the rules live in `main-process/plugin-compat.js` (`pluginRequiredHostBridges`, `hostBridgesCompatibility`, `hostBridgesHideFilter`, `validateRequires`), mirrored by mobile's `PluginCompat.kt`.
 - Marketplace install and download do NOT check hostBridges — a plugin hidden on this host may still be installable there and run on the user's other devices' hosts; hiding is a load-time decision, not a download-time one. `minAppVersion` remains the field that gates downloads.
 - The Amazon Music plugin declares `["webSession"]` since its track search moved onto the bridge (#1356 M5) — the first shipped plugin to declare a requirement; since the #1356 move finished, every one of its flows (the catalog, playlist import, recommendations, DRM pair, session surfaces and the diagnostic capture) rides it.
+
+### The plug-in host contract (`this.host`, #1561)
+
+**Status: agreed, not built yet.** The contract below was settled in #1561 with the Android side. No desktop loader builds `this.host` yet, and shipped plug-ins still reach the host through the globals in the migration table below. The first PR builds the object and moves the `webSession` bridge, so Amazon Music can run on the phones (Parachord/parachord-mobile#663). This section is the spec every host's loader builds to: desktop's `resolver-loader.js`, and the Android and iOS plug-in managers.
+
+**The rule: a plug-in reaches the host only through `this.host`.** Not through `window.electron.*`, not through an app object on `window` (`window.scrobbleManager`, `window.achordion`, …), not through an underscored global (`window.__parachordWidevine`). Web platform APIs aren't host APIs and stay as they are: `fetch`, `crypto`, `URL`, `AbortController`, timers. Why injection and not one global (the comparison is on #1561):
+- **Scoped to the manifest.** A plug-in sees only the bridges it declares, so the declaration is the permission, not a note. These are marketplace plug-ins: one shouldn't see another service's signed-in session.
+- **The declaration can't drift from the code.** A bridge's name in the manifest is exactly its key on `this.host`, so a test can check one against the other.
+- **Per plug-in.** The host builds a separate object for each plug-in, so whatever needs the plug-in's id (its config, its scrobble registration, its rate limit, its log tag) has it bound in, and a plug-in can't pass someone else's.
+- **No `window` needed**, so a host can run plug-ins in a worker or a bare JS engine, and tests pass a fake host instead of stubbing globals.
+
+#### What `this.host` holds
+
+The loader sets `this.host` on each resolver instance before `init` runs and keeps it for the instance's lifetime. A hot reload gets a new instance and a new object. The object is frozen, so a plug-in can't add to it or swap out a bridge.
+
+**The core, on every host, for every plug-in:**
+
+| Key | What it is |
+|---|---|
+| `appVersion()` | The app's version string (`0.9.14`, or the phone app's own). Amazon Music sends it in its music-agent string. |
+| `platform` | `'desktop'`, `'android'` or `'ios'`, the same keys `minAppVersion` uses. |
+| `getConfig()` | A promise of the plug-in's saved settings, read fresh on each call, so a switch or a password changed in Settings applies without a reload. It's what playback telemetry's `init(config, host)` already passes. |
+| `openExternal(url)` | Opens an `https` link in the user's browser: a sign-in page, a buy link, a service's own page. It replaces `window.electron.shell.openExternal` and `window.open`. |
+
+**Bridges, one key per declared name.** Each name in the manifest's `requires.hostBridges` is a key on `this.host` with that exact name: `"requires": { "hostBridges": ["webSession"] }` gives `this.host.webSession`. A bridge a plug-in didn't declare is absent, even when the host has it. Two kinds:
+- **Required** (`requires.hostBridges`): the plug-in can't work without it. A host that lacks one hides the plug-in (the rule above), so a required bridge is always present when the plug-in runs.
+- **Optional** (`requires.optionalHostBridges`, new): the plug-in uses it when it's there and works without it. A host that lacks one leaves the key out and loads the plug-in anyway, and the plug-in checks for the key. Amazon Music's `cleanup()` stopping the shared Widevine player is the case: the phones have no shared player. Older loaders ignore the field, since `validateRequires` and `pluginRequiredHostBridges` read only `hostBridges`.
+
+Each bridge's methods and their semantics are documented with the bridge, not here. The web session's are in [web-session.md](web-session.md) ("The IPC bridge"). A host that implements a bridge implements all of it, and advertises it in `window.__parachordHostBridges`, the list the hide rule reads.
+
+**`host` is a reserved implementation key**, like `lib`. A method named `host` would clobber the object, so the loader skips it with a warning.
+
+**`_lib` stays pure.** The library can't reach `this.host`, and doesn't try: a helper that needs a bridge takes it as an argument (the rule in "Implementation functions" below). `init(config, host)`'s second argument becomes the same object as `this.host`, so playback telemetry plug-ins keep working unchanged.
+
+#### Older apps: one accessor, one fallback
+
+An app whose loader predates the contract sets no `this.host`. Until `minAppVersion` floors make those apps rare (the same rule as `_lib`'s `requireLib`), a plug-in reads bridges through one accessor entry, so the fallback lives in one place:
+
+```js
+// implementation.js: the one place a plug-in reaches the host
+hostBridge: function (name) {
+  if (this.host) return this.host[name] || null;          // a host with the contract
+  var legacy = typeof window !== 'undefined' && window.electron;
+  return (legacy && legacy[name]) || null;                  // an older desktop build
+},
+search: async function (query, config) {
+  const webSession = this.hostBridge('webSession');
+  // ...
+}
+```
+
+The fallback reads `window.electron.<name>`, which matches the bridge name for `webSession`. A bridge whose old home was elsewhere (`window.__parachordWidevine`) names it in its own branch. The fallback goes once the plug-in's `minAppVersion` on every platform is at or past the first release that builds `this.host`. Until then a new host feature still needs a fallback, as "Minimum app version" says.
+
+#### Migrating what plug-ins reach today
+
+Each row is its own PR. It names the bridge, implements it on desktop, moves the plug-ins that use it, and adds it to the plug-in's `requires`. The test ratchet below makes each move stick.
+
+| Reached today | Becomes | Used by |
+|---|---|---|
+| `window.electron.webSession.*` (27 calls) | `webSession` bridge (first) | Amazon Music |
+| `window.electron.updater.getVersion` | `appVersion()` (core) | Amazon Music |
+| `window.electron.shell.openExternal`, `window.open` | `openExternal(url)` (core) | Bandcamp, SoundCloud, YouTube, Plex |
+| `window.__parachordWidevine.stop` | `widevine` bridge, optional | Amazon Music |
+| `window.__parachordManageAmazonMusic`, `window.__parachordResolver` | the `webSession` sign-in flow, or a named bridge if that doesn't cover it | Amazon Music |
+| `window.electron.musicKit.*`, `window.getMusicKitWeb`, `window.appleMusic*` helpers, `window.iTunesRateLimiter`, `window.electron.config.get`, `window.electron.platform` | a `musicKit` bridge; `platform` (core) | Apple Music |
+| `window.electron.plex.fetch` | a `serverFetch` bridge (a fetch without the renderer's CORS and certificate limits, for a server on the local network), named for what it does so Subsonic and Jellyfin can share it | Plex |
+| `window.electron.localFiles.*` | a `localFiles` bridge | Local Files |
+| `window.electron.spotify.scrapePlaylist` | a `pageScrape` bridge, or the `webSession` primitives | Spotify |
+| `window.scrobbleManager.registerPlugin` / `unregisterPlugin` | a `scrobbling` bridge with the plug-in's id bound in | Subsonic, Achordion |
+| `window.achordion.*`, `window.resolveMbidForLove`, `window.__parachordClient` | named bridges, decided when Achordion moves | Achordion |
+| `window.dispatchEvent` (app events) | the bridge the event belongs to | Apple Music |
+
+A bridge is named for what it does, not for the service that needs it first, so the next plug-in that needs it declares the same name.
+
+**Plug-ins' own state moves off `window` too.** `window._plexIndex`, `window.__subsonicHelpers` and `window._amAlbumCache` are plug-ins keeping state in the one namespace every plug-in shares. That isn't a host API, and it moves to `this` (per instance, as "Implementation functions" says) in the same PR as that plug-in's bridge move.
+
+#### Enforcement
+
+On desktop, plug-ins aren't sandboxed ("Implementation functions" below), so nothing stops a plug-in from reading `window.electron` directly. The contract is held by tests, added with the first PR:
+- **A ratchet** over `plugins-src/`: the count of `window.electron.*`, app-object and underscored globals per plug-in starts at today's and can only fall, as `design-drift` does for the renderer. The `hostBridge` accessor's own fallback is the one exception.
+- **Declared means used, and used means declared.** Every `this.host.<name>` and `hostBridge('<name>')` in a plug-in is a core key or a name in its `requires`.
+- **A contract test per moved plug-in.** It's loaded twice: once with only `this.host` and no `window.electron` (a phone), and once with no `this.host` and only `window.electron` (an older desktop build). Its methods must work both ways.
 
 ### How Updates Reach Users (No New Build Required)
 1. **Edit `plugins-src/<id>/implementation.js`** (or `manifest.json`) — and bump `manifest.version` in `plugins-src/<id>/manifest.json`
@@ -412,7 +494,7 @@ The loader keeps the whole block on the resolver as `resolver.settings` (meta se
 
 Each entry in `implementation` is materialized with `new Function('return ' + src)()` in the renderer, then bound so `this` is the resolver object (a `resolve` can call `this.search(...)`). Consequences:
 
-- **Plugins are not sandboxed.** The code runs in the renderer with the same privileges as the app's own renderer code: `fetch`, `window` (including `window.electron.*` bridges such as `proxyFetch`), the DOM, and globals the app sets up. Install only plugins you trust.
+- **Plugins are not sandboxed.** The code runs in the renderer with the same privileges as the app's own renderer code: `fetch`, `window` (including `window.electron.*` bridges such as `proxyFetch`), the DOM, and globals the app sets up. Install only plugins you trust. Being able to reach those isn't permission to: a plugin reaches the host only through `this.host` ("The plug-in host contract" above), and tests hold shipped plugins to it.
 - **Each function is isolated from the others — except through the plugin library.** There is no shared module scope, so a helper two functions need lives in `implementation._lib` (below) or is defined inside each.
 - Implementation keys that collide with resolver fields (`id`, `name`, `capabilities`, `config`, `__proto__` and similar) are skipped with a warning; `lib` and `_lib` are reserved (the library and its factory). `_lib` is the **only** underscore-prefixed key with a meaning — nothing interprets `_init`, `_helpers` or any other underscore name, so nobody should invent one expecting the same treatment.
 
