@@ -13,7 +13,9 @@ function timeAgo(at, now = Date.now()) {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   const mo = Math.floor(d / 30);
-  if (mo < 12) return `${mo}mo ago`;
+  // Months until a full year has passed: 360 to 364 days are twelve 30-day
+  // months but zero years, and read "12mo ago", not "0y ago" (#1569).
+  if (mo < 12 || d < 365) return `${mo}mo ago`;
   return `${Math.floor(d / 365)}y ago`;
 }
 

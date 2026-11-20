@@ -18,6 +18,16 @@ test('the scale', () => {
   expect(timeAgo(NOW + MIN, NOW)).toBe('just now');
 });
 
+// #1569: 360 to 364 days are twelve 30-day months but not yet a year; they
+// read "12mo ago", never "0y ago".
+test('months until a full year has passed', () => {
+  const DAY = 24 * 60 * MIN;
+  expect(timeAgo(NOW - 359 * DAY, NOW)).toBe('11mo ago');
+  for (const d of [360, 362, 364]) expect(timeAgo(NOW - d * DAY, NOW)).toBe('12mo ago');
+  expect(timeAgo(NOW - 365 * DAY, NOW)).toBe('1y ago');
+  expect(timeAgo(NOW - 730 * DAY, NOW)).toBe('2y ago');
+});
+
 test('no other copy of the "m ago" ladder in the renderer', () => {
   const dir = path.join(__dirname, '../../src/renderer');
   const files = ['app.js', ...['components', 'lib', 'hooks'].flatMap((d) => fs.readdirSync(path.join(dir, d)).map((f) => `${d}/${f}`))]
