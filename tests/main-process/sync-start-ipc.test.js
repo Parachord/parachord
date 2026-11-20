@@ -353,6 +353,20 @@ describe('sync:start pulls a changed import without asking', () => {
     expect(result.results.playlists.updated).toBe(1);
   });
 
+  test('a pulled rebuild keeps the playlist’s created date (Daily Brew read "Created" yesterday)', async () => {
+    const JUNE = Date.parse('2026-06-27T18:41:56Z');
+    const YESTERDAY = Date.parse('2026-11-19T10:13:14Z');
+    const TODAY = Date.parse('2026-11-20T10:18:00Z');
+    const local = imported('abc', { createdAt: YESTERDAY, syncSources: { listenbrainz: { syncedAt: 1000, addedAt: JUNE } } });
+    const { saved } = await run({
+      local: [local],
+      remotes: [remote('abc')],
+      fetchPlaylistTracks: () => [{ title: 'New 1', artist: 'B', addedAt: TODAY }, { title: 'Kept', artist: 'C', addedAt: YESTERDAY }],
+    });
+    expect(saved('listenbrainz-abc').tracks.map((t) => t.title)).toEqual(['New 1', 'Kept']);
+    expect(saved('listenbrainz-abc').createdAt).toBe(JUNE);
+  });
+
   test('a playlist stuck with the old update flag is pulled on the next sync', async () => {
     const { saved } = await run({ local: [imported('abc', { hasUpdates: true })], remotes: [remote('abc')] });
     expect(saved('listenbrainz-abc').tracks).toEqual(NEW);
