@@ -619,7 +619,7 @@ const { resolversToAskAgain, nextUnanswered } = require('./lib/unanswered-resolv
 const { isMiss, newMiss, isStaleMiss } = require('./lib/cached-miss');
 const { pickRelease } = require('./lib/release-pick');
 const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
-const { uniqueConcerts, concertSourceKeys, concertMatchesSource } = require('./lib/concert-events');
+const { uniqueConcerts, concertSourceKeys, concertMatchesSource, venueMatchesLocationText } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
@@ -35739,15 +35739,13 @@ useEffect(() => {
     if (!concertsLocation) return [];
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const locCity = concertsLocation.toLowerCase().trim().split(',')[0].trim();
     const near = (event) => {
       const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
       if (concertsLocationCoords && vLat != null && vLng != null) {
         return haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) <= concertsLocationRadius;
       }
-      const city = (event.venue?.city || '').toLowerCase().trim();
-      const region = (event.venue?.region || '').toLowerCase().trim();
-      return !!((city && locCity.includes(city)) || (region && locCity.includes(region)));
+      // By name: whole names only (lib/concert-events.js, #1568).
+      return venueMatchesLocationText(event.venue, concertsLocation);
     };
     return concerts
       .filter(event => event && typeof event.date === 'string' && event.date.slice(0, 10) >= today && near(event))

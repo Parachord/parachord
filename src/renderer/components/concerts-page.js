@@ -20,7 +20,7 @@ const { ListRow } = require('./list-row');
 const { Slider, TextField } = require('./fields');
 const { EmptyState, ErrorState } = require('./states');
 const { sellerBadgeBg, sellerName, sellerShortName, sellerTextColor } = require('../lib/ticket-sellers');
-const { concertMatchesSource, concertSourceKeys } = require('../lib/concert-events');
+const { concertMatchesSource, concertSourceKeys, venueMatchesLocationText } = require('../lib/concert-events');
 
 const CONCERTS_PAGE_HANDLERS = [
   'copyParachordLink',
@@ -89,16 +89,10 @@ const ConcertsPage = React.memo(function ConcertsPage(props) {
               if (vLat != null && vLng != null) {
                 if (haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) > concertsLocationRadius) return false;
               } else {
-                const locCity = _locL.split(',')[0].trim();
-                const city = (event.venue?.city || '').toLowerCase().trim();
-                const region = (event.venue?.region || '').toLowerCase().trim();
-                if (!(city && locCity.includes(city)) && !(region && locCity.includes(region))) return false;
+                if (!venueMatchesLocationText(event.venue, _locL)) return false;
               }
             } else if (_locL) {
-              const locCity = _locL.split(',')[0].trim();
-              const city = (event.venue?.city || '').toLowerCase().trim();
-              const region = (event.venue?.region || '').toLowerCase().trim();
-              if (!(city && locCity.includes(city)) && !(region && locCity.includes(region))) return false;
+              if (!venueMatchesLocationText(event.venue, _locL)) return false;
             }
             if (_searchL) {
               const m = [event.artist, ...(event.lineup || []), event.venue?.name, event.venue?.city, event.title]
@@ -394,22 +388,13 @@ React.createElement('span', {
                     const dist = haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng);
                     if (dist > concertsLocationRadius) return false;
                   } else {
-                    // No venue coordinates — match on city portion of location only
-                    const locCity = locationLower.split(',')[0].trim();
-                    const city = (event.venue?.city || '').toLowerCase().trim();
-                    const region = (event.venue?.region || '').toLowerCase().trim();
-                    const matchesCity = city && locCity.includes(city);
-                    const matchesRegion = region && locCity.includes(region);
-                    if (!matchesCity && !matchesRegion) return false;
+                    // No venue coordinates: match by name, whole names only
+                    // (lib/concert-events.js, #1568).
+                    if (!venueMatchesLocationText(event.venue, locationLower)) return false;
                   }
                 } else if (locationLower) {
-                  // No geocoded coords — use city portion of text for matching
-                  const locCity = locationLower.split(',')[0].trim();
-                  const city = (event.venue?.city || '').toLowerCase().trim();
-                  const region = (event.venue?.region || '').toLowerCase().trim();
-                  const matchesCity = city && locCity.includes(city);
-                  const matchesRegion = region && locCity.includes(region);
-                  if (!matchesCity && !matchesRegion) return false;
+                  // No geocoded coords: match by name, whole names only.
+                  if (!venueMatchesLocationText(event.venue, locationLower)) return false;
                 }
                 // Search filter
                 if (searchLower) {
