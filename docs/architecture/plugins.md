@@ -280,7 +280,7 @@ To keep a plugin's implementation text ES5-level, flag it with `{ "es5": true }`
 - Each plugin implements a `listModels(config)` function that fetches available models from the provider's API
 - **Ollama**: `GET {endpoint}/api/tags` — returns locally installed models
 - **ChatGPT**: `GET /v1/models` with blocklist filter (excludes `dall-e`, `whisper`, `tts`, `text-embedding`, `babbage`, `davinci`, `canary`, `moderation`, `embedding`, plus `realtime`/`audio`/`transcri`)
-- **Gemini**: `GET /v1beta/models?key=` filtered by `supportedGenerationMethods.includes('generateContent')`
+- **Gemini**: `GET /v1beta/models` (the key in the `x-goog-api-key` header, never `?key=` in a URL, #1575) filtered by `supportedGenerationMethods.includes('generateContent')`
 - **Claude**: No list endpoint — stays curated with static `type: "select"`
 - **Custom LLM** (`customllm.axe`, parachord#997): dialect-aware — `GET {baseUrl}/models` (openai) or `GET {baseUrl}/v1/models` (anthropic). Sets `allowCustom: true` on its dynamic-select, so the settings UI renders a free-text input + `<datalist>` instead of a select — typing an arbitrary model id must always work because not every endpoint implements the list route. Model suggestions refresh when the `baseUrl` or `api` fields change (the generic extra-field renderer in the AI config block refetches dynamic models for those field keys).
 - App-side: `dynamicModelOptions` state tracks loading/options/error per resolver; `fetchDynamicModels()` called on settings panel open and after API key/endpoint changes

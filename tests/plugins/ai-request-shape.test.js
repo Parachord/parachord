@@ -71,3 +71,31 @@ describe('Gemini plugin request body', () => {
     expect(lastBody.tools[0].functionDeclarations).toHaveLength(1);
   });
 });
+
+// The key goes in the x-goog-api-key header, never the URL: anything that
+// logs a request URL (proxies, the network inspector, an error quoting the
+// URL) would log it (#1575).
+describe('Gemini plugin sends its API key in a header', () => {
+  let calls;
+  beforeEach(() => {
+    calls = [];
+    global.fetch = jest.fn(async (url, init) => {
+      calls.push({ url: String(url), init: init || {} });
+      const google = { candidates: [{ content: { parts: [{ text: '[]' }] } }], models: [] };
+      return { ok: true, json: async () => google };
+    });
+  });
+
+  const KEY = 'test-key-123';
+  test.each([
+    ['chat', () => gemini.chat(MESSAGES, [], { apiKey: KEY })],
+    ['generate', () => gemini.generate('prompt', { apiKey: KEY })],
+    ['listModels', () => gemini.listModels({ apiKey: KEY })],
+  ])('%s', async (_name, run) => {
+    await run().catch(() => {});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).not.toContain(KEY);
+    expect(calls[0].url).not.toMatch(/[?&]key=/);
+    expect(calls[0].init.headers['x-goog-api-key']).toBe(KEY);
+  });
+});

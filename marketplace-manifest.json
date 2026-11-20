@@ -287,7 +287,7 @@
       "id": "gemini",
       "name": "Google Gemini",
       "type": "meta-service",
-      "version": "2.3.4",
+      "version": "2.3.5",
       "author": "Parachord Team",
       "description": "Generate playlists and chat with AI DJ using Google Gemini. Requires Google AI Studio API key.",
       "icon": "✦",
