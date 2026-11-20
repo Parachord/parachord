@@ -33,6 +33,7 @@ const QUEUE_DRAWER_HANDLERS = [
   'loadPlaylist',
   'navigateTo',
   'openAiChat',
+  'openMixFromContext',
 ];
 
 const QueueDrawer = React.memo(function QueueDrawer(props) {
@@ -63,6 +64,7 @@ const QueueDrawer = React.memo(function QueueDrawer(props) {
     moveInQueue,
     navigateTo,
     openAiChat,
+    openMixFromContext,
     openCollectionLovesRef,
     originalQueueRef,
     playbackContext,
@@ -328,8 +330,9 @@ const QueueDrawer = React.memo(function QueueDrawer(props) {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
           } else if (playbackContext.type === 'mix') {
-            // A history mix lives on Home ("Made from your listening").
-            navigateTo('home');
+            // A history mix opens itself, in the service-playlist view
+            // (openMixFromContext in app.js, #1592).
+            openMixFromContext(playbackContext);
           } else if (playbackContext.type === 'weekly-jam' || playbackContext.type === 'weekly-exploration') {
             // The weekly playlists live in Recommendations' Playlists section
             navigateTo('recommendations');

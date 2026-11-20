@@ -629,7 +629,8 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const {
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, normalizeHistoryMixes, flattenHistoryMixes,
   historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries, pluginColors, mixesNeedingMosaic, withMixMosaics,
-  HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS
+  HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS,
+  mixForContext,
 } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const PlaybackLimits = require('./lib/playback-limits');
@@ -35500,6 +35501,26 @@ useEffect(() => {
     });
   };
 
+  // "Playing from" a history mix opens the mix (#1592): the one on Home
+  // when it's still there (by link, or by the id a queue saved before the
+  // change carries), with its own line and cover; else, for a link, the
+  // same view built from the link alone, its service found through the
+  // plug-in registry; else Home, as before.
+  const openMixFromContext = (ctx) => {
+    const mix = mixForContext(homeMixes, ctx);
+    if (mix && mix.url) {
+      openServicePlaylist(mix, mix.resolverName);
+      return;
+    }
+    const url = ctx && typeof ctx.id === 'string' ? ctx.id : '';
+    if (/^https?:\/\//i.test(url)) {
+      const resolverId = resolverLoaderRef.current?.findResolverForUrl(url) || null;
+      openServicePlaylist({ id: url, url, name: ctx.name || 'Mix', resolverId }, resolverId ? pluginName(resolverId) : undefined);
+      return;
+    }
+    navigateTo('home');
+  };
+
   // Home's recommendations load: on a Home visit unless one is running, or a
   // full load finished within the last 10 minutes (shouldLoadHomeRecommendations
   // in lib/home-model.js; the time is recommendationsFullLoadAtRef, stamped
@@ -35731,7 +35752,7 @@ useEffect(() => {
   // Stable function props for the memo'd QueueDrawer (keys must
   // match QUEUE_DRAWER_HANDLERS in queue-drawer.js).
   const queueDrawerHandlers = useStableHandlers({
-    handleCollectionAlbumClick, handleDragEnter, handleDragLeave, handleDragOver, handleDrop, handlePlaylistDragEnd, handleSaveQueueAsPlaylist, loadPlaylist, navigateTo, openAiChat,
+    handleCollectionAlbumClick, handleDragEnter, handleDragLeave, handleDragOver, handleDrop, handlePlaylistDragEnd, handleSaveQueueAsPlaylist, loadPlaylist, navigateTo, openAiChat, openMixFromContext,
   });
 
   // Stable function props for the memo'd AddToPlaylistPanel (keys must

@@ -88,7 +88,10 @@ function isActiveContext(candidate, { playing, queued } = {}) {
         if (c.id != null) return candidate.id != null && c.id === candidate.id;
         return !!candidate.title && c.name === candidate.title;
       case 'mix':
-        return c.type === 'mix' && candidate.id != null && c.id === candidate.id;
+        // A mix context's id is the mix's link (mixContext); a queue saved
+        // before #1592 carries the mix's own id, so either matches.
+        return c.type === 'mix' && c.id != null
+          && ((candidate.url != null && c.id === candidate.url) || (candidate.id != null && c.id === candidate.id));
       case 'loves':
         return c.type === 'loves';
       case 'album': {
@@ -153,7 +156,7 @@ function jumpBackInTiles({ playlists, loves, mixes, active, now = Date.now() } =
       subtitle: `${album.trackTitle} · the album behind your latest love`,
     });
   }
-  const mix = (mixes || []).find((m) => !isActiveContext({ kind: 'mix', id: m.id }, active));
+  const mix = (mixes || []).find((m) => !isActiveContext({ kind: 'mix', id: m.id, url: m.url }, active));
   if (mix) tiles.push({ kind: 'mix', item: mix, subtitle: 'Made from your listening' });
   return tiles.slice(0, 4);
 }
@@ -195,6 +198,22 @@ function normalizeHistoryMixes(items, provider) {
 // first of each, then the second of each, ...), so a service with many mixes
 // doesn't fill the row before the next one shows. An id seen once is kept
 // where it first appeared.
+// The playback context of a history mix (#1592): its id is the mix's link,
+// which is what the service-playlist view opens, so "Playing from" can open
+// the mix itself. Android and iOS build the same context.
+function mixContext(mix) {
+  return { type: 'mix', id: mix.url, name: mix.title };
+}
+
+// The mix a 'mix' context names, among Home's mixes: by link, else by the
+// mix's own id (a queue saved before #1592). Null when it isn't there.
+function mixForContext(mixes, ctx) {
+  if (!ctx || ctx.type !== 'mix' || ctx.id == null || !Array.isArray(mixes)) return null;
+  return mixes.find((mix) => mix && mix.url === ctx.id)
+    || mixes.find((mix) => mix && mix.id === ctx.id)
+    || null;
+}
+
 function flattenHistoryMixes(entries) {
   const lists = (Array.isArray(entries) ? entries : [])
     .map((e) => (e && Array.isArray(e.items) ? e.items : []));
@@ -416,7 +435,7 @@ function lovesMosaicAlbums(loves, n = 4) {
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
-  normalizeHistoryMixes, flattenHistoryMixes, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
+  normalizeHistoryMixes, flattenHistoryMixes, mixContext, mixForContext, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
   exampleShufflePrompt, filterBySource, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
   pluginColors, mixesNeedingMosaic, withMixMosaics, HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS, lovesMosaicAlbums,
