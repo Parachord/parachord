@@ -151,4 +151,26 @@ function concertMatchesSource(event, filter) {
   return concertSourceKeys(event).includes(filter);
 }
 
-module.exports = { uniqueConcerts, normalizeForDedup, concertSourceKeys, concertMatchesSource };
+// Is a venue near a location, by text? The fallback for Home's Concerts near
+// you and the Concerts page's location filter when the location or the venue
+// has no coordinates. Whole names only (#1568): a substring match found a
+// venue's state code inside the city name ("IN" in "Princeton", "CA" in
+// "Chicago", "MA" in "Miami"). The location is "City, County" from the
+// geocoder, or whatever the user typed ("Chicago IL", "Chicago, IL").
+//   - the venue's city is the location's first part, or begins it as whole
+//     words ("Chicago IL", "New York City"); never a word inside it ("York"
+//     is not near "New York");
+//   - or the venue's region is one whole part of the location ("New York,
+//     NY" takes a show in Brooklyn, NY).
+// Case and spacing don't count. Android and iOS share a port of this rule.
+function venueMatchesLocationText(venue, location) {
+  const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const parts = String(location || '').split(',').map(norm).filter(Boolean);
+  if (parts.length === 0 || !venue) return false;
+  const city = norm(venue.city);
+  const region = norm(venue.region);
+  if (city && (parts[0] === city || parts[0].startsWith(`${city} `))) return true;
+  return !!region && parts.includes(region);
+}
+
+module.exports = { uniqueConcerts, normalizeForDedup, concertSourceKeys, concertMatchesSource, venueMatchesLocationText };
