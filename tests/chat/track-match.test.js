@@ -133,7 +133,7 @@ describe('no play path falls back to the first result', () => {
   });
 
   test('a chat link that finds nothing says so', () => {
-    const start = app.indexOf('// Handle common protocol commands from chat links');
+    const start = app.indexOf('// The commands chat links handle in-app (CHAT_PARACHORD_COMMANDS).');
     expect(start).toBeGreaterThan(-1);
     const block = app.slice(start, app.indexOf("case 'queue':", start));
     expect(block).toContain('pickTrackMatch(');
