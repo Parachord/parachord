@@ -162,8 +162,7 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum(undefined, { artist: 'A' })).toBeNull();
   });
 
-  test('a long MusicBrainz spelling of the title beats another album of the same artist', () => {
-    // MusicBrainz often spells a title out: a source's "Back to the Beginning"
+  test('a long MusicBrainz spelling of the title beats another album of the same artist', () => {    // MusicBrainz often spells a title out: a source's "Back to the Beginning"
     // is "Back to the Beginning: The Final Show, Live from Villa Park" here,
     // too little of the shorter side for albumMatchScore's containment gate.
     // Without the title-closeness pass the artist fallback took the studio
@@ -173,6 +172,16 @@ describe('pickReleaseGroupForAlbum', () => {
       group('13', '13', ['Black Sabbath']),
     ];
     expect(pickReleaseGroupForAlbum(results, { artist: 'Ozzy Osbourne, Black Sabbath', title: 'Back to the Beginning' }).id).toBe('final-show');
+  });
+
+  test('a short shared prefix is not a title match', () => {
+    // "Go" and the artist's "Goodbye" share three letters; without the floor
+    // the prefix pass would hand the artist fallback to it.
+    const results = [group('b', 'B', ['A']), group('bye', 'Goodbye', ['A'])];
+    expect(pickReleaseGroupForAlbum(results, { artist: 'A', title: 'Go' }).id).toBe('b');
+    // 12 letters is enough to be MusicBrainz's longer spelling of the title
+    const long = [group('b', 'B', ['A']), group('spelled', 'Back to the Beginning: The Final Show', ['A'], { secondary: ['Live'] })];
+    expect(pickReleaseGroupForAlbum(long, { artist: 'A', title: 'Back to the Beginning' }).id).toBe('spelled');
   });
 
   test('the credit reads as one string, join phrases included', () => {

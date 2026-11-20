@@ -12288,6 +12288,12 @@ const Parachord = () => {
                 // written "A, B" by the source and "A & B" by MusicBrainz
                 // still matches).
                 const match = pickReleaseGroupForAlbum(results, { artist: artistName, title: albumTitle });
+                if (!match) {
+                  if (await openFromCatalogs()) break;
+                  showToast(`Album not found: ${albumTitle}`, 'error');
+                  setLoadingRelease(false);
+                  break;
+                }
 
                 fetchReleaseData({
                   id: match.id,
@@ -22412,6 +22418,13 @@ ${trackListXml}
       }
 
       const match = pickReleaseGroupForAlbum(pool, { artist: album.artist, title: album.title });
+      // Every result lacked an id (never in practice): same as no result.
+      if (!match) {
+        if (await openFromCatalogs()) return;
+        showToast('Album not found', 'error');
+        setLoadingRelease(false);
+        return;
+      }
 
       releaseGroupPicksRef.current.set(album.artist, album.title, match);
       // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)

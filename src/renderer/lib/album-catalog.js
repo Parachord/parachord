@@ -93,8 +93,10 @@ function creditMatches(want, got) {
 }
 
 // Whether a catalog album is the one that was asked for: the title matches
-// (edition suffixes aside) and so does the artist (one of a joint credit is
-// enough). Returns 0 for no match, else a score where higher is closer.
+// (edition suffixes aside) and so does the artist (creditMatches: one artist
+// of a joint credit when the other side is a single name, the same names when
+// both sides are joint). Returns 0 for no match, else a score where higher is
+// closer.
 function albumMatchScore(target, album) {
   if (!target || !album) return 0;
   const wantTitle = normalizeAlbumTitle(target.title);
@@ -173,14 +175,14 @@ function isStudioReleaseGroup(group) {
 // the album's own title, and with a joint credit written differently by the
 // source (see creditMatches) the artist never matched either: the album page
 // opened the first studio album in the list, whatever it was. The title and
-// artist decide first (albumMatchScore: a joint credit on either side is
-// enough, store edition suffixes aside), and only among results for that album
-// does a studio album win over a live or compilation edition of it. With no
-// result matching, the closest title comes next (MusicBrainz often spells an
-// album's title out — "Back to the Beginning: The Final Show, Live from Villa
-// Park" for the album a source calls "Back to the Beginning" — and without
-// this a studio album of another name still won), then the artist's own
-// releases (studio first), then what MusicBrainz ranked first.
+// artist decide first (albumMatchScore: creditMatches for the artist, store
+// edition suffixes aside), and only among results for that album does a
+// studio album win over a live or compilation edition of it. With no result
+// matching, the closest title comes next (MusicBrainz often spells an album's
+// title out — "Back to the Beginning: The Final Show, Live from Villa Park"
+// for the album a source calls "Back to the Beginning" — and without this a
+// studio album of another name still won), then the artist's own releases
+// (studio first), then what MusicBrainz ranked first.
 //
 // `title` may be omitted by a caller that only knows the artist (the album-card
 // actions' release-group search): then only the artist decides.
@@ -190,13 +192,16 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   const wantTitle = normalizeAlbumTitle(title);
   // How close a result's title is, beyond albumMatchScore's gate: the whole
   // title, most of it, or the asked-for title as a prefix of MusicBrainz's
-  // longer spelling.
+  // longer spelling. A prefix only counts from 12 letters on, so a short title
+  // missing from the results ("Go") does not hand the artist's "Goodbye" the
+  // win.
   const titleCloseness = (r) => {
     const got = normalizeAlbumTitle(r.title);
     if (!wantTitle || !got) return 0;
     if (wantTitle === got) return 3;
     if (closeEnough(wantTitle, got, 0.6)) return 2;
-    return got.startsWith(wantTitle) || wantTitle.startsWith(got) ? 1 : 0;
+    const prefix = got.startsWith(wantTitle) || wantTitle.startsWith(got);
+    return prefix && Math.min(wantTitle.length, got.length) >= 12 ? 1 : 0;
   };
   const scored = list.map((r, index) => ({
     r, index,
@@ -357,7 +362,6 @@ module.exports = {
   albumMatchScore,
   creditMatches,
   releaseGroupCredit,
-  isStudioReleaseGroup,
   pickReleaseGroupForAlbum,
   sameAlbumIdentity,
   pickCatalogAlbum,
