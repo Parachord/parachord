@@ -18,8 +18,19 @@
 //     its real cover;
 //   - no cover found: the artist's image, one try per artist.
 // Second pass: more artist images, for artists not used or tried yet.
+//
+// At most MAX_ALBUM_LOOKUPS (12) getAlbumArt calls per playlist (#1582): a
+// long mix whose tracks have no covers made one per distinct album, each
+// able to queue a MusicBrainz request behind the 1 req/s limiter that search
+// shares. Past the cap a track's album isn't looked up, so it falls back to
+// its artist's image like any other miss, and the covers found so far stay.
+// A track's own cover is never a lookup and never counts. Mobile's
+// lookupPlaylistCovers uses the same 12.
 
-async function pickPlaylistCovers(tracks, { getAlbumArt, getArtistImage, max = 4 } = {}) {
+const MAX_ALBUM_LOOKUPS = 12;
+
+async function pickPlaylistCovers(tracks, { getAlbumArt, getArtistImage, max = 4, maxAlbumLookups = MAX_ALBUM_LOOKUPS } = {}) {
+  let albumLookups = 0;
   const seenAlbums = new Set(); // Albums we've already tried
   const seenCoverUrls = new Set(); // Cover URLs already in the grid
   const seenArtists = new Set(); // Artists we've successfully used for images
@@ -55,8 +66,9 @@ async function pickPlaylistCovers(tracks, { getAlbumArt, getArtistImage, max = 4
           covers.push(track.albumArt);
           seenArtists.add(track.artist.toLowerCase()); // Mark artist as used
           foundCover = true;
-        } else if (!track.albumArt) {
-          // Try to fetch album art
+        } else if (!track.albumArt && albumLookups < maxAlbumLookups) {
+          // Try to fetch album art (capped per playlist, #1582)
+          albumLookups += 1;
           const artUrl = await getAlbumArt(track.artist, track.album);
           if (artUrl && !seenCoverUrls.has(artUrl)) {
             seenCoverUrls.add(artUrl);
@@ -94,4 +106,4 @@ async function pickPlaylistCovers(tracks, { getAlbumArt, getArtistImage, max = 4
   return covers;
 }
 
-module.exports = { pickPlaylistCovers };
+module.exports = { pickPlaylistCovers, MAX_ALBUM_LOOKUPS };
