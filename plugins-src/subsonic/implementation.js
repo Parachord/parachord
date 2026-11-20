@@ -513,14 +513,22 @@ module.exports = {
         if (u.indexOf('2a96cbd8b46e442fc41c2b86b821562f') !== -1) return null;
         return u;
       };
+      // One API call. A failure THROWS, as search's do (#1358): the photo
+      // chain remembers "no photo" for 6 hours only when every step answered,
+      // so a server that's away or refusing must not read as a miss. Error 70
+      // ("data not found": getArtistInfo2 for an artist with no info) is an
+      // answer, and so is a missing server URL (null, no request).
       var call = async function (endpoint, extra) {
         var url = h.apiUrl(config, endpoint, 'f=json&' + extra);
         if (!url) return null;
         var resp = await fetch(url);
-        if (!resp.ok) return null;
+        if (!resp.ok) throw new Error('Subsonic artist image failed: HTTP ' + resp.status);
         var data = await resp.json();
         var sub = data && data['subsonic-response'];
-        return sub && sub.status === 'ok' ? sub : null;
+        if (sub && sub.status === 'ok') return sub;
+        if (sub && sub.error && sub.error.code === 70) return null;
+        var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'not a Subsonic response';
+        throw new Error('Subsonic artist image failed: ' + apiErr);
       };
       var found = await call(
         'search3',
@@ -543,7 +551,7 @@ module.exports = {
       return (ai && (clean(ai.largeImageUrl) || clean(ai.mediumImageUrl))) || null;
     } catch (error) {
       console.error('Subsonic artist image error:', error);
-      return null;
+      throw error;
     }
   },
   // An album's tracks (getAlbum), for a "subsonic:album:<id>" url from
