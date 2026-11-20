@@ -69,7 +69,7 @@ Only if all three fail does `provider.createPlaylist` actually create a new remo
 
 Five tier-1 + tier-2 fixes addressing the 120% CPU spike + pinwheel users used to see on every background sync. Each is independent but mutually-reinforcing — touch any of the related code paths with awareness of the others.
 
-- **Skip-unchanged playlists** (parachord#796). `sync-engine/index.js` exposes `canShortCircuitPlaylistUpdate({localPlaylist, remotePlaylist, providerId})` — pure predicate returning true when an inbound playlist update can skip the spread-rewrite work (snapshotIds match AND no metadata backfill pending AND owner/collaborator state stable). Called inside `sync:start`'s inbound playlist loop in main.js. Don't bypass without good reason — the savings compound with #800 staggering.
+- **Skip-unchanged playlists** (parachord#796). `sync-engine/index.js` exposes `canShortCircuitPlaylistUpdate({localPlaylist, remotePlaylist, providerId})` — pure predicate returning true when an inbound playlist update can skip the spread-rewrite work (snapshotIds match AND no metadata backfill pending AND owner/collaborator state stable). Called by `planPlaylistCycle` (`sync-engine/playlist-cycle.js`) for every selected playlist before the #800 batch is chosen, and again inside `sync:start`'s per-playlist loop (`main-process/ipc/sync-start.js`). Don't bypass without good reason: it's what lets every snapshot be compared every cycle.
 
 - **Resolver concurrency cap** (parachord#797). `resolver-limiter.js` (loaded via index.html `<script>` before app.js) exposes `createLimiter()` factory + `window.globalResolverLimiter` (concurrency 4, minGap 100ms, cooldown on consecutive throttle errors). Each non-AM/Spotify/localfiles resolver's `.search` method is wrapped via `window.wrapResolverSearchesWithLimiter` at load time — including in the marketplace hot-add paths in app.js. Any new content resolver registered through `loadResolver` inherits the limiter automatically. Don't bypass for new resolvers without considering the renderer's shared socket pool + JSON-parse + match-validation budget. Skip set is `{applemusic, spotify, localfiles}`: AM has its own dedicated limiter, Spotify has a per-token budget, localfiles is in-process.
 
@@ -124,16 +124,21 @@ The handlers use `window.electron.app.onBackground` / `onForeground` (preload br
 
 ### Staggered playlist sync per cycle (parachord#800)
 
-`sync:start`'s inbound playlist loop processes the **top N oldest-stale playlists** per cycle rather than every selected playlist. With 50 selected × 15-min cadence × batch=15, the whole selection rolls through in ~2.5h worst-case. Most users don't notice; cross-platform power-users get a manual escape via "Sync Now."
+**Every selected playlist's snapshot is compared on every cycle; the batch caps only the playlists that need work** (`planPlaylistCycle`, `sync-engine/playlist-cycle.js`). The provider's playlist list, fetched in full each cycle, carries each playlist's snapshot, so an unchanged playlist (`canShortCircuitPlaylistUpdate`) costs a string compare: it's marked checked (`syncSources[provider].syncedAt`) with its `[Sync] … short-circuit (snap matched, no work)` line, and nothing is fetched. The rest go through the full per-playlist branch, at most 15 a cycle:
 
-`staggerPlaylistsForCycle` (sync-engine/index.js) is the pure sort+slice helper. Sort order:
+1. first the playlists whose **source snapshot moved** and that aren't already flagged (`hasUpdates`), longest unchecked first: the auto-pulls;
+2. then everything else in the stagger's order below (new imports, cross-provider mirrors, flagged conflicts and hosted playlists, empty refills).
+
+Until 2026-11-20 the stagger chose which 15 to compare at all. With 177 selected a full round took ~8 hours, and Daily Brew's 5:18 am rebuild wasn't noticed until a manual Sync Now at 11:07, though every cycle's list had shown the new snapshot. The pass reads `local_playlists` once (it's a large file the store parses on every `get`, so the loop's per-playlist re-read would cost a parse per selected playlist); that fresh copy picks up a renderer write made while the list was fetched, as the loop's re-read does.
+
+`staggerPlaylistsForCycle` (sync-engine/index.js) is the pure sort+slice helper that orders each group. Sort order:
 
 1. `syncSources[providerId].syncedAt` ascending — oldest-stale first. Playlists with no local entry sort to top (first-time imports run on the first cycle after wizard selection).
 2. `lastModified` descending — breaks ties; recent local edits get sync priority over dormant playlists.
 
 **`hasUpdates: true` is NOT a sort priority** (parachord#835). Earlier the sort put hasUpdates-true playlists first on the reasoning that the user is "waiting on a pending pull" — but hasUpdates is a state flag, not an action signal. Once set, the banner is already visible in the UI and re-running sync on the playlist doesn't change anything (the inbound diff just re-confirms what we already know; `stillHasUpdates` keeps the local snapshotId pinned to the pre-detection value until the user settles the conflict). Since auto-pull, `hasUpdates` only stays set on a conflict or a hosted XSPF, but the rule stands. When N playlists accumulate hasUpdates=true (easy with daily/weekly algorithmic playlists the user hasn't acted on), they monopolize every batch and the syncedAt-asc tail starves — discovery of NEW pending updates (e.g. Daily Brew rotating from yesterday's content to today's) never happens. Pure syncedAt-asc keeps discovery on its target ~2.5h-worst-case cadence regardless of how many hasUpdates banners are outstanding.
 
-**Full-sync bypass** via `options.fullSync = true` on the `sync:start` IPC. All renderer-side user-initiated sync paths pass it: wizard "Sync Now" (post-config + post-syncing-complete), Spotify/AM re-auth catch-up triggers. `runBackgroundSync` does NOT pass it — that's the cadenced path the stagger targets.
+**Full-sync bypass** via `options.fullSync = true` on the `sync:start` IPC: every playlist that needs work is processed in one run (unchanged ones are still only marked checked). All renderer-side user-initiated sync paths pass it: wizard "Sync Now" (post-config + post-syncing-complete), Spotify/AM re-auth catch-up triggers. `runBackgroundSync` does NOT pass it — that's the cadenced path the stagger targets.
 
 The clearing pass for "remote playlist no longer exists" still runs against the FULL fetched `remotePlaylists` (not the staggered subset), so deleted-on-remote detection is unaffected by which subset we iterate.
 
