@@ -529,6 +529,13 @@ const DEFAULT_STAGGER_BATCH_SIZE = 15;
  * to "today's content") never happens because Daily Brew sits at
  * position N+1 forever. See parachord#835.
  *
+ * Since 2026-11-20 it orders only playlists that need the full branch:
+ * planPlaylistCycle (sync-engine/playlist-cycle.js) compares every
+ * selected playlist's snapshot first, marks the unchanged ones checked,
+ * and calls this for the rest (source-changed imports as their own group,
+ * ahead of the others). Comparing only the batch let a daily playlist's
+ * rebuild wait hours with 177 selected.
+ *
  * Caller is expected to bypass staggering entirely for explicit
  * full-sync paths (wizard "Sync Now", cleanup-duplicates, etc.) by
  * NOT calling this helper for those flows.

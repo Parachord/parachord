@@ -27,6 +27,7 @@ const { detachMissingSources } = require('../../sync-engine/missing-sources');
 const { keepDroppedLinks } = require('../../sync-engine/playlist-save-guard');
 const { remoteUpdateAction, hasRealLocalEdits, applyPulledTracks, keepEditsMadeDuringPull, tracksFingerprint, seedTracksFingerprint } = require('../../sync-engine/auto-pull');
 const { stableCreatedAt } = require('../../sync-engine/created-at');
+const { planPlaylistCycle } = require('../../sync-engine/playlist-cycle');
 
 function registerSyncStartIpc({
   ipcMain,
@@ -387,39 +388,6 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         return (settings.selectedPlaylistIds || []).includes(p.externalId);
       });
 
-      // Stagger across cycles (parachord#800). Background sync processes
-      // the top N oldest-stale-first per cycle; over 4-5 cycles the whole
-      // selection gets covered. Explicit full-sync paths (wizard "Sync
-      // Now", cleanup-duplicates, etc.) bypass via `options.fullSync` so
-      // they still see every selected playlist in one run.
-      //
-      // The sort is provider-scoped (`syncSources[providerId].syncedAt`),
-      // so each provider's stagger queue is independent — a Spotify-stale
-      // playlist gets priority on Spotify's next cycle without competing
-      // with AM's separate queue.
-      const selectedRemote = options.fullSync
-        ? allSelectedRemote
-        : SyncEngine.staggerPlaylistsForCycle({
-            selectedRemote: allSelectedRemote,
-            localPlaylists: currentPlaylists,
-            providerId
-          });
-      if (!options.fullSync && selectedRemote.length < allSelectedRemote.length) {
-        console.log(`[Sync] Staggered ${providerId}: processing ${selectedRemote.length}/${allSelectedRemote.length} oldest-stale this cycle (remainder defers to next cycle)`);
-      }
-
-      let playlistsAdded = 0;
-      let playlistsUpdated = 0;
-      let playlistsFailed = 0;
-      // Playlists this sync pulled, with what the pull read
-      // ({ lastModified, tracksFingerprint }). A save between the pull and
-      // the final write is kept if it changed the tracks, and otherwise
-      // takes the pull on top (keepEditsMadeDuringPull, sync-engine/auto-pull.js).
-      const pullBases = new Map();
-      const keepEditsSinceRead = (list, latestById) => list.map((p) => (pullBases.has(p.id)
-        ? keepEditsMadeDuringPull(p, latestById.get(p.id), pullBases.get(p.id))
-        : p));
-
       // Durable link map (sync_playlist_links), loaded once for the import match
       // below. A local playlist that mirrors OUT to this provider (e.g. a followed
       // Spotify playlist auto-mirrored to its owned LB copy, parachord#937) has its
@@ -433,6 +401,79 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         const ext = byProvider && byProvider[providerId] && byProvider[providerId].externalId;
         if (ext) importLinkByExternalId.set(ext, localId);
       }
+
+      // The local playlist a remote one belongs to: imported FROM this provider
+      // (syncedFrom), pushed TO it (syncedTo), an older playlist by its id
+      // pattern, or a mirror the create gateway linked (#937).
+      const findLocalFor = (remotePlaylist, list) => {
+        const linkedLocalId = importLinkByExternalId.get(remotePlaylist.externalId);
+        return list.find(p =>
+          p.syncedFrom?.externalId === remotePlaylist.externalId ||
+          p.syncedTo?.[providerId]?.externalId === remotePlaylist.externalId ||
+          p.id === remotePlaylist.id ||
+          p.id === `${providerId}-${remotePlaylist.externalId}` ||
+          (linkedLocalId && p.id === linkedLocalId)
+        );
+      };
+
+      // Every selected playlist's snapshot is compared on every cycle, and only
+      // the ones that need work are staggered (sync-engine/playlist-cycle.js).
+      // The snapshots come with the playlist list fetched above, so an
+      // unchanged playlist costs a compare and is marked checked here; the
+      // batch (parachord#800) caps only the full per-playlist branch, which
+      // takes first the playlists whose source changed. Before, the stagger
+      // picked 15 to compare at all, and with 177 selected a daily playlist's
+      // rebuild waited hours to be noticed (Daily Brew, 2026-11-20). Explicit
+      // full syncs (wizard "Sync Now", cleanup-duplicates) still process every
+      // playlist that needs work.
+      //
+      // One read of local_playlists for the whole pass: it's a large file that
+      // the store parses on every get, so the per-playlist re-read the loop
+      // does for its batch would cost a parse per selected playlist here. The
+      // fresh copy picks up a renderer write made while the list was fetched,
+      // as that re-read does.
+      const freshById = new Map((store.get('local_playlists') || []).map(p => [p.id, p]));
+      const plan = planPlaylistCycle({
+        selectedRemote: allSelectedRemote,
+        localFor: (remotePlaylist) => {
+          const local = findLocalFor(remotePlaylist, currentPlaylists);
+          return local ? (freshById.get(local.id) || local) : undefined;
+        },
+        localPlaylists: currentPlaylists,
+        providerId,
+        fullSync: !!options.fullSync,
+        canShortCircuit: SyncEngine.canShortCircuitPlaylistUpdate,
+        stagger: SyncEngine.staggerPlaylistsForCycle,
+      });
+      const checkedAt = Date.now();
+      for (const { remote, playlist } of plan.unchanged) {
+        const idx = currentPlaylists.findIndex(p => p.id === playlist.id);
+        if (idx < 0) continue;
+        currentPlaylists[idx] = {
+          ...playlist,
+          syncSources: {
+            ...playlist.syncSources,
+            [providerId]: { ...playlist.syncSources?.[providerId], syncedAt: checkedAt }
+          }
+        };
+        // parachord#822: "visited, snapshot matched" stays visible in [Sync] traces.
+        const snap = (remote.snapshotId || '').slice(0, 12);
+        console.log(`[Sync] ${providerId} "${remote.name || playlist.title || remote.id}": short-circuit (snap matched, no work) local=${snap} remote=${snap}`);
+      }
+      const selectedRemote = plan.toProcess;
+      console.log(`[Sync] ${providerId} playlists: ${plan.unchanged.length}/${allSelectedRemote.length} unchanged, ${selectedRemote.length} to check this cycle${plan.waiting > 0 ? `, ${plan.waiting} deferred to the next` : ''}`);
+
+      let playlistsAdded = 0;
+      let playlistsUpdated = 0;
+      let playlistsFailed = 0;
+      // Playlists this sync pulled, with what the pull read
+      // ({ lastModified, tracksFingerprint }). A save between the pull and
+      // the final write is kept if it changed the tracks, and otherwise
+      // takes the pull on top (keepEditsMadeDuringPull, sync-engine/auto-pull.js).
+      const pullBases = new Map();
+      const keepEditsSinceRead = (list, latestById) => list.map((p) => (pullBases.has(p.id)
+        ? keepEditsMadeDuringPull(p, latestById.get(p.id), pullBases.get(p.id))
+        : p));
 
       for (let i = 0; i < selectedRemote.length; i++) {
         // Per-iteration cancellation check (parachord#799). Save partial
@@ -455,16 +496,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
           // Check for existing playlist by syncedFrom.externalId, syncedTo externalId, or matching ID pattern
           // This handles: playlists imported FROM this provider, playlists pushed TO this provider,
           // and older playlists that may have been synced before the syncedFrom/syncedTo structure
-          const linkedLocalId = importLinkByExternalId.get(remotePlaylist.externalId);
-          const localPlaylist = currentPlaylists.find(p =>
-            p.syncedFrom?.externalId === remotePlaylist.externalId ||
-            p.syncedTo?.[providerId]?.externalId === remotePlaylist.externalId ||
-            p.id === remotePlaylist.id ||
-            p.id === `${providerId}-${remotePlaylist.externalId}` ||
-            // Durable link map — this remote is already a mirror of an existing
-            // local playlist; match it instead of creating a separate one (#937).
-            (linkedLocalId && p.id === linkedLocalId)
-          );
+          const localPlaylist = findLocalFor(remotePlaylist, currentPlaylists);
 
           if (!localPlaylist) {
             // New playlist - fetch tracks and add

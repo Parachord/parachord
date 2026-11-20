@@ -13,11 +13,12 @@ const { registerSyncStartIpc } = require('../../main-process/ipc/sync-start');
 
 const SPOTIFY_SCOPES = ['user-library-read', 'user-follow-read', 'playlist-read-private'];
 
-function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', generatedToken = 'AM-DEV', SyncEngineSyncGate = null, syncLinks = () => ({}), shortCircuit = () => true } = {}) {
+function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', generatedToken = 'AM-DEV', SyncEngineSyncGate = null, syncLinks = () => ({}), shortCircuit = () => true, stagger = ({ selectedRemote }) => selectedRemote } = {}) {
   const store = {
     data: { ...storeData },
     // A copy, like electron-store (conf parses the file on every get).
-    get(k) { return this.data[k] === undefined ? undefined : structuredClone(this.data[k]); },
+    reads: {},
+    get(k) { this.reads[k] = (this.reads[k] || 0) + 1; return this.data[k] === undefined ? undefined : structuredClone(this.data[k]); },
     set(k, v) { this.data[k] = v; },
   };
   const handlers = new Map();
@@ -39,7 +40,7 @@ function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', g
   const SyncEngine = {
     getProvider: () => providerObj,
     getAllProviders: () => (providerObj ? [providerObj] : []),
-    staggerPlaylistsForCycle: ({ selectedRemote }) => selectedRemote,
+    staggerPlaylistsForCycle: stagger,
     canShortCircuitPlaylistUpdate: shortCircuit,
     syncDataType: async (...args) => {
       calls.syncDataType.push(args);
@@ -326,9 +327,10 @@ describe('sync:start pulls a changed import without asking', () => {
   });
   const remote = (externalId) => ({ id: `listenbrainz-${externalId}`, externalId, name: externalId, snapshotId: 'snap-2', trackCount: NEW.length });
 
-  function run({ local, remotes, fetchPlaylistTracks }) {
+  function run({ local, remotes, fetchPlaylistTracks, stagger }) {
     const fetched = [];
     const harness = makeHarness({
+      ...(stagger ? { stagger } : {}),
       shortCircuit: ({ localPlaylist, remotePlaylist }) => localPlaylist.syncedFrom?.snapshotId === remotePlaylist.snapshotId,
       provider: {
         fetchPlaylists: async () => ({ playlists: remotes }),
@@ -365,6 +367,28 @@ describe('sync:start pulls a changed import without asking', () => {
     });
     expect(saved('listenbrainz-abc').tracks.map((t) => t.title)).toEqual(['New 1', 'Kept']);
     expect(saved('listenbrainz-abc').createdAt).toBe(JUNE);
+  });
+
+  test('a background cycle checks every snapshot: a rebuilt playlist is pulled though 20 others were waiting longer', async () => {
+    const unchanged = Array.from({ length: 20 }, (_, i) => imported(`same${i}`, {
+      syncedFrom: { resolver: 'listenbrainz', externalId: `same${i}`, snapshotId: 'snap-2' },
+      syncSources: { listenbrainz: { syncedAt: 100 + i } },
+    }));
+    const daily = imported('daily', { syncSources: { listenbrainz: { syncedAt: 999999 } } });
+    const { harness, fetched, saved } = await run({
+      local: [...unchanged, daily],
+      remotes: [...unchanged.map((p) => remote(p.syncedFrom.externalId)), remote('daily')],
+      // The real batching (15 a cycle, longest unchecked first), under which
+      // the 20 others would have taken the whole batch before.
+      stagger: require('../../sync-engine').staggerPlaylistsForCycle,
+    });
+    expect(fetched).toEqual(['daily']);
+    expect(saved('listenbrainz-daily').tracks).toEqual(NEW);
+    for (let i = 0; i < 20; i++) {
+      expect(saved(`listenbrainz-same${i}`).syncSources.listenbrainz.syncedAt).toBeGreaterThan(1000);
+      expect(saved(`listenbrainz-same${i}`).tracks).toEqual(OLD);
+    }
+    expect(harness.store.reads.local_playlists).toBeLessThan(10);
   });
 
   test('a playlist stuck with the old update flag is pulled on the next sync', async () => {
