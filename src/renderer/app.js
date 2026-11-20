@@ -597,6 +597,7 @@ const { transition } = require('./lib/motion');
 const { describeProviderError } = require('./lib/ai-provider-errors');
 const { CARD_INLINE_REGEX, wholeLineCard } = require('./lib/chat-card-syntax');
 const { chatLinkTarget } = require('./lib/chat-links');
+const { pickPlaylistCovers } = require('./lib/playlist-cover-picks');
 const { sourceFromUrlHint } = require('./lib/source-url-hint');
 const { isPlayableSource } = require('./lib/playable-source');
 const { CardButton } = require('./components/card-button');
@@ -32332,83 +32333,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // If cache has fewer than 4 covers, always try to get more - artist images may be
     // available from artistImageCache even if Spotify isn't currently connected
 
-    // Collect unique covers from tracks. Two uniqueness dimensions: the album
-    // (a distinct album deserves its own tile) and the cover URL (four
-    // tracks from four albums sharing one image — a playlist cover stamped on
-    // every track, or one art URL serving several album names — must not tile
-    // the same image four times).
-    const seenAlbums = new Set(); // Albums we've already tried
-    const seenCoverUrls = new Set(); // Cover URLs already in the grid
-    const seenArtists = new Set(); // Artists we've successfully used for images
-    const triedArtists = new Set(); // Artists we've attempted (including failures)
-    const covers = [];
-
-    // First pass: try album art, then artist image as fallback
-    for (const track of tracks) {
-      if (covers.length >= 4) break;
-
-      let foundCover = false;
-
-      // First try album art if we have album info
-      if (track.album && track.artist) {
-        const albumKey = `${track.artist}-${track.album}`.toLowerCase();
-        if (!seenAlbums.has(albumKey)) {
-          seenAlbums.add(albumKey);
-
-          // If track already has albumArt, use it
-          if (track.albumArt && !seenCoverUrls.has(track.albumArt)) {
-            seenCoverUrls.add(track.albumArt);
-            covers.push(track.albumArt);
-            seenArtists.add(track.artist.toLowerCase()); // Mark artist as used
-            foundCover = true;
-          } else if (!track.albumArt) {
-            // Try to fetch album art
-            const artUrl = await getAlbumArt(track.artist, track.album);
-            if (artUrl && !seenCoverUrls.has(artUrl)) {
-              seenCoverUrls.add(artUrl);
-              covers.push(artUrl);
-              seenArtists.add(track.artist.toLowerCase()); // Mark artist as used
-              foundCover = true;
-            }
-          }
-        }
-      }
-
-      // Fall back to artist image if no album art found for this track
-      if (!foundCover && track.artist) {
-        const artistKey = track.artist.toLowerCase();
-        if (!seenArtists.has(artistKey) && !triedArtists.has(artistKey)) {
-          triedArtists.add(artistKey);
-
-          const artistResult = await getArtistImage(track.artist);
-          if (artistResult?.url && !seenCoverUrls.has(artistResult.url)) {
-            seenCoverUrls.add(artistResult.url);
-            covers.push(artistResult.url);
-            seenArtists.add(artistKey);
-          }
-        }
-      }
-    }
-
-    // Second pass: if we still don't have 4 covers, try more artist images
-    if (covers.length < 4) {
-      for (const track of tracks) {
-        if (covers.length >= 4) break;
-        if (!track.artist) continue;
-
-        const artistKey = track.artist.toLowerCase();
-        // Skip if we already have art from this artist or already tried and failed
-        if (seenArtists.has(artistKey) || triedArtists.has(artistKey)) continue;
-
-        triedArtists.add(artistKey);
-        const artistResult = await getArtistImage(track.artist);
-        if (artistResult?.url && !seenCoverUrls.has(artistResult.url)) {
-          seenCoverUrls.add(artistResult.url);
-          covers.push(artistResult.url);
-          seenArtists.add(artistKey);
-        }
-      }
-    }
+    // Up to four covers from the tracks (lib/playlist-cover-picks.js).
+    const covers = await pickPlaylistCovers(tracks, { getAlbumArt, getArtistImage });
 
     // Cache the result
     if (covers.length > 0) {

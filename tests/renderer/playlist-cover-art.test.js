@@ -83,7 +83,11 @@ describe('opening a recommended playlist keeps the card\'s cover', () => {
   });
 
   test('getPlaylistCovers never tiles one URL four times', () => {
-    const covers = sliceFrom(app, 'const getPlaylistCovers = async (playlistId, tracks) => {', 'const fetchPlaylistCovers = async');
+    // The picking moved to lib/playlist-cover-picks.js (#1578), where
+    // tests/renderer/playlist-cover-picks.test.js runs it; getPlaylistCovers calls it.
+    expect(sliceFrom(app, 'const getPlaylistCovers = async (playlistId, tracks) => {', 'const fetchPlaylistCovers = async'))
+      .toContain('await pickPlaylistCovers(tracks, { getAlbumArt, getArtistImage })');
+    const covers = read('src/renderer/lib/playlist-cover-picks.js');
     expect(covers).toContain('const seenCoverUrls = new Set()');
     expect(covers).toContain('!seenCoverUrls.has(track.albumArt)');
     expect(covers).toContain('!seenCoverUrls.has(artUrl)');
