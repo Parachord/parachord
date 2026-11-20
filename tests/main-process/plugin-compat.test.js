@@ -16,7 +16,8 @@ const {
   validateMinAppVersion,
   pluginRequiredHostBridges,
   hostBridgesCompatibility,
-  validateRequires
+  validateRequires,
+  pluginOptionalHostBridges
 } = require('../../main-process/plugin-compat');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -273,5 +274,30 @@ describe('host-bridge enforcement wiring (#1355)', () => {
     // The teardown deleted the host-side module and its last IPC channel.
     expect(require('fs').existsSync(path.join(ROOT, 'amazon-web-player.js'))).toBe(false);
     expect(main).not.toContain("ipcMain.handle('amazonmusic-debug-capture-gql'");
+  });
+});
+
+describe('optional host bridges (the plug-in host contract, #1561)', () => {
+  test('pluginOptionalHostBridges reads requires.optionalHostBridges; absent or malformed is none', () => {
+    expect(pluginOptionalHostBridges({ requires: { optionalHostBridges: ['widevine'] } })).toEqual(['widevine']);
+    expect(pluginOptionalHostBridges({ requires: { hostBridges: ['webSession'] } })).toBeNull();
+    expect(pluginOptionalHostBridges({ requires: { optionalHostBridges: 'widevine' } })).toBeNull();
+    expect(pluginOptionalHostBridges({})).toBeNull();
+  });
+
+  test('a missing optional bridge never hides a plugin', () => {
+    const axe = { requires: { hostBridges: ['webSession'], optionalHostBridges: ['widevine'] } };
+    expect(hostBridgesCompatibility(axe, ['webSession'])).toEqual({ ok: true });
+  });
+
+  test('validateRequires checks the optional list like the required one', () => {
+    expect(validateRequires({ optionalHostBridges: ['widevine'] })).toEqual([]);
+    expect(validateRequires({ optionalHostBridges: 'widevine' })).toHaveLength(1);
+    expect(validateRequires({ optionalHostBridges: [''] })).toHaveLength(1);
+  });
+
+  test('a bridge is required or optional, not both', () => {
+    const problems = validateRequires({ hostBridges: ['webSession'], optionalHostBridges: ['webSession'] });
+    expect(problems).toEqual([expect.stringContaining('both')]);
   });
 });

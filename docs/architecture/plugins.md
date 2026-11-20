@@ -155,7 +155,7 @@ Each host advertises what it supplies — desktop's `preload.js` sets `window.__
 
 ### The plug-in host contract (`this.host`, #1561)
 
-**Status: agreed, not built yet.** The contract below was settled in #1561 with the Android side. No desktop loader builds `this.host` yet, and shipped plug-ins still reach the host through the globals in the migration table below. The first PR builds the object and moves the `webSession` bridge, so Amazon Music can run on the phones (Parachord/parachord-mobile#663). This section is the spec every host's loader builds to: desktop's `resolver-loader.js`, and the Android and iOS plug-in managers.
+**Status: built on desktop; the migration has started.** The contract below was settled in #1561 with the Android side. Desktop's loader builds `this.host` for every plug-in (`ResolverLoader.buildPluginHost` in `resolver-loader.js`, from the supplier in `src/renderer/lib/plugin-host-supplier.js`). Amazon Music is the first plug-in on it: its `webSession` and `widevine` bridges and the app version come from `this.host`, so it can run on the phones (Parachord/parachord-mobile#663). The other plug-ins still reach the host through the globals in the migration table below. This section is the spec every host's loader builds to: desktop's `resolver-loader.js`, and the Android and iOS plug-in managers.
 
 **The rule: a plug-in reaches the host only through `this.host`.** Not through `window.electron.*`, not through an app object on `window` (`window.scrobbleManager`, `window.achordion`, …), not through an underscored global (`window.__parachordWidevine`). Web platform APIs aren't host APIs and stay as they are: `fetch`, `crypto`, `URL`, `AbortController`, timers. Why injection and not one global (the comparison is on #1561):
 - **Scoped to the manifest.** A plug-in sees only the bridges it declares, so the declaration is the permission, not a note. These are marketplace plug-ins: one shouldn't see another service's signed-in session.
@@ -165,7 +165,9 @@ Each host advertises what it supplies — desktop's `preload.js` sets `window.__
 
 #### What `this.host` holds
 
-The loader sets `this.host` on each resolver instance before `init` runs and keeps it for the instance's lifetime. A hot reload gets a new instance and a new object. The object is frozen, so a plug-in can't add to it or swap out a bridge.
+The loader sets `this.host` on each resolver instance before `init` runs and keeps it for the instance's lifetime. A hot reload gets a new instance and a new object. The object is frozen, so a plug-in can't add to it or swap out a bridge. Bridges are read through getters, so a bridge the host sets up after plug-ins load (desktop's shared Widevine player) is still the live object. A loader built without a supplier (a test, an older call site) sets `this.host` to `null`, and the plug-in takes its older-app path.
+
+**Where desktop's bridges come from** (`desktopPluginHostSupplier`): the preload's, listed in `window.__parachordHostBridges` (the hide rule's list) and read from `window.electron.<name>`; and the renderer's own, today only `widevine` (`window.__parachordWidevine`, set by `hooks/use-playback-engine.js`). A renderer bridge isn't in the advertised list, so it can be declared only as optional until the hide rule reads the renderer's list too.
 
 **The core, on every host, for every plug-in:**
 
@@ -174,7 +176,7 @@ The loader sets `this.host` on each resolver instance before `init` runs and kee
 | `appVersion()` | The app's version string (`0.9.14`, or the phone app's own). Amazon Music sends it in its music-agent string. |
 | `platform` | `'desktop'`, `'android'` or `'ios'`, the same keys `minAppVersion` uses. |
 | `getConfig()` | A promise of the plug-in's saved settings, read fresh on each call, so a switch or a password changed in Settings applies without a reload. It's what playback telemetry's `init(config, host)` already passes. |
-| `openExternal(url)` | Opens an `https` link in the user's browser: a sign-in page, a buy link, a service's own page. It replaces `window.electron.shell.openExternal` and `window.open`. |
+| `openExternal(url)` | Opens an `https` link in the user's browser: a sign-in page, a buy link, a service's own page. Anything else rejects. It replaces `window.electron.shell.openExternal` and `window.open`. |
 
 **Bridges, one key per declared name.** Each name in the manifest's `requires.hostBridges` is a key on `this.host` with that exact name: `"requires": { "hostBridges": ["webSession"] }` gives `this.host.webSession`. A bridge a plug-in didn't declare is absent, even when the host has it. Two kinds:
 - **Required** (`requires.hostBridges`): the plug-in can't work without it. A host that lacks one hides the plug-in (the rule above), so a required bridge is always present when the plug-in runs.
@@ -191,19 +193,20 @@ Each bridge's methods and their semantics are documented with the bridge, not he
 An app whose loader predates the contract sets no `this.host`. Until `minAppVersion` floors make those apps rare (the same rule as `_lib`'s `requireLib`), a plug-in reads bridges through one accessor entry, so the fallback lives in one place:
 
 ```js
-// implementation.js: the one place a plug-in reaches the host
+// implementation.js: the one place a plug-in reaches the host (Amazon Music's)
 hostBridge: function (name) {
-  if (this.host) return this.host[name] || null;          // a host with the contract
-  var legacy = typeof window !== 'undefined' && window.electron;
-  return (legacy && legacy[name]) || null;                  // an older desktop build
+  if (this.host) return this.host[name] || null;                    // a host with the contract
+  if (typeof window === 'undefined') return null;
+  if (name === 'widevine') return window.__parachordWidevine || null; // an older desktop build
+  return (window.electron && window.electron[name]) || null;
 },
 search: async function (query, config) {
-  const webSession = this.hostBridge('webSession');
+  if (!this.hostBridge('webSession')) return [];
   // ...
 }
 ```
 
-The fallback reads `window.electron.<name>`, which matches the bridge name for `webSession`. A bridge whose old home was elsewhere (`window.__parachordWidevine`) names it in its own branch. The fallback goes once the plug-in's `minAppVersion` on every platform is at or past the first release that builds `this.host`. Until then a new host feature still needs a fallback, as "Minimum app version" says.
+The fallback reads `window.electron.<name>`, which matches the bridge name for `webSession`. A bridge whose old home was elsewhere (`window.__parachordWidevine`) names it in its own branch. With `this.host` set, the fallback is never read: a bridge missing from `this.host` is missing. The fallback goes once the plug-in's `minAppVersion` on every platform is at or past the first release that builds `this.host`. Until then a new host feature still needs a fallback, as "Minimum app version" says.
 
 #### Migrating what plug-ins reach today
 
@@ -211,10 +214,10 @@ Each row is its own PR. It names the bridge, implements it on desktop, moves the
 
 | Reached today | Becomes | Used by |
 |---|---|---|
-| `window.electron.webSession.*` (27 calls) | `webSession` bridge (first) | Amazon Music |
-| `window.electron.updater.getVersion` | `appVersion()` (core) | Amazon Music |
+| ~~`window.electron.webSession.*` (27 calls)~~ | `webSession` bridge: **done** (Amazon Music 1.21.4) | Amazon Music |
+| ~~`window.electron.updater.getVersion`~~ | `appVersion()` (core): **done**, the older-app fallback stays | Amazon Music |
 | `window.electron.shell.openExternal`, `window.open` | `openExternal(url)` (core) | Bandcamp, SoundCloud, YouTube, Plex |
-| `window.__parachordWidevine.stop` | `widevine` bridge, optional | Amazon Music |
+| ~~`window.__parachordWidevine.stop`~~ | `widevine` bridge, optional: **done** | Amazon Music |
 | `window.__parachordManageAmazonMusic`, `window.__parachordResolver` | the `webSession` sign-in flow, or a named bridge if that doesn't cover it | Amazon Music |
 | `window.electron.musicKit.*`, `window.getMusicKitWeb`, `window.appleMusic*` helpers, `window.iTunesRateLimiter`, `window.electron.config.get`, `window.electron.platform` | a `musicKit` bridge; `platform` (core) | Apple Music |
 | `window.electron.plex.fetch` | a `serverFetch` bridge (a fetch without the renderer's CORS and certificate limits, for a server on the local network), named for what it does so Subsonic and Jellyfin can share it | Plex |
@@ -230,10 +233,11 @@ A bridge is named for what it does, not for the service that needs it first, so 
 
 #### Enforcement
 
-On desktop, plug-ins aren't sandboxed ("Implementation functions" below), so nothing stops a plug-in from reading `window.electron` directly. The contract is held by tests, added with the first PR:
-- **A ratchet** over `plugins-src/`: the count of `window.electron.*`, app-object and underscored globals per plug-in starts at today's and can only fall, as `design-drift` does for the renderer. The `hostBridge` accessor's own fallback is the one exception.
-- **Declared means used, and used means declared.** Every `this.host.<name>` and `hostBridge('<name>')` in a plug-in is a core key or a name in its `requires`.
-- **A contract test per moved plug-in.** It's loaded twice: once with only `this.host` and no `window.electron` (a phone), and once with no `this.host` and only `window.electron` (an older desktop build). Its methods must work both ways.
+On desktop, plug-ins aren't sandboxed ("Implementation functions" below), so nothing stops a plug-in from reading `window.electron` directly. The contract is held by tests:
+- **A ratchet** over `plugins-src/` (`tests/plugins/host-contract.test.js`, baseline `tests/plugins/host-globals-baseline.json`): per plug-in, the count of host globals (`window.electron.*`, app objects, `window.__parachord*`) and of its own state on `window`. A rise fails; a fall fails until it's locked in with `UPDATE_HOST_GLOBALS_BASELINE=1 npx jest tests/plugins/host-contract.test.js` and the baseline committed. The `hostBridge` accessor's own fallback is the one exception.
+- **Declared means used, and used means declared** (the same file). Every `this.host.<name>` and `hostBridge('<name>')` in a plug-in is a core key or a name in its `requires`, and every name there is used.
+- **A contract test per moved plug-in.** It's loaded twice: once by the real loader with only `this.host` and no `window.electron` (a phone), and once with no `this.host` and only `window.electron` (an older desktop build). Its methods must work both ways. Amazon Music's is `tests/resolver/amazon-music-plugin-host-contract.test.js`.
+- **The loader's half:** `tests/resolver/resolver-loader-plugin-host.test.js` (only declared bridges, frozen, per plug-in `getConfig`, https-only `openExternal`, the reserved `host` key, `init`'s second argument); desktop's supplier in `tests/renderer/plugin-host-supplier.test.js`.
 
 ### How Updates Reach Users (No New Build Required)
 1. **Edit `plugins-src/<id>/implementation.js`** (or `manifest.json`) — and bump `manifest.version` in `plugins-src/<id>/manifest.json`

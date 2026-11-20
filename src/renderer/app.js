@@ -647,6 +647,7 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 // paths).
 const { hideAxesLackingHostBridges } = require('./lib/host-bridges-hide');
 const { initPlaybackTelemetry } = require('./lib/playback-telemetry');
+const { desktopPluginHostSupplier } = require('./lib/plugin-host-supplier');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates, localSearchRows,
@@ -8689,8 +8690,12 @@ const Parachord = () => {
         return;
       }
 
-      // Create resolver loader
-      resolverLoader.current = new ResolverLoader();
+      // Create resolver loader. Every plugin gets its own `this.host` from
+      // this supplier (the plug-in host contract, #1561): the core plus the
+      // bridges its manifest declares.
+      resolverLoader.current = new ResolverLoader({
+        host: desktopPluginHostSupplier(window, (id) => (getResolverConfigRef.current ? getResolverConfigRef.current(id) : {})),
+      });
 
       // Kick off all independent IPC calls in parallel
       const apiKeyPromise = window.electron?.config?.get

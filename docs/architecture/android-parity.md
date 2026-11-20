@@ -399,7 +399,7 @@ What breaks if a client drifts: a plugin that needs a bridge the host doesn't su
 
 ### Android Parity Requirements (plugin host contract, `this.host`)
 
-Agreed in parachord#1561 with the Android side; not built on desktop yet. The spec is "The plug-in host contract" in [plugins.md](plugins.md). Mobile's plugin manager builds the same object, so the same `.axe` runs on every host without impersonating Electron's `window.electron`.
+Agreed in parachord#1561 with the Android side; built on desktop (`ResolverLoader.buildPluginHost`, `src/renderer/lib/plugin-host-supplier.js`), with Amazon Music 1.21.4 the first plugin on it. The spec is "The plug-in host contract" in [plugins.md](plugins.md). Mobile's plugin manager builds the same object, so the same `.axe` runs on every host without impersonating Electron's `window.electron`.
 
 Mobile must mirror:
 

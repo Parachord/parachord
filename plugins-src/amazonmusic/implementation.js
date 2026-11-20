@@ -20,7 +20,8 @@
 // and the streaming telemetry) and the
 // session surfaces (M10 — the status reply, sign-in, sign-out) are the
 // plugin's: they drive the ONE host web-session instance (registered
-// as 'amazon-music') through the window.electron.webSession bridge —
+// as 'amazon-music') through the webSession bridge (this.host.webSession,
+// the plug-in host contract, #1561; window.electron.webSession on older apps) —
 // pageFetch replays the captured request from the page world, load(url,
 // {capture}) runs the chained page flow with the capture window inside the
 // load (the quiet-bounded returned captures replace the old in-flow poll; our
@@ -2411,6 +2412,19 @@ module.exports = {
     };
   },
 
+  // The one place this plugin reaches the host (the plug-in host contract,
+  // #1561; docs/architecture/plugins.md "The plug-in host contract"): a
+  // bridge its manifest declares, from this.host. An app whose loader
+  // predates the contract sets no this.host; then the bridge comes from where
+  // older desktop builds put it. The fallback goes once minAppVersion is past
+  // the first release that builds this.host on every platform.
+  hostBridge: function (name) {
+    if (this.host) return this.host[name] || null;
+    if (typeof window === 'undefined') return null;
+    if (name === 'widevine') return window.__parachordWidevine || null;
+    return (window.electron && window.electron[name]) || null;
+  },
+
   // The compat guard (#1402's documented pattern): an app whose loader
   // predates _lib materializes the factory as an inert method and every
   // this.lib read is a null deref. Ship the readable error instead. Every
@@ -2496,7 +2510,7 @@ module.exports = {
   // rules live in the pure gqlReplayOutcome (unit-tested).
   replayGql: async function (entry, body, options = {}) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) return { error: 'Amazon webSession bridge not available' };
     const replayUrl = (entry && entry.url) || lib.GQL_URL;
     const headers = lib.amazonGqlFetchHeaders(entry && entry.headers);
@@ -2653,7 +2667,7 @@ module.exports = {
   // PAGE_CAPTURE_BUDGET_MS, the old in-flow poll's 15s window).
   specSearchPageFlow: async function ({ url, searchText, specType, parse, noun }) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     // The page flow that ran while this one waited the per-instance chain
     // may have refreshed the template — one refresh heals every search
@@ -2807,7 +2821,7 @@ module.exports = {
   // load chain serializes the navigation itself).
   debugCaptureGql: async function (rawUrl) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const subject = lib.gqlCaptureSubject(rawUrl);
     if (!subject) {
@@ -2828,7 +2842,7 @@ module.exports = {
   // burst, not the flows' tighter 2.5s/15s window).
   debugCapturePageFlow: async function (rawUrl, subject) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const load = await ws.load(lib.SESSION, rawUrl, {
       capture: {
@@ -2900,7 +2914,7 @@ module.exports = {
   // list; signOut calls it directly, a generation change lands here).
   sessionState: async function () {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) return null;
     const state = await ws.state(lib.SESSION);
     if (!state || !state.success) return null;
@@ -3017,7 +3031,7 @@ module.exports = {
   // host getStatus's refreshPlan).
   getPlan: async function ({ refresh } = {}) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) return 'unknown';
     const now = Date.now();
     const s = this._planState;
@@ -3259,7 +3273,7 @@ module.exports = {
   // { success, signedIn } — the same shape the old host openLogin answered.
   signIn: async function () {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws || typeof ws.signIn !== 'function') {
       return { success: false, error: 'no web-session bridge' };
     }
@@ -3294,7 +3308,7 @@ module.exports = {
   // reading for even one read.
   signOut: async function () {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws || typeof ws.clear !== 'function') {
       return { success: false, error: 'no web-session bridge' };
     }
@@ -3317,7 +3331,7 @@ module.exports = {
   // ── The DRM pair (#1356 M4, live since M9) ─────────────────────────────
   // getPlaybackManifest + relayLicense, moved from amazon-dmls.js (the
   // main-side provider died with this move). The flows ride the same ONE host
-  // web-session instance through the window.electron.webSession bridge: the
+  // web-session instance through the webSession bridge (this.hostBridge): the
   // dmls POSTs and the telemetry events go out via webSession.fetch (the
   // session's cookie jar rides them — Amazon's licence server needs the
   // auth cookies, and Electron's net module attaches them reliably only that
@@ -3567,7 +3581,7 @@ module.exports = {
   dmls: async function (ctx, target, body, opts) {
     const lib = this.requireLib();
     const authRetry = !(opts && opts.authRetry === false);
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const out = await ws.fetch(lib.SESSION, {
       url: 'https://music.amazon.com/' + ctx.region + '/api/dmls/',
@@ -3679,7 +3693,7 @@ module.exports = {
 
   fetchConfigJson: async function () {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const out = await ws.fetch(lib.SESSION, {
       url: lib.CONFIG_URL,
@@ -3706,7 +3720,7 @@ module.exports = {
 
   mintCsrfPageFlow: async function (q) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     console.log('[Amazon] session-headers mint: page flow for "' + q + '"');
     // The capture window is the spec searches' (the quiet window sized for a
@@ -3754,13 +3768,20 @@ module.exports = {
     throw lib.notReady('load-failed', 'session headers: the page fired no captured request');
   },
 
-  // The app version for musicAgent, off the renderer's own version surface
-  // (window.electron.updater.getVersion — the same IPC app.js's about line
-  // reads; the resolver config the engine hands the pair is the user's saved
-  // service settings, not app facts, so it is not that seam).
+  // The app version for musicAgent: this.host.appVersion() (the plug-in host
+  // contract, #1561), else, on an older desktop build, the renderer's own
+  // version surface (window.electron.updater.getVersion — the same IPC
+  // app.js's about line reads). The resolver config the engine hands the
+  // pair is the user's saved service settings, not app facts, so it is not
+  // that seam.
   appVersion: async function () {
     try {
-      const getter = window.electron && window.electron.updater && window.electron.updater.getVersion;
+      if (this.host && typeof this.host.appVersion === 'function') {
+        const v = await this.host.appVersion();
+        if (typeof v === 'string' && v) return v;
+        return 'dev';
+      }
+      const getter = typeof window !== 'undefined' && window.electron && window.electron.updater && window.electron.updater.getVersion;
       if (typeof getter === 'function') {
         const v = await getter();
         if (typeof v === 'string' && v) return v;
@@ -3838,7 +3859,7 @@ module.exports = {
 
   postTelemetryEvent: async function (envelope) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) return { status: -1 };
     const ctx = await this.ensureSessionContext();
     // Captured hornet telemetry headers: csrf triplet + device registration
@@ -3890,7 +3911,7 @@ module.exports = {
   search: async function (query, config) {
     let lib = null;
     try {
-      if (!window.electron || !window.electron.webSession) {
+      if (!this.hostBridge('webSession')) {
         console.warn('Amazon Music: webSession bridge not available');
         return [];
       }
@@ -4136,8 +4157,11 @@ module.exports = {
   cleanup: async function () {
     console.log('Amazon Music resolver cleanup');
     try {
-      if (typeof window.__parachordWidevine === 'object' && typeof window.__parachordWidevine.stop === 'function') {
-        await window.__parachordWidevine.stop();
+      // An optional bridge: a host without a shared Widevine player (the
+      // phones) leaves it off this.host, and there is nothing to stop.
+      const widevine = this.hostBridge('widevine');
+      if (widevine && typeof widevine.stop === 'function') {
+        await widevine.stop();
       }
     } catch (e) {}
   },
@@ -4159,7 +4183,7 @@ module.exports = {
   // failures — the same rule as search — and returning [] on a miss.
   searchAlbums: async function (query, config) {
     try {
-      if (!window.electron || !window.electron.webSession) {
+      if (!this.hostBridge('webSession')) {
         console.warn('Amazon Music: webSession bridge not available');
         return [];
       }
@@ -4253,7 +4277,7 @@ module.exports = {
   // anything but a credential-free CDN URL out of the persisted image cache.
   searchArtistImage: async function (artistName, config) {
     try {
-      if (!window.electron || !window.electron.webSession) return null;
+      if (!this.hostBridge('webSession')) return null;
       const lib = this.requireLib();
       var name = (artistName || '').trim();
       if (name.length < 2) return null;
@@ -4297,7 +4321,7 @@ module.exports = {
   // staleness budget before paying its page load.
   lookupAlbumFlow: async function (rawUrl) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
       throw lib.notReady('not-ready', 'Not an Amazon Music album URL');
@@ -4350,7 +4374,7 @@ module.exports = {
   // miss).
   lookupAlbumPageFlow: async function (asin) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const url = 'https://music.amazon.com/albums/' + asin;
     const load = await ws.load(lib.SESSION, url, {
@@ -4570,7 +4594,7 @@ module.exports = {
     };
     var result = null;
     try {
-      if (!window.electron || !window.electron.webSession) {
+      if (!this.hostBridge('webSession')) {
         console.warn('Amazon Music: webSession bridge not available');
         return null;
       }
@@ -4664,7 +4688,7 @@ module.exports = {
   // same lookup, so it rides the foreground lane too.
   lookupPlaylistFlow: async function (rawUrl) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
       throw lib.notReady('not-ready', 'Not an Amazon Music playlist URL');
@@ -4690,7 +4714,7 @@ module.exports = {
   // match our playlist id; the echo's headers are session-aged).
   lookupPlaylistPageFlow: async function (rawUrl, playlistId) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     console.log('[Amazon] playlist lookup ' + rawUrl);
     const load = await ws.load(lib.SESSION, rawUrl, {
@@ -4911,7 +4935,7 @@ module.exports = {
     };
     var result = null;
     try {
-      if (!window.electron || !window.electron.webSession) {
+      if (!this.hostBridge('webSession')) {
         console.warn('Amazon Music: webSession bridge not available');
         return null;
       }
@@ -5034,7 +5058,7 @@ module.exports = {
   // cache survives a filter change.
   getRecommendations: async function (config) {
     try {
-      if (!window.electron || !window.electron.webSession) {
+      if (!this.hostBridge('webSession')) {
         console.warn('Amazon Music: webSession bridge not available');
         return { sections: [] };
       }
@@ -5325,7 +5349,7 @@ module.exports = {
   // ride the freshest csrf-ts.
   homePageFlow: async function () {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const home = lib.AMAZON_HOMES[this._musicHomeVariant === 'browse' ? 'browse' : 'music'];
     const load = await ws.load(lib.SESSION, home.url, {
@@ -5495,7 +5519,7 @@ module.exports = {
   // no cursor, which the page renders as the end of the section.
   expandRecommendationSection: async function (sectionId, afterCursor, config) {
     try {
-      if (!window.electron || !window.electron.webSession) {
+      if (!this.hostBridge('webSession')) {
         console.warn('Amazon Music: webSession bridge not available');
         return { items: [], nextCursor: null };
       }
@@ -5610,7 +5634,7 @@ module.exports = {
   // music-home section's page request never carries its own id.
   seeMorePageFlow: async function (sectionId) {
     const lib = this.requireLib();
-    const ws = window.electron && window.electron.webSession;
+    const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const url = lib.amazonSeeMorePageUrl(sectionId);
     const seeMoreId = lib.seeMoreSectionIdFor(sectionId);
