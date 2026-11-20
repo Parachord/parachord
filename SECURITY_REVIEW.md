@@ -278,7 +278,7 @@ The `resolved` set grows without bound and is never cleared. Long sessions accum
 
 ### M9. Prompt Injection via Track Metadata in AI Chat
 
-**File:** `services/ai-chat.js:208-218`
+**File:** `src/renderer/app.js`, `AIChatService.buildSystemPrompt` (was `services/ai-chat.js`, an unused copy removed in #1590)
 
 Track titles, artist names, and album names are interpolated directly into the LLM system prompt without escaping.
 
@@ -354,8 +354,8 @@ When the WebSocket is disconnected, messages queue with no upper bound.
 | L10 | `resolver-loader.js:28` | No type/format validation on resolver ID |
 | L11 | `scrobbler-loader.js:90` | `nowPlayingSent` flag set regardless of success |
 | L12 | `scrobbler-loader.js:699` | MD5 for password hashing (API constraint) |
-| L13 | `services/ai-chat.js:96` | No message length limit in AI chat |
-| L14 | `services/ai-chat.js:216-218` | Template replacement uses non-global string replace |
+| L13 | `src/renderer/app.js` `AIChatService.sendMessage` | No message length limit in AI chat |
+| L14 | `src/renderer/app.js` `AIChatService.buildSystemPrompt` | Template replacement uses non-global string replace |
 | L15 | `services/protocol-handler.js:16-19` | URL-decoded segments used without sanitization |
 | L16 | `sync-providers/spotify.js:171` | Tautological ownership check (`id === id`) |
 | L17 | `sync-providers/spotify.js:11-12` | Track ID collision risk from aggressive normalization |

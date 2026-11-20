@@ -210,14 +210,7 @@ This plan uses a **strictly incremental, low-risk approach**: each phase is inde
 **Goal**: Convert the service modules that depend on previously converted code.
 
 ### Convert in order:
-1. **`services/ai-chat.js` → `.ts`** (~440 lines)
-   - Already has `@typedef Message`, `ChatProvider`, `ToolContext`
-   - Depends on `tools/dj-tools` (Phase 2)
-
-2. **`services/ai-chat-integration.js` → `.ts`**
-   - Depends on ai-chat (just converted above)
-
-3. **`services/mcp-server.js` → `.ts`** (~418 lines)
+1. **`services/mcp-server.js` → `.ts`** (~418 lines)
    - Depends on `express`, `tools/dj-tools`, Electron IPC
    - Uses `@types/express`
 
