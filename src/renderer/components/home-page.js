@@ -27,7 +27,7 @@ const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_C
 // The app's section title, which a loading row's heading uses.
 const { SECTION_TITLE_STYLE: H2_STYLE } = require('./section-header');
 const { homeSetupItems } = require('../lib/home-setup');
-const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
+const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles, mixContext } = require('../lib/home-model');
 const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt, lovesMosaicAlbums } = require('../lib/home-model');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
@@ -450,9 +450,9 @@ const HomePage = React.memo(function HomePage(props) {
   // A service mix: the card opens the remote-playlist view the
   // Recommendations cards open, and Add to Playlist, Play and Add to Queue
   // (the hover every playlist card has) load its tracks through the same
-  // lookup. The 'mix' context lets Jump back in leave the
-  // mix out while it plays or waits in the queue.
-  const mixContext = (m) => ({ type: 'mix', id: m.id, name: m.title });
+  // lookup. The 'mix' context (mixContext, lib/home-model.js: the mix's
+  // link) lets Jump back in leave the mix out while it plays or waits in
+  // the queue, and "Playing from" open the mix again (#1592).
   const openMix = (m) => openServicePlaylist(m, m.resolverName);
   const mixActions = {
     onOpen: openMix,
