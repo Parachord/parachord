@@ -293,7 +293,7 @@ React.createElement('div', {
                         onContextMenu: () => window.showItemMenu({ type: 'track', track }),
                         duration: true,
                         cells: [
-                          ...(hasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
+                          ...(hasAlbums ? [{ key: 'album', content: track.album || '', onClick: track.album ? () => openTopAlbum({ artist: track.artist, name: track.album, image: track.albumArt }) : undefined }] : []),
                           { key: 'when', content: (track.playedAt || track.timestamp) ? formatTimeAgo(track.playedAt || track.timestamp) : '', width: '80px', align: 'right' }
                         ]
                       }, trackRowDrag(track)));
@@ -323,7 +323,7 @@ React.createElement('div', {
                             cells: [
                             // The album column only when the list has albums (ListenBrainz's top
                             // tracks carry none, which left a blank column).
-                            ...(friendHistoryTopHasAlbums ? [{ key: 'album', content: track.album || '' }] : []),
+                            ...(friendHistoryTopHasAlbums ? [{ key: 'album', content: track.album || '', onClick: track.album ? () => openTopAlbum({ artist: track.artist, name: track.album, image: track.albumArt }) : undefined }] : []),
                             { key: 'plays', content: countOf(track.playCount, 'play'), width: '80px', align: 'right' }
                           ]
                         }, trackRowDrag(track)));
