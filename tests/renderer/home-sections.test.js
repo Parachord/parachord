@@ -441,14 +441,33 @@ describe('Concert cards', () => {
     if (node.props) { out.push(node); walk(node.props.children, out); }
     return out;
   };
-  test('the card has no click handler and no button but Tickets', () => {
-    const tree = S.ConcertsRow({ concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
-    const card = walk(tree).find((n) => n.type === S.ConcertsRow || (n.props && n.props.concert));
+  // #1572: the card opens the artist's On Tour tab, as the Concerts page's
+  // cards do; Tickets stays its own action, above the card's button.
+  test("the card is a CardButton named Open <artist>; activating it opens the artist's On Tour tab", () => {
+    const opened = [];
+    const tree = S.ConcertsRow({ concerts: [{ ...base, ticketSources: [sellers2[0]] }], onOpenArtist: (a) => opened.push(a) });
+    const card = walk(tree).find((n) => n.props && n.props.concert);
+    expect(card.props.onOpenArtist).toEqual(expect.any(Function));
     const el = card.type(card.props);
-    expect(el.props.onClick).toBeUndefined();
-    expect(el.props.style.cursor).toBeUndefined();
-    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
-    expect(count(html, /<button/g)).toBe(1); // the See all button only
+    expect(el.props.label).toBe('Open Hovvdy');
+    el.props.onActivate();
+    expect(opened).toEqual(['Hovvdy']);
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }], onOpenArtist: () => {} });
+    expect(html).toMatch(/<button type="button" class="card-button-hit no-drag" aria-label="Open Hovvdy"/);
+  });
+  test('Tickets sits above the card button (card-link), so it opens only the ticket link', () => {
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }], onOpenArtist: () => {} });
+    expect(html).toMatch(/class="card-link"[^>]*><a href="https:\/\/s"[^>]*>Tickets<\/a>/);
+    // Tickets comes before the stretched button in the markup but is drawn
+    // above it (index.html's .card-button .card-link: z-index 2).
+    const css = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+    expect(css).toMatch(/\.card-button \.card-link \{ position: relative; z-index: 2; \}/);
+  });
+  test('the card keeps its box (the skeleton matches it)', () => {
+    const tree = S.ConcertsRow({ concerts: [base], onOpenArtist: () => {} });
+    const card = walk(tree).find((n) => n.props && n.props.concert);
+    const style = card.type(card.props).props.style;
+    expect(style).toMatchObject({ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', border: '1px solid var(--border-default)' });
   });
   test("the artist's photo, face-centred, with the date as a badge on it", () => {
     const images = { hovvdy: { url: 'https://img/h.jpg', facePosition: 'center 30%' } };

@@ -54,6 +54,7 @@ const HOME_PAGE_HANDLERS = [
   'loadNewReleases',
   'loadPlaylist',
   'navigateTo',
+  'openArtistOnTour',
   'openChartsAlbum',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
@@ -156,6 +157,7 @@ const HomePage = React.memo(function HomePage(props) {
     newReleasesError,
     newReleasesLoaded,
     newReleasesLoading,
+    openArtistOnTour,
     openChartsAlbum,
     openCriticsPicksAlbum,
     openHomeBannerCta,
@@ -671,7 +673,7 @@ const HomePage = React.memo(function HomePage(props) {
           }),
 
         show.concerts
-          ? React.createElement(ConcertsRow, { concerts, navigateTo, artistImages: concertsArtistImages, cards: concertCards })
+          ? React.createElement(ConcertsRow, { concerts, navigateTo, artistImages: concertsArtistImages, onOpenArtist: openArtistOnTour, cards: concertCards })
           : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton, { count: concertCards })),
 
         React.createElement(AskShuffleupagus, {
