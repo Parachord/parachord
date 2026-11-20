@@ -1166,20 +1166,19 @@ class ResolverLoader {
    * @param {string} resolverId
    * @param {string} artistName
    * @param {object} configOverride - Optional config to override resolver's stored config
-   * @returns {Promise<string|null>} an image URL; null on a miss or error
+   * @returns {Promise<string|null>} an image URL; null on a miss. A plugin
+   * that couldn't answer (its server away, a refused request) THROWS, and
+   * this passes the error on: the photo chain (lib/artist-image-chain.js)
+   * remembers "no photo" for 6 hours only when every step answered, so
+   * turning a failure into null here made one outage a 6-hour miss (#1358).
    */
   async searchArtistImage(resolverId, artistName, configOverride = null) {
     const resolver = this.resolvers.get(resolverId);
     if (!resolver || !resolver.capabilities?.artistImage || typeof resolver.searchArtistImage !== 'function' || !artistName) {
       return null;
     }
-    try {
-      const url = await resolver.searchArtistImage(artistName, configOverride || resolver.config || {});
-      return typeof url === 'string' && url ? url : null;
-    } catch (error) {
-      console.error(`Artist image error for ${resolverId}:`, error);
-      return null;
-    }
+    const url = await resolver.searchArtistImage(artistName, configOverride || resolver.config || {});
+    return typeof url === 'string' && url ? url : null;
   }
 
   /**

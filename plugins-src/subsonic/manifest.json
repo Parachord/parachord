@@ -2,7 +2,7 @@
   "manifest": {
     "id": "subsonic",
     "name": "Subsonic",
-    "version": "0.3.7",
+    "version": "0.3.8",
     "author": "Parachord Team",
     "description": "Stream from your own music server: Navidrome, Airsonic, Gonic or anything Subsonic-compatible.",
     "requirement": "Needs your own Subsonic-compatible server, such as Navidrome.",

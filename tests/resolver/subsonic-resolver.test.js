@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.3.7');
+    expect(axe.manifest.version).toBe('0.3.8');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
@@ -724,5 +724,54 @@ describe('subsonic artist images (capabilities.artistImage)', () => {
     const calls = mockFetch(() => subsonicOk({}));
     expect(await resolver.searchArtistImage('Radiohead', {})).toBe(null);
     expect(calls).toHaveLength(0);
+  });
+
+  // A failure throws, as search does (#1358): the photo chain remembers "no
+  // photo" for 6 hours only when every step answered, so a server that's away
+  // or refusing must not read as a miss.
+  const subsonicError = (code, message) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ 'subsonic-response': { status: 'failed', error: { code, message } } })
+  });
+
+  test('an HTTP error throws with the status', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => ({ ok: false, status: 503, json: async () => ({}) }));
+    await expect(resolver.searchArtistImage('Radiohead', CONFIG)).rejects.toThrow('Subsonic artist image failed: HTTP 503');
+  });
+
+  test('a Subsonic API error throws with its code', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => subsonicError(40, 'Wrong username or password'));
+    await expect(resolver.searchArtistImage('Radiohead', CONFIG)).rejects.toThrow('Subsonic artist image failed: 40 Wrong username or password');
+  });
+
+  test('a body that is not a Subsonic response throws', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => ({ ok: true, status: 200, json: async () => ({ hello: 'world' }) }));
+    await expect(resolver.searchArtistImage('Radiohead', CONFIG)).rejects.toThrow('not a Subsonic response');
+  });
+
+  test('a request that fails throws', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => { throw new TypeError('Failed to fetch'); });
+    await expect(resolver.searchArtistImage('Radiohead', CONFIG)).rejects.toThrow('Failed to fetch');
+  });
+
+  test('getArtistInfo2 failing after the artist was found throws too', async () => {
+    const resolver = instantiate(axe);
+    mockFetch((url) => url.includes('/search3.view')
+      ? subsonicOk({ searchResult3: { artist: [{ id: 'ar-1', name: 'Radiohead' }] } })
+      : { ok: false, status: 500, json: async () => ({}) });
+    await expect(resolver.searchArtistImage('Radiohead', CONFIG)).rejects.toThrow('HTTP 500');
+  });
+
+  test('error 70 ("data not found") from getArtistInfo2 is an answer: a miss', async () => {
+    const resolver = instantiate(axe);
+    mockFetch((url) => url.includes('/search3.view')
+      ? subsonicOk({ searchResult3: { artist: [{ id: 'ar-1', name: 'Radiohead' }] } })
+      : subsonicError(70, 'Artist info not found'));
+    expect(await resolver.searchArtistImage('Radiohead', CONFIG)).toBe(null);
   });
 });
