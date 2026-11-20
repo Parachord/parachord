@@ -595,6 +595,7 @@ window.musicbrainzLimiter = window.createLimiter({
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
 const { transition } = require('./lib/motion');
 const { describeProviderError } = require('./lib/ai-provider-errors');
+const { CARD_INLINE_REGEX, wholeLineCard } = require('./lib/chat-card-syntax');
 const { sourceFromUrlHint } = require('./lib/source-url-hint');
 const { isPlayableSource } = require('./lib/playable-source');
 const { CardButton } = require('./components/card-button');
@@ -17592,7 +17593,7 @@ ${trackListXml}
       // Combined regex for all inline patterns
       // Order matters: cards first, then image links (![]()), then regular links, then bold, then italic, then code
       const patterns = [
-        { regex: /\{\{(track|artist|album|playlist)\|([^}]+)\}\}/g, type: 'card' },
+        { regex: new RegExp(CARD_INLINE_REGEX.source, 'g'), type: 'card' },
         { regex: /!\[([^\]]*)\]\(([^)]+)\)/g, type: 'imagelink' }, // Handle ![text](url) - treat as regular link
         { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
         { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
@@ -17960,11 +17961,11 @@ ${trackListXml}
           }, headerMatch[2])
         );
       }
-      // Check for card syntax: {{type|field1|field2|...}}
-      else if (/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/.test(processedLine)) {
-        const cardMatch = processedLine.match(/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/);
-        const cardType = cardMatch[1];
-        const cardParts = cardMatch[2].split('|');
+      // A line that is one card: {{type|field1|field2|...}}. A line with two
+      // cards (and text between) is not, and goes to parseInlineMarkdown
+      // below, which draws both (lib/chat-card-syntax.js, #1574).
+      else if (wholeLineCard(processedLine)) {
+        const { type: cardType, parts: cardParts } = wholeLineCard(processedLine);
         elements.push(renderCard(cardType, cardParts, `card-${keyCounter++}`));
         previousLineWasCard = true; // Mark so next line can strip leading punctuation
       }
