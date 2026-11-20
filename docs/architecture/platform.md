@@ -28,3 +28,12 @@ Settings › General › Appearance › Size, and View › Actual Size / Zoom In
 - **The window's minimum grows with the zoom.** The layout is built for a window at least 1000×600 points (a 744px content area). Zoom divides the CSS width, so the minimum is 1000×600 times the zoom, capped at the display's work area. A window smaller than the new minimum grows to it. Pages never lay out narrower than at 100%, so the 1000px checks in DESIGN_SYSTEM.md hold at every size.
 - **Not the built-in zoom roles.** The menu items are custom, because Electron's `zoomIn` / `zoomOut` / `resetZoom` roles neither persist nor move the minimum size.
 
+
+## New windows from the main window
+
+A `window.open()` or a link that asks for a new window goes through `windowOpenDecision` (`main-process/window-open-policy.js`), the main window's `setWindowOpenHandler`:
+- an https page on `apple.com` or `icloud.com`, or one of their subdomains, opens in a small app window. That's MusicKit JS's Apple ID sign-in. The host is compared whole, never searched for as text in the URL;
+- any other http(s) URL opens in the user's browser;
+- anything else opens nowhere.
+
+This is the same rule as the `shell-open-external` IPC handler: only http(s) leaves the app. Tests: `tests/main-process/window-open-policy.test.js`.
