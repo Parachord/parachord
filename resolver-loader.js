@@ -5,7 +5,21 @@
  */
 
 class ResolverLoader {
-  constructor() {
+  /**
+   * options.host: what this host supplies plugins (the plug-in host
+   * contract, #1561; docs/architecture/plugins.md "The plug-in host
+   * contract"). Every loaded plugin gets its own frozen `this.host`, built by
+   * buildPluginHost from it:
+   *   { platform: 'desktop'|'android'|'ios',
+   *     appVersion(): string | Promise<string>,
+   *     getConfig(pluginId): object | Promise<object>,
+   *     openExternal(url): Promise,
+   *     bridges: { [name]: () => bridgeObject } }  // the bridges this host has
+   * A loader built without one (tests, older call sites) sets `this.host` to
+   * null, and plugins fall back to the globals they used before.
+   */
+  constructor(options = {}) {
+    this.hostSupplier = options && options.host && typeof options.host === 'object' ? options.host : null;
     this.resolvers = new Map();
     this.urlPatterns = []; // Array of { pattern: string, resolverId: string }
     // TYPED patterns ("urlTypes" in a manifest): { pattern: string, type:
@@ -98,6 +112,63 @@ class ResolverLoader {
   }
 
   /**
+   * The bridge names an .axe declares under `requires` (`field` is
+   * 'hostBridges' or 'optionalHostBridges'). Absent or malformed is none: the
+   * shape rules of pluginRequiredHostBridges / pluginOptionalHostBridges in
+   * main-process/plugin-compat.js, which this classic script can't require.
+   */
+  static declaredHostBridges(axe, field) {
+    const requires = axe && axe.requires;
+    if (!requires || typeof requires !== 'object' || Array.isArray(requires)) return [];
+    const list = requires[field];
+    if (!Array.isArray(list) || !list.every((b) => typeof b === 'string' && b)) return [];
+    return list;
+  }
+
+  /**
+   * One plugin's `this.host` (the plug-in host contract, #1561): the core
+   * every plugin gets, plus a key for each bridge its manifest declares that
+   * this host supplies — required ones (a host without one has hidden the
+   * plugin before it got here) and optional ones (absent when the host has
+   * none). Nothing undeclared, even when the host has it. Bridges are read
+   * through getters, so one a host sets up after plugins load (the renderer's
+   * shared Widevine player) is still the live object. Frozen: a plugin can't
+   * add to it or swap a bridge out. null when the loader has no supplier.
+   */
+  static buildPluginHost(supplier, axe) {
+    if (!supplier) return null;
+    const id = axe && axe.manifest && axe.manifest.id;
+    const host = {
+      platform: supplier.platform || null,
+      appVersion: async () => {
+        const v = typeof supplier.appVersion === 'function' ? await supplier.appVersion() : null;
+        return typeof v === 'string' && v ? v : 'dev';
+      },
+      getConfig: async () => {
+        const c = typeof supplier.getConfig === 'function' ? await supplier.getConfig(id) : null;
+        return c && typeof c === 'object' ? c : {};
+      },
+      openExternal: async (url) => {
+        if (typeof url !== 'string' || !/^https:\/\//i.test(url)) {
+          throw new Error('openExternal opens https links only');
+        }
+        if (typeof supplier.openExternal !== 'function') throw new Error('This app can\u2019t open links');
+        return supplier.openExternal(url);
+      },
+    };
+    const supplied = supplier.bridges && typeof supplier.bridges === 'object' ? supplier.bridges : {};
+    const declared = [
+      ...ResolverLoader.declaredHostBridges(axe, 'hostBridges'),
+      ...ResolverLoader.declaredHostBridges(axe, 'optionalHostBridges'),
+    ];
+    for (const name of declared) {
+      if (name in host || typeof supplied[name] !== 'function') continue;
+      Object.defineProperty(host, name, { enumerable: true, get: () => supplied[name]() || null });
+    }
+    return Object.freeze(host);
+  }
+
+  /**
    * Create a resolver instance from .axe data
    */
   createResolverInstance(axe) {
@@ -170,7 +241,10 @@ class ResolverLoader {
       // The plugin library and its reserved name (#1356): `lib` is the
       // once-evaluated factory result the loader injects; a method named
       // `lib` (or `_lib`) would clobber it, so neither may be a method.
-      'lib', '_lib'
+      'lib', '_lib',
+      // The plug-in host contract (#1561): `host` is the loader-built host
+      // object; a method of that name would clobber it.
+      'host'
     ]);
     const safeImplFunctions = {};
     for (const [key, fn] of Object.entries(implFunctions)) {
@@ -244,6 +318,11 @@ class ResolverLoader {
       // tries will find its state missing, which the tests document).
       lib: pluginLib ? Object.freeze(pluginLib) : null,
 
+      // The plug-in host contract (#1561): the one way a plugin reaches the
+      // host — the core plus the bridges its manifest declares. null when this
+      // loader has no supplier; a plugin then uses its older-app fallback.
+      host: ResolverLoader.buildPluginHost(this.hostSupplier, axe),
+
       // Implementation (filtered for safety)
       ...safeImplFunctions,
 
@@ -301,11 +380,13 @@ class ResolverLoader {
   /**
    * Initialize a resolver
    *
-   * host: what the host hands the plugin's init as its second argument. A
-   * playing plugin that reports plays (capabilities.playbackTelemetry,
-   * lib/playback-telemetry.js) gets { getConfig }, its saved settings read
-   * at each call. A host that passes none (the meta services' telemetry
-   * init, the mobile apps) leaves it undefined, and the plugin must cope.
+   * host: what the host hands the plugin's init as its second argument. It
+   * is the plugin's own `this.host` when the loader built one (the plug-in
+   * host contract, #1561: the same object, whose getConfig reads the saved
+   * settings at each call). Without one, the caller's: a playing plugin that
+   * reports plays (capabilities.playbackTelemetry, lib/playback-telemetry.js)
+   * gets { getConfig }; a host that passes none leaves it undefined, and the
+   * plugin must cope.
    */
   async initResolver(id, config = {}, host = undefined) {
     const resolver = this.resolvers.get(id);
@@ -317,7 +398,7 @@ class ResolverLoader {
 
     if (resolver.init) {
       try {
-        await resolver.init(config, host);
+        await resolver.init(config, resolver.host || host);
       } catch (error) {
         console.error(`Error initializing ${id}:`, error);
         throw error;

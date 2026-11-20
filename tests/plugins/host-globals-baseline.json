@@ -1,0 +1,42 @@
+{
+  "achordion": {
+    "hostGlobals": 22,
+    "windowState": 0
+  },
+  "amazonmusic": {
+    "hostGlobals": 7,
+    "windowState": 0
+  },
+  "applemusic": {
+    "hostGlobals": 42,
+    "windowState": 22
+  },
+  "bandcamp": {
+    "hostGlobals": 3,
+    "windowState": 0
+  },
+  "localfiles": {
+    "hostGlobals": 8,
+    "windowState": 0
+  },
+  "plex": {
+    "hostGlobals": 9,
+    "windowState": 29
+  },
+  "soundcloud": {
+    "hostGlobals": 3,
+    "windowState": 0
+  },
+  "spotify": {
+    "hostGlobals": 4,
+    "windowState": 0
+  },
+  "subsonic": {
+    "hostGlobals": 4,
+    "windowState": 16
+  },
+  "youtube": {
+    "hostGlobals": 3,
+    "windowState": 0
+  }
+}

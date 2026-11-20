@@ -113,6 +113,19 @@ function pluginRequiredHostBridges(axe) {
   return bridges;
 }
 
+// The bridges an .axe uses when the host has them and works without
+// (`requires.optionalHostBridges`, the plug-in host contract, #1561 /
+// docs/architecture/plugins.md "The plug-in host contract"). Same shape rules
+// as the required list: absent or malformed is none. A missing optional
+// bridge never hides a plugin; the loader leaves its key off this.host.
+function pluginOptionalHostBridges(axe) {
+  const requires = axe && axe.requires;
+  if (!requires || typeof requires !== 'object' || Array.isArray(requires)) return null;
+  const bridges = requires.optionalHostBridges;
+  if (!Array.isArray(bridges) || !bridges.every((b) => typeof b === 'string' && b)) return null;
+  return bridges;
+}
+
 // { ok: true } when the host supplies every bridge the .axe requires, else
 // { ok: false, missing } naming the ones it lacks.
 function hostBridgesCompatibility(axe, supplied) {
@@ -153,14 +166,24 @@ function validateRequires(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return ['requires must be an object such as { "hostBridges": ["webSession"] }'];
   }
-  if (value.hostBridges === undefined) return [];
-  if (!Array.isArray(value.hostBridges)) {
-    return [`requires.hostBridges must be an array of bridge names, got ${JSON.stringify(value.hostBridges)}`];
-  }
   const problems = [];
-  for (const bridge of value.hostBridges) {
-    if (typeof bridge !== 'string' || !bridge) {
-      problems.push(`requires.hostBridges must contain bridge names (non-empty strings), got ${JSON.stringify(bridge)}`);
+  for (const field of ['hostBridges', 'optionalHostBridges']) {
+    const list = value[field];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) {
+      problems.push(`requires.${field} must be an array of bridge names, got ${JSON.stringify(list)}`);
+      continue;
+    }
+    for (const bridge of list) {
+      if (typeof bridge !== 'string' || !bridge) {
+        problems.push(`requires.${field} must contain bridge names (non-empty strings), got ${JSON.stringify(bridge)}`);
+      }
+    }
+  }
+  const required = Array.isArray(value.hostBridges) ? value.hostBridges : [];
+  for (const bridge of Array.isArray(value.optionalHostBridges) ? value.optionalHostBridges : []) {
+    if (required.includes(bridge)) {
+      problems.push(`requires: "${bridge}" is in both hostBridges and optionalHostBridges; a bridge is one or the other`);
     }
   }
   return problems;
@@ -174,6 +197,7 @@ module.exports = {
   pluginCompatibility,
   validateMinAppVersion,
   pluginRequiredHostBridges,
+  pluginOptionalHostBridges,
   hostBridgesCompatibility,
   hostBridgesHideFilter,
   validateRequires
