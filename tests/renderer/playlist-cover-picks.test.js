@@ -56,6 +56,35 @@ describe('pickPlaylistCovers', () => {
     expect(new Set(covers).size).toBe(4);
   });
 
+  // #1582: a long mix whose tracks have no covers made one album lookup per
+  // distinct album, each a MusicBrainz request on the shared 1 req/s queue.
+  test('at most 12 album lookups per playlist; the covers found so far are kept', async () => {
+    const tracks = Array.from({ length: 40 }, (_, i) => ({ artist: 'Same Artist', album: `Album ${i}` }));
+    const l = lookups({ 'Same Artist|Album 3': 'https://img/a3.jpg', 'Same Artist|Album 20': 'https://img/a20.jpg' });
+    const covers = await pickPlaylistCovers(tracks, l);
+    expect(l.calls.album).toHaveLength(12);
+    expect(l.calls.album[11]).toBe('Same Artist|Album 11');
+    expect(covers).toEqual(['https://img/a3.jpg']); // Album 20 is past the cap
+  });
+
+  test('the cap counts lookups, not covers: own covers never count against it', async () => {
+    const own = Array.from({ length: 3 }, (_, i) => ({ artist: `Own ${i}`, album: `Own ${i}`, albumArt: `https://img/own${i}.jpg` }));
+    const misses = Array.from({ length: 20 }, (_, i) => ({ artist: 'Miss', album: `Miss ${i}` }));
+    const l = lookups({ 'Miss|Miss 15': 'https://img/miss15.jpg' });
+    const covers = await pickPlaylistCovers([...own, ...misses], l);
+    // Twelve lookups after the three own covers, not nine; Miss 15 (the
+    // sixteenth) is past the cap, so only the own covers show.
+    expect(l.calls.album).toEqual(Array.from({ length: 12 }, (_, i) => `Miss|Miss ${i}`));
+    expect(covers).toEqual(['https://img/own0.jpg', 'https://img/own1.jpg', 'https://img/own2.jpg']);
+  });
+
+  test('the cap can be set (maxAlbumLookups)', async () => {
+    const tracks = Array.from({ length: 10 }, (_, i) => ({ artist: 'A', album: `Album ${i}` }));
+    const l = lookups();
+    await pickPlaylistCovers(tracks, { ...l, maxAlbumLookups: 3 });
+    expect(l.calls.album).toHaveLength(3);
+  });
+
   test('no tracks, no covers', async () => {
     expect(await pickPlaylistCovers([], lookups())).toEqual([]);
     expect(await pickPlaylistCovers(undefined, lookups())).toEqual([]);
