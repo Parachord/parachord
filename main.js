@@ -169,6 +169,7 @@ const {
   loopbackRedirectUri,
   soundCloudSignInAllowed,
 } = require('./main-process/auth-port');
+const { windowOpenDecision } = require('./main-process/window-open-policy');
 const { createSoundCloudTokenSource } = require('./main-process/soundcloud-token');
 const authServerState = { port: null, listening: false, error: null };
 const getAuthPort = () => authServerState.port
@@ -1163,9 +1164,12 @@ function createWindow() {
 
   // Handle window.open() calls - needed for MusicKit JS Apple ID sign-in popup
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Allow Apple authentication popups to open in new browser windows
-    if (url.includes('apple.com') || url.includes('icloud.com') || url.includes('apple.music')) {
-      console.log('[MusicKit] Opening Apple auth popup:', url);
+    // Apple's sign-in pop-up opens in a small app window; any other http(s)
+    // URL opens in the browser; nothing else opens
+    // (main-process/window-open-policy.js).
+    const decision = windowOpenDecision(url);
+    if (decision === 'apple-popup') {
+      console.log('[MusicKit] Opening Apple auth popup');
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -1179,9 +1183,9 @@ function createWindow() {
       };
     }
 
-    // For other URLs, open in system browser
     const { shell } = require('electron');
-    shell.openExternal(url);
+    if (decision === 'external') shell.openExternal(url);
+    else console.warn('[window-open] Refused a window for a non-http(s) URL');
     return { action: 'deny' };
   });
 
