@@ -596,6 +596,7 @@ const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbra
 const { transition } = require('./lib/motion');
 const { describeProviderError } = require('./lib/ai-provider-errors');
 const { CARD_INLINE_REGEX, wholeLineCard } = require('./lib/chat-card-syntax');
+const { chatLinkTarget } = require('./lib/chat-links');
 const { sourceFromUrlHint } = require('./lib/source-url-hint');
 const { isPlayableSource } = require('./lib/playable-source');
 const { CardButton } = require('./components/card-button');
@@ -17690,35 +17691,20 @@ ${trackListXml}
         } else if (r.type === 'link' || r.type === 'imagelink') {
           // Handle both [text](url) and ![text](url) - treat image links as regular links
           const linkText = r.match[1] || r.match[2].split('/').pop(); // Use alt text or extract from URL
-          const url = r.match[2];
-          result.push(
+          // Only http(s) and the parachord:// commands handled below are
+          // links; any other scheme is the link's text, with no href
+          // (lib/chat-links.js, #1581).
+          const target = chatLinkTarget(r.match[2]);
+          result.push(!target ? linkText :
             React.createElement('a', {
               key,
-              href: url,
+              href: target.url,
               onClick: async (e) => {
                 e.preventDefault();
-                if (url.startsWith('parachord://')) {
-                  // Parse and handle protocol URL
+                if (target.kind === 'parachord') {
                   try {
-                    const parsed = new URL(url);
-                    const host = parsed.host;
-                    const pathSegments = parsed.pathname
-                      .replace(/^\/+/, '')
-                      .split('/')
-                      .map(s => decodeURIComponent(s))
-                      .filter(Boolean);
-
-                    let command, segments;
-                    if (host && host !== '') {
-                      command = host;
-                      segments = pathSegments;
-                    } else {
-                      [command, ...segments] = pathSegments;
-                    }
-
-                    const params = Object.fromEntries(parsed.searchParams);
-
-                    // Handle common protocol commands from chat links
+                    const { command, segments, params } = target;
+                    // The commands chat links handle in-app (CHAT_PARACHORD_COMMANDS).
                     switch (command) {
                       case 'artist':
                         if (segments[0]) {
@@ -17768,14 +17754,12 @@ ${trackListXml}
                           performSearch(params.q);
                         }
                         break;
-                      default:
-                        console.log('Unhandled protocol command in chat link:', command);
                     }
                   } catch (err) {
                     console.error('Error handling protocol URL:', err);
                   }
                 } else {
-                  window.electron?.shell?.openExternal(url);
+                  window.electron?.shell?.openExternal(target.url);
                 }
               },
               style: { color: isUserMessage ? 'var(--playbar-accent-hover)' : 'var(--accent-soft)', textDecoration: 'underline', cursor: 'pointer' }
