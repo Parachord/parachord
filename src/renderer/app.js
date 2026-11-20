@@ -36159,11 +36159,19 @@ useEffect(() => {
     getTrackArt, navigateTo, startGettingStarted,
   });
 
+  // An artist's page on its On Tour tab: Home's concert cards (#1572), as
+  // the Concerts page's cards open it.
+  const openArtistOnTour = (artistName) => {
+    if (!artistName) return;
+    pendingProtocolTabRef.current = 'on-tour';
+    fetchArtistData(artistName);
+  };
+
   const homePageHandlers = useStableHandlers({
     addServicePlaylistToPlaylist, addToQueue, askShuffleupagus, connectPlugin, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
     fetchAlbumTracksByName, getAlbumArt, handleAddWatchFolder, handleCollectionAlbumClick, handleStartCollectionStation,
     loadCharts, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openChartsAlbum, openCriticsPicksAlbum, openHomeBannerCta, openPluginPanel, openServicePlaylist,
+    loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openArtistOnTour, openChartsAlbum, openCriticsPicksAlbum, openHomeBannerCta, openPluginPanel, openServicePlaylist,
     openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
     queueServicePlaylist, showHomeContextMenu, skipGettingStarted, startGettingStarted,
   });

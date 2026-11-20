@@ -22,6 +22,7 @@ const { Play } = Icons;
 const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
 const { AlbumCard } = require('./album-card');
 const { TicketsButton } = require('./tickets-button');
+const { CardButton } = require('./card-button');
 const { PlaylistCard } = require('./playlist-card');
 const { FilterChips } = require('./filter-chips');
 const { PAGE_COLORS } = require('../lib/page-colors');
@@ -344,8 +345,11 @@ function ExploreRow(props) {
       showP && homeHalf(props, { id: 'home-explore-charts', title: 'Pop of the Tops', view: 'discover', items: p, loading: p.length === 0, error: p.length === 0 && !chartsLoading && !!chartsError, onRetry: onRetryCharts, hero: CHARTS_HERO, icon: ChartsGlyph() })));
 }
 
-// A concert card is not clickable as a whole: Tickets is its only action
-// (the shared teal button, components/tickets-button.js).
+// A concert card opens the artist's page on its On Tour tab, as the
+// Concerts page's cards do (#1572): the card is a CardButton named "Open
+// <artist>". Tickets (the shared teal button, components/tickets-button.js)
+// sits above the card's button in a .card-link box, always shown, so it
+// opens only the ticket link.
 
 // The concert card's photo and its date badge. The photo is the artist's
 // (the Concerts page's images, face-centred); with none yet, the page's
@@ -359,7 +363,7 @@ const CONCERT_BADGE_STYLE = {
   whiteSpace: 'nowrap',
 };
 
-function ConcertCard({ concert, image }) {
+function ConcertCard({ concert, image, onOpenArtist }) {
   const d = concert.date ? new Date(`${concert.date}T00:00:00`) : null;
   const valid = d && !Number.isNaN(d.getTime());
   const mon = valid ? d.toLocaleDateString('en-US', { month: 'short' }) : '';
@@ -369,7 +373,9 @@ function ConcertCard({ concert, image }) {
   const city = [venue.city, venue.region, venue.country].filter(Boolean).join(', ');
   const sellers = (concert.ticketSources || []).filter((s) => s && isHttpUrl(s.ticketUrl));
   const photo = image && isHttpUrl(image.url) ? image : null;
-  return e('div', {
+  return e(CardButton, {
+    label: `Open ${concert.artist}`,
+    onActivate: () => { if (onOpenArtist && concert.artist) onOpenArtist(concert.artist); },
     style: {
       display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', minWidth: 0,
       border: '1px solid var(--border-default)',
@@ -384,7 +390,7 @@ function ConcertCard({ concert, image }) {
     },
       photo
         ? e('img', {
-          src: photo.url, alt: '', loading: 'lazy',
+          src: photo.url, alt: '', loading: 'lazy', className: 'card-zoom',
           style: { width: '100%', height: '100%', objectFit: 'cover', objectPosition: photo.facePosition || 'center 25%' },
         })
         : e('span', { 'aria-hidden': 'true', style: { fontSize: '24px', color: 'var(--text-tertiary)' } }, '\u266A'),
@@ -395,13 +401,14 @@ function ConcertCard({ concert, image }) {
       city && e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, city),
       // In a box of its own, so the card's column doesn't stretch it: one
       // seller and several are the same width, on the card's right edge.
-      sellers.length > 0 && e('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '4px' } },
+      sellers.length > 0 && e('div', { className: 'card-link', style: { display: 'flex', justifyContent: 'flex-end', marginTop: '4px' } },
         e(TicketsButton, { sources: sellers, artist: concert.artist, size: 'sm' }))));
 }
 
 // artistImages: the Concerts page's photos, keyed by lower-cased artist name
 // ({ url, facePosition }).
-function ConcertsRow({ concerts, navigateTo, artistImages, cards = HOME_CONCERT_CARDS }) {
+// onOpenArtist(name): opens the artist's page on its On Tour tab.
+function ConcertsRow({ concerts, navigateTo, artistImages, onOpenArtist, cards = HOME_CONCERT_CARDS }) {
   const list = Array.isArray(concerts) ? concerts.slice(0, cards) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-concerts', style: SECTION_STYLE },
@@ -411,7 +418,7 @@ function ConcertsRow({ concerts, navigateTo, artistImages, cards = HOME_CONCERT_
     }),
     e('div', { style: grid(`repeat(${cards}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((c, i) => e(ConcertCard, {
-        key: c.id || i, concert: c,
+        key: c.id || i, concert: c, onOpenArtist,
         image: artistImages && c.artist ? artistImages[c.artist.trim().toLowerCase()] : null,
       }))));
 }
