@@ -71,6 +71,23 @@ describe('openers', () => {
     expect(fnBody('const loadAlbumTrackList = async (')).toMatch(/pickReleaseGroup\(\(await searchResp\.json\(\)\)\['release-groups'\], artist, title\)/);
   });
 
+  test('an album found nowhere shows the reason and a retry, not a stranded skeleton', () => {
+    const body = fnBody('const handleCollectionAlbumClick = async (album) => {');
+    // The placeholder stays on screen (title and cover) with ReleasePage's
+    // ErrorState; a toast used to leave its track skeleton up forever.
+    expect(body).toMatch(/showReleaseLoadError\(collectionPlaceholderId, (notFound|error), \{\s*\n?\s*run: \(\) => handleCollectionAlbumClickRef\.current\?\.\(album\)/);
+    expect(body).not.toMatch(/showToast\(['"]Album not found/);
+    // The retry calls the LATEST opener, not the render's closure
+    expect(app).toContain('const handleCollectionAlbumClickRef = useRef(null);');
+    expect(app).toContain('handleCollectionAlbumClickRef.current = handleCollectionAlbumClick;');
+    // ...and the opener does not skip a page that is showing a load error
+    expect(body).toMatch(/currentArtist\?\.name === album\.artist && !!currentRelease\?\.tracks && !currentRelease\?\._loadError/);
+    // The protocol opener does the same, through the same ref
+    const protocol = app.slice(app.indexOf("case 'album': {"), app.indexOf("case 'library': {"));
+    expect(protocol).toMatch(/showReleaseLoadError\(linkPlaceholderId, notFound, \{\s*\n?\s*run: \(\) => handleCollectionAlbumClickRef\.current\?\.\(/);
+    expect(protocol).not.toMatch(/showToast\(`Album not found/);
+  });
+
   test('a local album takes a joint-credit result for its own album, not only one credited to its first artist', () => {
     // #1532: an album with local files only takes a MusicBrainz result with
     // its own title, else its files' catalog opens it. The title is compared

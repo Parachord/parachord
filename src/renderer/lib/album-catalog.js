@@ -297,11 +297,15 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   // A credit that does not match at all (a romanised name against its native
   // script, a name the artist now records under: "Hikaru Utada" / 宇多田ヒカル,
   // "Kanye West" / "Ye") is still the album when exactly one result carries
-  // the album's exact title. A search that found no such result (MusicBrainz
-  // doesn't have the album: "Another Day Once Called Tomorrow" returned
-  // "Tomorrow's Another Day" by other artists) answers null — never another
-  // artist's album.
-  const exactTitle = scored.filter((entry) => entry.closeness === 3);
+  // the album's exact title — compared as written, not edition-stripped, so
+  // "Hits (Deluxe)" by another act is not "Hits". A search that found no such
+  // result (MusicBrainz doesn't have the album: "Another Day Once Called
+  // Tomorrow" returned "Tomorrow's Another Day" by other artists) answers
+  // null — never another artist's album.
+  const bareTitle = (s) => stripMarks(s).replace(/[^\p{L}\p{N}]+/gu, '');
+  const wanted = bareTitle(title);
+  if (!wanted) return null;
+  const exactTitle = scored.filter((entry) => bareTitle(entry.r.title) === wanted);
   return exactTitle.length === 1 ? exactTitle[0].r : null;
 }
 
@@ -311,7 +315,7 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
 // Only a suffix is dropped, so "Queen II" is still not "Queen I", and a
 // volume marker is never one: "Greatest Hits (Disc 2)" is not an edition of
 // "Greatest Hits" — picking it would swap in half an album.
-const VOLUME_MARKER = /^(?:disc|cd|part|pt|vol|volume|side)\b/i;
+const VOLUME_MARKER = /^(?:disc|cd|part|pt|vol|volume|side|vinyl)s?(?:$|[^a-z])/i;
 function bareEditionTitle(title) {
   let out = String(title || '').trim();
   for (let i = 0; i < 3; i++) {

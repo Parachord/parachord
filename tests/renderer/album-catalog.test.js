@@ -186,6 +186,9 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum([group('f', 'First Love', ['宇多田ヒカル'])], { artist: 'Hikaru Utada', title: 'First Love' }).id).toBe('f');
     // Two albums of that exact title and no credit match: no guess.
     expect(pickReleaseGroupForAlbum([group('x', 'Hits', ['A']), group('y', 'Hits', ['B'])], { artist: 'C', title: 'Hits' })).toBeNull();
+    // "Exact" is the title as written, not edition-stripped: another act's
+    // "Hits (Deluxe)" is not this album's "Hits".
+    expect(pickReleaseGroupForAlbum([group('x', 'Hits (Deluxe)', ['B'])], { artist: 'A', title: 'Hits' })).toBeNull();
     // The incident: a search that found no exact title at all.
     const incident = [
       group('a', "Tomorrow's Another Day", ['CMA']),

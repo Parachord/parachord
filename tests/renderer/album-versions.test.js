@@ -242,6 +242,8 @@ describe('album-catalog: which catalog results are editions of the album', () =>
     expect(isCatalogAlbumEdition(target, { name: 'Queen I - Collector\'s Edition', artist: 'Queen' })).toBe(false);
     // a volume marker is a different disc of a compilation, never an edition
     expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (Disc 2)', artist: 'A' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (Disc2)', artist: 'A' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (CD 1)', artist: 'A' })).toBe(false);
     expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits, Vol. 2', artist: 'A' })).toBe(false);
   });
 

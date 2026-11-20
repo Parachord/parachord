@@ -3665,6 +3665,9 @@ const Parachord = () => {
   const artistConcertsAskedEarlyRef = useRef(null); // the artist whose concerts were asked for before a concert plug-in was ready
   const artistConcertsCache = useRef({}); // { normalizedArtistName: { events: [], timestamp } }
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
+  // The latest collection album opener, for an album page's Try again: the
+  // retry is stored on the page and must not call a render's stale closure.
+  const handleCollectionAlbumClickRef = useRef(null);
   // The release on screen now, for timers and async callbacks (the album
   // catalog race) that must not act on a stale closure.
   const currentReleaseRef = useRef(null);
@@ -12286,7 +12289,7 @@ const Parachord = () => {
                     notFound.userMessage = `Couldn't find "${albumTitle}" on MusicBrainz or your services.`;
                   }
                   showReleaseLoadError(linkPlaceholderId, notFound, {
-                    run: () => handleCollectionAlbumClick({ title: albumTitle, artist: artistName })
+                    run: () => handleCollectionAlbumClickRef.current?.({ title: albumTitle, artist: artistName })
                   });
                 };
 
@@ -12326,7 +12329,7 @@ const Parachord = () => {
                     notFound.userMessage = `Couldn't load "${albumTitle}". Check your connection and try again.`;
                   }
                   showReleaseLoadError(linkPlaceholderId, notFound, {
-                    run: () => handleCollectionAlbumClick({ title: albumTitle, artist: artistName })
+                    run: () => handleCollectionAlbumClickRef.current?.({ title: albumTitle, artist: artistName })
                   });
                 }
               }
@@ -21503,6 +21506,8 @@ ${trackListXml}
   // an error, after a second round of requests to the service that was down.
   // Only the release still on screen is marked (the user may have moved on).
   //   retry: { kind: 'chartsAlbum', album } | { kind: 'release', release, artist }
+  //          | { run } — an opener re-running its own search (a collection
+  //          album, a parachord://album link), called from retryReleaseLoad.
   // Album track lists from the plugins when MusicBrainz can't supply one
   // (src/renderer/lib/album-catalog.js; the plugin contract is "searchAlbums"
   // in docs/architecture/plugins.md). MusicBrainz stays first for albums with
@@ -21641,6 +21646,9 @@ ${trackListXml}
   const retryReleaseLoad = () => {
     const retry = currentRelease?._retry;
     if (!retry) return;
+    // An opener's retry that must re-run its own search (a collection album,
+    // a parachord://album link): a closure it built, called from the latest
+    // render's reference below.
     if (typeof retry.run === 'function') { retry.run(); return; }
     if (retry.kind === 'chartsAlbum') openChartsAlbum(retry.album);
     else fetchReleaseData(retry.release, retry.artist);
@@ -22333,20 +22341,25 @@ ${trackListXml}
     };
     // Neither MusicBrainz nor any service has it. The placeholder stays the
     // page on screen (title and cover), so it carries the reason and a retry
-    // that runs this opener again: before, the page kept its track skeleton
+    // that runs this opener again, through the ref below (a render's closure
+    // would read stale state): before, the page kept its track skeleton
     // forever behind a toast.
     const showNotFound = (error) => {
       const notFound = error instanceof Error ? error : new Error('Album not found');
       if (!notFound.userMessage) {
         notFound.userMessage = "Couldn't find this album on MusicBrainz or your services.";
       }
-      showReleaseLoadError(collectionPlaceholderId, notFound, { run: () => handleCollectionAlbumClick(album) });
+      showReleaseLoadError(collectionPlaceholderId, notFound, {
+        run: () => handleCollectionAlbumClickRef.current?.(album)
+      });
     };
     try {
       console.log('Loading collection album:', album.title, 'by', album.artist);
 
-      // Skip if already viewing this album (avoid unnecessary reloads)
-      if (activeView === 'artist' && currentRelease?.title === album.title && currentArtist?.name === album.artist) {
+      // Skip if already viewing this album (avoid unnecessary reloads). A
+      // page showing a load error is not "viewing" it: Try again must run.
+      if (activeView === 'artist' && currentRelease?.title === album.title
+        && currentArtist?.name === album.artist && !!currentRelease?.tracks && !currentRelease?._loadError) {
         console.log('📀 Already viewing album:', album.title);
         return;
       }
@@ -22469,9 +22482,14 @@ ${trackListXml}
       } catch (catalogError) {
         console.warn('Album catalog fallback failed:', catalogError);
       }
-      showNotFound(error);
+      // A failed search or load, not "not found": let describeMusicBrainzError
+      // word it (an outage says so), and keep the retry.
+      showReleaseLoadError(collectionPlaceholderId, error, {
+        run: () => handleCollectionAlbumClickRef.current?.(album)
+      });
     }
   };
+  handleCollectionAlbumClickRef.current = handleCollectionAlbumClick;
 
   // Validate cached sources in background and update if changed
   const validateCachedSources = async (track, artistName, cachedSources, cacheKey, trackKey) => {
