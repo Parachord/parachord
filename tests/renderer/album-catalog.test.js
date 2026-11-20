@@ -89,6 +89,7 @@ describe('matching', () => {
     // an album's edition list. (One side a single name is different, and is
     // the documented rule — see the test above.)
     expect(creditMatches('A & B', 'A & C')).toBe(false);
+    expect(creditMatches('A & A', 'A & B')).toBe(false);
     expect(creditMatches('Erykah Badu and The Alchemist', 'Erykah Badu, The Alchemist')).toBe(true);
     // one side a single name: one artist of the joint credit is enough
     expect(creditMatches('Ozzy Osbourne', 'Ozzy Osbourne & Black Sabbath')).toBe(true);
@@ -96,6 +97,17 @@ describe('matching', () => {
     // a real artist whose own name splits like a joint credit (MusicBrainz
     // has an artist called "Earth" too): the long-standing single-vs-joint rule
     expect(creditMatches('Earth', 'Earth, Wind & Fire')).toBe(true);
+  });
+
+  test('a single act whose own name carries a separator, credited with a guest', () => {
+    // Splitting "Tyler, The Creator" or "AC/DC" on commas and slashes makes
+    // them look joint; the whole name at a boundary is how they match.
+    expect(creditMatches('Tyler, The Creator', 'Tyler, The Creator & Kali Uchis')).toBe(true);
+    expect(creditMatches('AC/DC', 'AC/DC & X')).toBe(true);
+    expect(creditMatches('Earth, Wind & Fire', 'Earth, Wind & Fire feat. Someone')).toBe(true);
+    // but a short single name is not "most of" a longer one
+    expect(creditMatches('Red', 'Red Hot Chili Peppers')).toBe(false);
+    expect(creditMatches('Tyler, The Creator', 'Tyler, The Creator & Someone Else & Third')).toBe(false);
   });
 
   test('non-Latin titles match on their own letters', () => {
@@ -185,6 +197,8 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum(shortPrefix, { artist: 'A', title: 'Go' }).id).toBe('b');
     const thirdWord = [group('b', 'B', ['A']), group('home', 'Homecoming', ['A'])];
     expect(pickReleaseGroupForAlbum(thirdWord, { artist: 'A', title: 'Home' }).id).toBe('b');
+    const compound = [group('b', 'B', ['A']), group('gogo', 'Go-Go', ['A'])];
+    expect(pickReleaseGroupForAlbum(compound, { artist: 'A', title: 'Go' }).id).toBe('b');
   });
 
   test('the credit reads as one string, join phrases included', () => {

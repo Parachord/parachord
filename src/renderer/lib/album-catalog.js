@@ -63,6 +63,30 @@ const closeEnough = (a, b, ratio) => {
   return long.includes(short) && short.length >= long.length * ratio;
 };
 
+// A name as written, for the boundary checks below: case and accents folded,
+// punctuation and spacing kept (normalizeArtistName drops them).
+const looseName = (s) => stripMarks(s).trim().replace(/\s+/g, ' ');
+const isNameChar = (ch) => !!ch && /[\p{L}\p{N}]/u.test(ch);
+
+// One credit is the other plus a guest, with the whole shorter name at a name
+// boundary and most of the longer one: "Tyler, The Creator" in "Tyler, The
+// Creator & Kali Uchis", "AC/DC" in "AC/DC & X". A single act whose own name
+// carries a separator is not a joint credit to split, so this catches it. Not
+// any containment: "Red" is not most of "Red Hot Chili Peppers".
+function creditContains(one, other) {
+  const a = looseName(one);
+  const b = looseName(other);
+  if (!a || !b || a === b) return false;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  const s = Array.from(short);
+  const l = Array.from(long);
+  if (s.length >= l.length || s.length < l.length * 0.5) return false;
+  const startsIt = s.every((ch, i) => l[i] === ch);
+  if (startsIt && !isNameChar(l[s.length])) return true;
+  const endsIt = s.every((ch, i) => l[l.length - s.length + i] === ch);
+  return endsIt && !isNameChar(l[l.length - s.length - 1]);
+}
+
 // Whether two artist credits name the same act. Every source writes a joint
 // credit its own way — MusicBrainz "A & B", Amazon and Discogs "A, B", some
 // "A feat. B" — so comparing the whole strings alone never matched a release
@@ -83,13 +107,15 @@ function creditMatches(want, got) {
   const g = normalizeArtistName(got);
   if (!w || !g) return false;
   if (closeEnough(w, g, 0.6)) return true;
+  if (creditContains(want, got)) return true;
   const wantNames = splitArtists(want);
   const gotNames = splitArtists(got);
   if (wantNames.length <= 1 || gotNames.length <= 1) {
     return wantNames.includes(g) || gotNames.includes(w);
   }
-  return wantNames.length === gotNames.length
-    && wantNames.every((name) => gotNames.includes(name));
+  const wantSet = new Set(wantNames);
+  const gotSet = new Set(gotNames);
+  return wantSet.size === gotSet.size && [...wantSet].every((name) => gotSet.has(name));
 }
 
 // Whether a catalog album is the one that was asked for: the title matches
@@ -172,14 +198,19 @@ function isStudioReleaseGroup(group) {
 
 // A title the other side spells out: "Back to the Beginning" for
 // "Back to the Beginning: The Final Show, Live from Villa Park". Compared on
-// the names as written (punctuation and spaces kept, case and accents folded)
-// and only at a word boundary, so "Go" is not "Goodbye".
+// the titles as written (punctuation and spaces kept, case and accents folded)
+// and only at a subtitle's separator, so "Go" is not "Goodbye" or "Go-Go" and
+// "Home" is not "Homecoming".
 const spokenOut = (one, other) => {
-  const a = stripMarks(one).trim().replace(/\s+/g, ' ');
-  const b = stripMarks(other).trim().replace(/\s+/g, ' ');
+  const a = looseName(one);
+  const b = looseName(other);
   if (!a || !b || a === b) return false;
   const [short, long] = a.length <= b.length ? [a, b] : [b, a];
-  return long.startsWith(short) && !/[\p{L}\p{N}]/u.test(long.charAt(short.length));
+  const s = Array.from(short);
+  const l = Array.from(long);
+  if (s.length >= l.length || !s.every((ch, i) => l[i] === ch)) return false;
+  // "(", "[", ":" and the like separate a subtitle; a space does too.
+  return /[\s:;,.!?([{'"«—–]/.test(l[s.length] || '');
 };
 
 // Which release-group search result is the album that was asked for.
@@ -199,8 +230,8 @@ const spokenOut = (one, other) => {
 // studio album of another name still won), then the artist's own releases
 // (studio first), then what MusicBrainz ranked first.
 //
-// `title` may be omitted by a caller that only knows the artist (the album-card
-// actions' release-group search): then only the artist decides.
+// `title` defaults to empty, and then only the artist decides (a caller that
+// knows nothing but the artist — the album-card actions pass the title too).
 function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   const list = (Array.isArray(results) ? results : []).filter((r) => r && r.id);
   if (list.length === 0) return null;
