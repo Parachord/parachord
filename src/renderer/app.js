@@ -596,7 +596,7 @@ const {
   catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
   normalizeAlbumTitle, normalizeArtistName, isCatalogAlbumEdition, albumMatchScore,
   albumVersionsGroup, albumVersionsKey, albumEditionPickKeys,
-  releaseGroupCredit, pickReleaseGroupForAlbum
+  creditMatches, releaseGroupCredit, pickReleaseGroupForAlbum
 } = require('./lib/album-catalog');
 const {
   deezerArtistImageFromSearch, firstArtistImage, createArtistImageMissCache
@@ -22397,10 +22397,13 @@ ${trackListXml}
       // An album with local files (#1532) only takes a result with its own
       // title (store suffix dropped): a search for a home recording returns
       // whatever MusicBrainz has nearby, and the page would show someone
-      // else's album. With no such result, its files' catalog opens it.
+      // else's album. The artist must match too, as everywhere else — a file
+      // tagged with one artist of a joint credit is still that album — and
+      // with no such result, its files' catalog opens it.
       if (localSourceId) {
-        const wanted = albumIdentity(album.artist, album.title);
-        const titled = results.filter(r => albumIdentity(releaseGroupCredit(r), r.title) === wanted);
+        const wantedTitle = normalizeAlbumTitle(album.title);
+        const titled = results.filter(r => normalizeAlbumTitle(r.title) === wantedTitle
+          && creditMatches(album.artist, releaseGroupCredit(r)));
         if (titled.length === 0) {
           if (await openFromCatalogs()) return;
         } else {

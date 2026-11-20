@@ -71,6 +71,18 @@ describe('openers', () => {
     expect(fnBody('const loadAlbumTrackList = async (')).toMatch(/pickReleaseGroup\(\(await searchResp\.json\(\)\)\['release-groups'\], artist, title\)/);
   });
 
+  test('a local album takes a joint-credit result for its own album, not only one credited to its first artist', () => {
+    // #1532: an album with local files only takes a MusicBrainz result with
+    // its own title, else its files' catalog opens it. The title is compared
+    // through normalizeAlbumTitle and the artist through the shared credit
+    // rule, so a file tagged with one artist of a joint credit still matches
+    // (the old first-credit string compare missed the other direction).
+    const body = fnBody('const handleCollectionAlbumClick = async (album) => {');
+    expect(body).toMatch(/const wantedTitle = normalizeAlbumTitle\(album\.title\);/);
+    expect(body).toMatch(/normalizeAlbumTitle\(r\.title\) === wantedTitle\s*&& creditMatches\(album\.artist, releaseGroupCredit\(r\)\)/);
+    expect(body).not.toMatch(/albumIdentity\(r\['artist-credit'\]/);
+  });
+
   test('collection albums show a placeholder, then the catalogs on not-found and on error', () => {
     const body = fnBody('const handleCollectionAlbumClick = async (album) => {');
     expect(body).toMatch(/setCurrentRelease\(\{\s*id: collectionPlaceholderId,/);

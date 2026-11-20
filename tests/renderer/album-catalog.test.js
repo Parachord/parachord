@@ -83,6 +83,21 @@ describe('matching', () => {
     expect(creditMatches('', 'Anyone')).toBe(false);
   });
 
+  test('both sides joint need the same names, not one shared member', () => {
+    // Sharing a member is not being the same act: "A & B" and "A & C" are
+    // two collaborations, and treating them as one put another act's album in
+    // an album's edition list. (One side a single name is different, and is
+    // the documented rule — see the test above.)
+    expect(creditMatches('A & B', 'A & C')).toBe(false);
+    expect(creditMatches('Erykah Badu and The Alchemist', 'Erykah Badu, The Alchemist')).toBe(true);
+    // one side a single name: one artist of the joint credit is enough
+    expect(creditMatches('Ozzy Osbourne', 'Ozzy Osbourne & Black Sabbath')).toBe(true);
+    expect(creditMatches('Ozzy Osbourne & Black Sabbath', 'Black Sabbath')).toBe(true);
+    // a real artist whose own name splits like a joint credit (MusicBrainz
+    // has an artist called "Earth" too): the long-standing single-vs-joint rule
+    expect(creditMatches('Earth', 'Earth, Wind & Fire')).toBe(true);
+  });
+
   test('non-Latin titles match on their own letters', () => {
     expect(albumMatchScore({ artist: 'ХЛЕБ', title: 'Пушка' }, { name: 'Пушка', artist: 'ХЛЕБ' })).toBeGreaterThan(0);
     expect(albumMatchScore({ artist: 'ХЛЕБ', title: 'Пушка' }, { name: 'Яйца', artist: 'ХЛЕБ' })).toBe(0);
@@ -140,16 +155,31 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum([group('top', 'X', ['A']), group('live', 'X', ['A'], { secondary: ['Live'] })], { artist: 'A' }).id).toBe('top');
   });
 
-  test('nothing matching: the artist\'s own releases, then the top result; empty input gives null', () => {
+  test('nothing matching: the closest title, then the artist\'s own releases, then the top result; empty input gives null', () => {
     expect(pickReleaseGroupForAlbum([group('a', 'X', ['A']), group('b', 'Y', ['B'])], { artist: 'B', title: 'Z' }).id).toBe('b');
     expect(pickReleaseGroupForAlbum([group('top', 'X', ['A'])], { artist: 'B', title: 'Z' }).id).toBe('top');
     expect(pickReleaseGroupForAlbum([], { artist: 'A', title: 'X' })).toBeNull();
     expect(pickReleaseGroupForAlbum(undefined, { artist: 'A' })).toBeNull();
   });
 
+  test('a long MusicBrainz spelling of the title beats another album of the same artist', () => {
+    // MusicBrainz often spells a title out: a source's "Back to the Beginning"
+    // is "Back to the Beginning: The Final Show, Live from Villa Park" here,
+    // too little of the shorter side for albumMatchScore's containment gate.
+    // Without the title-closeness pass the artist fallback took the studio
+    // album "13" — the original bug in another shape.
+    const results = [
+      group('final-show', 'Back to the Beginning: The Final Show, Live from Villa Park', ['Ozzy Osbourne', 'Black Sabbath'], { secondary: ['Live'] }),
+      group('13', '13', ['Black Sabbath']),
+    ];
+    expect(pickReleaseGroupForAlbum(results, { artist: 'Ozzy Osbourne, Black Sabbath', title: 'Back to the Beginning' }).id).toBe('final-show');
+  });
+
   test('the credit reads as one string, join phrases included', () => {
     expect(releaseGroupCredit(group('x', 'T', ['Ozzy Osbourne', 'Black Sabbath']))).toBe('Ozzy Osbourne & Black Sabbath');
     expect(releaseGroupCredit(group('x', 'T', ['Solo']))).toBe('Solo');
+    // a result whose credit carries the artist object but no name
+    expect(releaseGroupCredit({ 'artist-credit': [{ artist: { name: 'From the artist' } }] })).toBe('From the artist');
     expect(releaseGroupCredit(null)).toBe('');
   });
 });

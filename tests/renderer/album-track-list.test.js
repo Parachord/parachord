@@ -77,6 +77,16 @@ describe('pickReleaseGroup', () => {
     expect(pickReleaseGroup([{ id: 'top', 'artist-credit': credit('A') }], 'B').id).toBe('top');
     expect(pickReleaseGroup([], 'B')).toBeNull();
   });
+  test('with the album title, the album asked for wins over a studio album of the artist', () => {
+    const results = [
+      { id: 'tribute', title: 'A Tribute to Black Sabbath', 'primary-type': 'Album', 'artist-credit': credit('Lounge Brigade') },
+      { id: 'wanted', title: 'Back to the Beginning', 'primary-type': 'Album', 'secondary-types': ['Live'], 'artist-credit': credit('Ozzy Osbourne') },
+      { id: '13', title: '13', 'primary-type': 'Album', 'artist-credit': credit('Black Sabbath') },
+    ];
+    expect(pickReleaseGroup(results, 'Ozzy Osbourne, Black Sabbath', 'Back To The Beginning (Live)').id).toBe('wanted');
+    // no title: the artist rule alone, as before
+    expect(pickReleaseGroup(results, 'Black Sabbath').id).toBe('13');
+  });
 });
 
 describe('app.js wiring', () => {
