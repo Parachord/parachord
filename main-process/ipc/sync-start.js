@@ -26,6 +26,7 @@ const { flagDeadMirrors } = require('../../sync-engine/dead-mirrors');
 const { detachMissingSources } = require('../../sync-engine/missing-sources');
 const { keepDroppedLinks } = require('../../sync-engine/playlist-save-guard');
 const { remoteUpdateAction, hasRealLocalEdits, applyPulledTracks, keepEditsMadeDuringPull, tracksFingerprint, seedTracksFingerprint } = require('../../sync-engine/auto-pull');
+const { stableCreatedAt } = require('../../sync-engine/created-at');
 
 function registerSyncStartIpc({
   ipcMain,
@@ -682,14 +683,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 console.log(`[Sync] Fetched ${tracks.length} tracks for "${remotePlaylist.name}"`);
               }
 
-              // Recalculate createdAt from existing tracks if available
-              let recalculatedCreatedAt = currentPlaylists[idx].createdAt;
-              if (tracks.length > 0) {
-                const trackDates = tracks.map(t => t.addedAt || t.syncSources?.spotify?.addedAt).filter(Boolean);
-                if (trackDates.length > 0) {
-                  recalculatedCreatedAt = Math.min(...trackDates);
-                }
-              }
+              // The created date only ever moves earlier (sync-engine/created-at.js):
+              // recalculating it from the current tracks alone moved a playlist
+              // the service rebuilds daily (Daily Brew) forward with every rebuild.
+              const recalculatedCreatedAt = stableCreatedAt(currentPlaylists[idx], tracks, providerId);
 
               // Re-read the playlist from store in case the user pulled changes
               // while this sync was running (handlePull saves hasUpdates:false +
@@ -780,7 +777,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                   : {}),
                 // Backfill source if not set
                 source: current.source || (remotePlaylist.isOwnedByUser ? `${providerId}-sync` : `${providerId}-import`),
-                // Update createdAt from track data
+                // The created date, never later than it was (see above)
                 createdAt: recalculatedCreatedAt,
                 // Update/backfill syncedFrom ONLY if we're the pull source.
                 // Cross-provider push mirrors keep their original syncedFrom.
