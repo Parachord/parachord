@@ -147,9 +147,12 @@ function pickCatalogAlbum(albums, target) {
 function releaseGroupCredit(group) {
   const credit = Array.isArray(group && group['artist-credit']) ? group['artist-credit'] : [];
   return credit
-    .map((c) => {
+    .map((c, i) => {
       const name = (c && (c.name || (c.artist && c.artist.name))) || '';
-      return name ? `${name}${(c && c.joinphrase) || ''}` : '';
+      // MusicBrainz carries the join phrase; a credit built from a browse or a
+      // test fixture may not, so names are never glued together.
+      const join = (c && c.joinphrase) || (i < credit.length - 1 ? ', ' : '');
+      return name ? `${name}${join}` : '';
     })
     .join('')
     .trim();
@@ -166,6 +169,18 @@ function isStudioReleaseGroup(group) {
   const secondary = ((group && group['secondary-types']) || []).map((t) => String(t).toLowerCase());
   return isAlbumGroup(group) && !secondary.some((t) => NON_STUDIO_SECONDARY_TYPES.includes(t));
 }
+
+// A title the other side spells out: "Back to the Beginning" for
+// "Back to the Beginning: The Final Show, Live from Villa Park". Compared on
+// the names as written (punctuation and spaces kept, case and accents folded)
+// and only at a word boundary, so "Go" is not "Goodbye".
+const spokenOut = (one, other) => {
+  const a = stripMarks(one).trim().replace(/\s+/g, ' ');
+  const b = stripMarks(other).trim().replace(/\s+/g, ' ');
+  if (!a || !b || a === b) return false;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return long.startsWith(short) && !/[\p{L}\p{N}]/u.test(long.charAt(short.length));
+};
 
 // Which release-group search result is the album that was asked for.
 //
@@ -192,16 +207,16 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   const wantTitle = normalizeAlbumTitle(title);
   // How close a result's title is, beyond albumMatchScore's gate: the whole
   // title, most of it, or the asked-for title as a prefix of MusicBrainz's
-  // longer spelling. A prefix only counts from 12 letters on, so a short title
-  // missing from the results ("Go") does not hand the artist's "Goodbye" the
-  // win.
+  // longer spelling. The prefix must end at a word boundary, so a short title
+  // missing from the results ("Go", "Home") does not hand the artist's
+  // "Goodbye" or "Homecoming" the win, while "Rumours" still finds
+  // "Rumours: Live from the Forum 1977" whatever its length.
   const titleCloseness = (r) => {
     const got = normalizeAlbumTitle(r.title);
     if (!wantTitle || !got) return 0;
     if (wantTitle === got) return 3;
     if (closeEnough(wantTitle, got, 0.6)) return 2;
-    const prefix = got.startsWith(wantTitle) || wantTitle.startsWith(got);
-    return prefix && Math.min(wantTitle.length, got.length) >= 12 ? 1 : 0;
+    return spokenOut(title, r.title) ? 1 : 0;
   };
   const scored = list.map((r, index) => ({
     r, index,

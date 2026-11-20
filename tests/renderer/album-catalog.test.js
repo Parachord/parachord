@@ -162,7 +162,8 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum(undefined, { artist: 'A' })).toBeNull();
   });
 
-  test('a long MusicBrainz spelling of the title beats another album of the same artist', () => {    // MusicBrainz often spells a title out: a source's "Back to the Beginning"
+  test('a long MusicBrainz spelling of the title beats another album of the same artist', () => {
+    // MusicBrainz often spells a title out: a source's "Back to the Beginning"
     // is "Back to the Beginning: The Final Show, Live from Villa Park" here,
     // too little of the shorter side for albumMatchScore's containment gate.
     // Without the title-closeness pass the artist fallback took the studio
@@ -174,19 +175,24 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum(results, { artist: 'Ozzy Osbourne, Black Sabbath', title: 'Back to the Beginning' }).id).toBe('final-show');
   });
 
-  test('a short shared prefix is not a title match', () => {
-    // "Go" and the artist's "Goodbye" share three letters; without the floor
-    // the prefix pass would hand the artist fallback to it.
-    const results = [group('b', 'B', ['A']), group('bye', 'Goodbye', ['A'])];
-    expect(pickReleaseGroupForAlbum(results, { artist: 'A', title: 'Go' }).id).toBe('b');
-    // 12 letters is enough to be MusicBrainz's longer spelling of the title
-    const long = [group('b', 'B', ['A']), group('spelled', 'Back to the Beginning: The Final Show', ['A'], { secondary: ['Live'] })];
-    expect(pickReleaseGroupForAlbum(long, { artist: 'A', title: 'Back to the Beginning' }).id).toBe('spelled');
+  test('a title the results spell out counts whatever its length', () => {
+    // A prefix counts only at a word boundary, not from an arbitrary length:
+    // "Rumours" is still the album MusicBrainz calls "Rumours: Live from the
+    // Forum 1977", while "Go" is not the artist's "Goodbye".
+    const spelledOut = [group('tusk', 'Tusk', ['Fleetwood Mac']), group('rumours', 'Rumours: Live from the Forum 1977', ['Fleetwood Mac'], { secondary: ['Live'] })];
+    expect(pickReleaseGroupForAlbum(spelledOut, { artist: 'Fleetwood Mac', title: 'Rumours' }).id).toBe('rumours');
+    const shortPrefix = [group('b', 'B', ['A']), group('bye', 'Goodbye', ['A'])];
+    expect(pickReleaseGroupForAlbum(shortPrefix, { artist: 'A', title: 'Go' }).id).toBe('b');
+    const thirdWord = [group('b', 'B', ['A']), group('home', 'Homecoming', ['A'])];
+    expect(pickReleaseGroupForAlbum(thirdWord, { artist: 'A', title: 'Home' }).id).toBe('b');
   });
 
   test('the credit reads as one string, join phrases included', () => {
     expect(releaseGroupCredit(group('x', 'T', ['Ozzy Osbourne', 'Black Sabbath']))).toBe('Ozzy Osbourne & Black Sabbath');
     expect(releaseGroupCredit(group('x', 'T', ['Solo']))).toBe('Solo');
+    // a credit that carries no join phrases still separates the names, so
+    // creditMatches can split them
+    expect(releaseGroupCredit({ 'artist-credit': [{ name: 'A' }, { name: 'B' }] })).toBe('A, B');
     // a result whose credit carries the artist object but no name
     expect(releaseGroupCredit({ 'artist-credit': [{ artist: { name: 'From the artist' } }] })).toBe('From the artist');
     expect(releaseGroupCredit(null)).toBe('');

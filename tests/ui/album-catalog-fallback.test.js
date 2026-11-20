@@ -65,7 +65,7 @@ describe('openers', () => {
     // for Ozzy Osbourne & Black Sabbath's "Back to the Beginning" (2026-11-20).
     expect(app).not.toMatch(/artistMatches\.find\(isStudioAlbum\)/);
     expect(fnBody('const handleCollectionAlbumClick = async (album) => {'))
-      .toMatch(/pickReleaseGroupForAlbum\(pool, \{ artist: album\.artist, title: album\.title \}\)/);
+      .toMatch(/pickReleaseGroupForAlbum\([^;]*\{ artist: album\.artist, title: album\.title \}\)/);
     const protocol = app.slice(app.indexOf("case 'album': {"), app.indexOf("case 'library': {"));
     expect(protocol).toMatch(/pickReleaseGroupForAlbum\(results, \{ artist: artistName, title: albumTitle \}\)/);
     expect(fnBody('const loadAlbumTrackList = async (')).toMatch(/pickReleaseGroup\(\(await searchResp\.json\(\)\)\['release-groups'\], artist, title\)/);
