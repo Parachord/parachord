@@ -11,6 +11,9 @@ const {
   albumMatchScore,
   sameAlbumIdentity,
   pickCatalogAlbum,
+  creditMatches,
+  releaseGroupCredit,
+  pickReleaseGroupForAlbum,
   orderCatalogResolvers,
   catalogAlbumToRelease,
   catalogAlbumToSearchResult,
@@ -62,6 +65,24 @@ describe('matching', () => {
     expect(albumMatchScore({ artist: 'Simon & Garfunkel', title: 'Bookends' }, { name: 'Bookends', artist: 'Simon and Garfunkel' })).toBeGreaterThan(0);
   });
 
+  test('two joint credits written with different separators are the same act', () => {
+    // Amazon writes "Ozzy Osbourne, Black Sabbath", MusicBrainz "Ozzy Osbourne
+    // & Black Sabbath": folding the whole string left them different, and the
+    // album openers matched no search result at all.
+    expect(creditMatches('Ozzy Osbourne, Black Sabbath', 'Ozzy Osbourne & Black Sabbath')).toBe(true);
+    expect(creditMatches('Ozzy Osbourne & Black Sabbath', 'Ozzy Osbourne, Black Sabbath')).toBe(true);
+    expect(albumMatchScore(
+      { artist: 'Ozzy Osbourne, Black Sabbath', title: 'Back To The Beginning (Live)' },
+      { name: 'Back to the Beginning', artist: 'Ozzy Osbourne & Black Sabbath' }
+    )).toBeGreaterThan(0);
+  });
+
+  test('a different act is still a different act', () => {
+    expect(creditMatches('Ozzy Osbourne, Black Sabbath', 'Lounge Brigade')).toBe(false);
+    expect(creditMatches('Lounge Brigade', 'Ozzy Osbourne & Black Sabbath')).toBe(false);
+    expect(creditMatches('', 'Anyone')).toBe(false);
+  });
+
   test('non-Latin titles match on their own letters', () => {
     expect(albumMatchScore({ artist: 'ХЛЕБ', title: 'Пушка' }, { name: 'Пушка', artist: 'ХЛЕБ' })).toBeGreaterThan(0);
     expect(albumMatchScore({ artist: 'ХЛЕБ', title: 'Пушка' }, { name: 'Яйца', artist: 'ХЛЕБ' })).toBe(0);
@@ -76,6 +97,60 @@ describe('matching', () => {
     expect(pickCatalogAlbum(albums, target).url).toBe('u2');
     expect(pickCatalogAlbum([{ name: 'Nope', artist: 'Wild Pink' }], target)).toBe(null);
     expect(pickCatalogAlbum(undefined, target)).toBe(null);
+  });
+});
+
+describe('pickReleaseGroupForAlbum', () => {
+  const group = (id, title, credit, { type = 'Album', secondary = null } = {}) => ({
+    id,
+    title,
+    'primary-type': type,
+    ...(secondary ? { 'secondary-types': secondary } : {}),
+    'artist-credit': credit.map((name, i) => ({ name, ...(i < credit.length - 1 ? { joinphrase: ' & ' } : {}) })),
+  });
+
+  // A real MusicBrainz answer for "Ozzy Osbourne, Black Sabbath Back To The
+  // Beginning (Live)" (Amazon's credit string), 2026-11-20: the album asked
+  // for is first and is a Live album, the only studio album is a tribute.
+  const ozzySearch = [
+    group('right', 'Back to the Beginning', ['Ozzy Osbourne', 'Black Sabbath'], { secondary: ['Live'] }),
+    group('ozzy-years', 'The Ozzy Osbourne Years', ['Black Sabbath'], { secondary: ['Compilation'] }),
+    group('tribute', 'Sabbath in the Suburbs: The Lounge Tribute to Ozzy Osbourne & Black Sabbath', ['Lounge Brigade']),
+  ];
+
+  test('the album whose title and artist match, not the first studio album in the list', () => {
+    expect(pickReleaseGroupForAlbum(ozzySearch, { artist: 'Ozzy Osbourne, Black Sabbath', title: 'Back To The Beginning (Live)' }).id).toBe('right');
+  });
+
+  test('a studio edition wins between two editions of the same album', () => {
+    const editions = [
+      group('live', 'Dulling the Horns', ['Wild Pink'], { secondary: ['Live'] }),
+      group('studio', 'Dulling the Horns', ['Wild Pink']),
+    ];
+    expect(pickReleaseGroupForAlbum(editions, { artist: 'Wild Pink', title: 'Dulling the Horns' }).id).toBe('studio');
+  });
+
+  test('the right artist beats a same-titled album by someone else', () => {
+    const results = [group('other', 'Black Star', ['Someone Else']), group('mine', 'Black Star', ['Lustmord'], { type: 'Single' })];
+    expect(pickReleaseGroupForAlbum(results, { artist: 'Lustmord', title: 'Black Star' }).id).toBe('mine');
+  });
+
+  test('with no title (a caller that only knows the artist) the artist decides: a studio album first, then MusicBrainz order', () => {
+    expect(pickReleaseGroupForAlbum(ozzySearch, { artist: 'Ozzy Osbourne, Black Sabbath' }).id).toBe('right');
+    expect(pickReleaseGroupForAlbum([group('top', 'X', ['A']), group('live', 'X', ['A'], { secondary: ['Live'] })], { artist: 'A' }).id).toBe('top');
+  });
+
+  test('nothing matching: the artist\'s own releases, then the top result; empty input gives null', () => {
+    expect(pickReleaseGroupForAlbum([group('a', 'X', ['A']), group('b', 'Y', ['B'])], { artist: 'B', title: 'Z' }).id).toBe('b');
+    expect(pickReleaseGroupForAlbum([group('top', 'X', ['A'])], { artist: 'B', title: 'Z' }).id).toBe('top');
+    expect(pickReleaseGroupForAlbum([], { artist: 'A', title: 'X' })).toBeNull();
+    expect(pickReleaseGroupForAlbum(undefined, { artist: 'A' })).toBeNull();
+  });
+
+  test('the credit reads as one string, join phrases included', () => {
+    expect(releaseGroupCredit(group('x', 'T', ['Ozzy Osbourne', 'Black Sabbath']))).toBe('Ozzy Osbourne & Black Sabbath');
+    expect(releaseGroupCredit(group('x', 'T', ['Solo']))).toBe('Solo');
+    expect(releaseGroupCredit(null)).toBe('');
   });
 });
 

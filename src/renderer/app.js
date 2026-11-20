@@ -122,25 +122,11 @@ window.pickAlbumNameForTrack = (track, mapperResult) => {
 };
 
 // Choose which MusicBrainz release-group search result to open for a track's
-// album: an Album by the right artist, else anything by the right artist,
-// else the first Album, else the first result. "Right artist" is a
-// normalized containment match on the artist credit, so a same-titled album
-// by someone else doesn't win just because it sorted first.
-window.pickReleaseGroupForAlbum = (results, artist) => {
-  const list = Array.isArray(results) ? results : [];
-  if (list.length === 0) return null;
-  const want = normalizeStr(artist || '');
-  const byArtist = (r) => {
-    if (!want) return false;
-    const credit = normalizeStr((r['artist-credit'] || []).map((c) => c && c.name).filter(Boolean).join(' '));
-    return !!credit && (credit.includes(want) || want.includes(credit));
-  };
-  const isAlbum = (r) => r['primary-type'] === 'Album';
-  return list.find((r) => isAlbum(r) && byArtist(r))
-    || list.find(byArtist)
-    || list.find(isAlbum)
-    || list[0];
-};
+// album (album-catalog.js's pickReleaseGroupForAlbum: the album's title and
+// artist decide, a joint credit written differently by the source counts, and
+// a studio edition of that album wins between its editions).
+window.pickReleaseGroupForAlbum = (results, artist, title = '') =>
+  pickReleaseGroupForAlbum(results, { artist, title });
 
 
 
@@ -609,7 +595,8 @@ const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
   catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
   normalizeAlbumTitle, normalizeArtistName, isCatalogAlbumEdition, albumMatchScore,
-  albumVersionsGroup, albumVersionsKey, albumEditionPickKeys
+  albumVersionsGroup, albumVersionsKey, albumEditionPickKeys,
+  releaseGroupCredit, pickReleaseGroupForAlbum
 } = require('./lib/album-catalog');
 const {
   deezerArtistImageFromSearch, firstArtistImage, createArtistImageMissCache
@@ -12297,22 +12284,10 @@ const Parachord = () => {
                   break;
                 }
 
-                // Find best match - prefer artist match and studio albums
-                const artistMatches = results.filter(r =>
-                  r['artist-credit']?.[0]?.name?.toLowerCase() === artistName.toLowerCase()
-                );
-                const isStudioAlbum = (r) => {
-                  const primaryType = r['primary-type']?.toLowerCase();
-                  const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
-                  if (primaryType !== 'album') return false;
-                  const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
-                  return !secondaryTypes.some(t => nonStudioTypes.includes(t));
-                };
-
-                const match = artistMatches.find(isStudioAlbum)
-                  || artistMatches[0]
-                  || results.find(isStudioAlbum)
-                  || results[0];
+                // The album asked for, by title and artist (a joint credit
+                // written "A, B" by the source and "A & B" by MusicBrainz
+                // still matches).
+                const match = pickReleaseGroupForAlbum(results, { artist: artistName, title: albumTitle });
 
                 fetchReleaseData({
                   id: match.id,
@@ -22202,7 +22177,7 @@ ${trackListXml}
         );
         if (response.ok) {
           const data = await response.json();
-          const album = window.pickReleaseGroupForAlbum(data['release-groups'], track.artist);
+          const album = window.pickReleaseGroupForAlbum(data['release-groups'], track.artist, albumName);
           if (album) {
             releaseGroupPicksRef.current.set(track.artist, albumName, album);
             return handleAlbumClick({ ...album, isReleaseGroup: true });
@@ -22415,20 +22390,9 @@ ${trackListXml}
         return;
       }
 
-      // Find best match - prefer studio albums over singles/live/compilations
-      const isStudioAlbum = (r) => {
-        const primaryType = r['primary-type']?.toLowerCase();
-        const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
-        // Must be an album (not single, EP, etc)
-        if (primaryType !== 'album') return false;
-        // Must not be live, compilation, remix, etc
-        const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
-        return !secondaryTypes.some(t => nonStudioTypes.includes(t));
-      };
-
-      const artistMatches = results.filter(r =>
-        r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
-      );
+      // The album asked for, by title and artist (a joint credit written
+      // "A, B" by the source and "A & B" by MusicBrainz still matches).
+      let pool = results;
 
       // An album with local files (#1532) only takes a result with its own
       // title (store suffix dropped): a search for a home recording returns
@@ -22436,19 +22400,15 @@ ${trackListXml}
       // else's album. With no such result, its files' catalog opens it.
       if (localSourceId) {
         const wanted = albumIdentity(album.artist, album.title);
-        const titled = results.filter(r => albumIdentity(r['artist-credit']?.[0]?.name || '', r.title) === wanted);
+        const titled = results.filter(r => albumIdentity(releaseGroupCredit(r), r.title) === wanted);
         if (titled.length === 0) {
           if (await openFromCatalogs()) return;
         } else {
-          artistMatches.splice(0, artistMatches.length, ...titled);
+          pool = titled;
         }
       }
 
-      // Priority: 1) Studio album with artist match, 2) Any album with artist match, 3) Studio album, 4) First result
-      const match = artistMatches.find(isStudioAlbum)
-        || artistMatches[0]
-        || results.find(isStudioAlbum)
-        || results[0];
+      const match = pickReleaseGroupForAlbum(pool, { artist: album.artist, title: album.title });
 
       releaseGroupPicksRef.current.set(album.artist, album.title, match);
       // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)
@@ -28936,7 +28896,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
           );
           if (!searchResp.ok) return null;
-          const match = pickReleaseGroup((await searchResp.json())['release-groups'], artist);
+          const match = pickReleaseGroup((await searchResp.json())['release-groups'], artist, title);
           if (!match) return null;
           // Opening this album later reuses the lookup (openAlbumForTrack,
           // handleCollectionAlbumClick, fetchReleaseData).

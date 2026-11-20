@@ -58,6 +58,19 @@ describe('fetchReleaseData', () => {
 });
 
 describe('openers', () => {
+  test('every release-group search is picked by the shared matcher, never by "first studio album"', () => {
+    // The title and the artist decide (album-catalog.js), a joint credit
+    // written "A, B" by the source and "A & B" by MusicBrainz included; the
+    // opener that still had its own chain opened an unrelated tribute album
+    // for Ozzy Osbourne & Black Sabbath's "Back to the Beginning" (2026-11-20).
+    expect(app).not.toMatch(/artistMatches\.find\(isStudioAlbum\)/);
+    expect(fnBody('const handleCollectionAlbumClick = async (album) => {'))
+      .toMatch(/pickReleaseGroupForAlbum\(pool, \{ artist: album\.artist, title: album\.title \}\)/);
+    const protocol = app.slice(app.indexOf("case 'album': {"), app.indexOf("case 'library': {"));
+    expect(protocol).toMatch(/pickReleaseGroupForAlbum\(results, \{ artist: artistName, title: albumTitle \}\)/);
+    expect(fnBody('const loadAlbumTrackList = async (')).toMatch(/pickReleaseGroup\(\(await searchResp\.json\(\)\)\['release-groups'\], artist, title\)/);
+  });
+
   test('collection albums show a placeholder, then the catalogs on not-found and on error', () => {
     const body = fnBody('const handleCollectionAlbumClick = async (album) => {');
     expect(body).toMatch(/setCurrentRelease\(\{\s*id: collectionPlaceholderId,/);

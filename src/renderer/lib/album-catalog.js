@@ -63,6 +63,24 @@ const closeEnough = (a, b, ratio) => {
   return long.includes(short) && short.length >= long.length * ratio;
 };
 
+// Whether two artist credits name the same act. Every source writes a joint
+// credit its own way — MusicBrainz "A & B", Amazon and Discogs "A, B", some
+// "A feat. B" — so comparing the whole strings alone never matched a release
+// credited to more than one artist. Opening Ozzy Osbourne's and Black
+// Sabbath's "Back to the Beginning" (Amazon: "Ozzy Osbourne, Black Sabbath",
+// MusicBrainz: "Ozzy Osbourne & Black Sabbath") matched no search result, and
+// the opener fell through to the first studio album MusicBrainz listed, an
+// unrelated tribute record. One artist of a joint credit is enough, on either
+// side, as it already was when only one side was joint.
+function creditMatches(want, got) {
+  const w = normalizeArtistName(want);
+  const g = normalizeArtistName(got);
+  if (!w || !g) return false;
+  if (closeEnough(w, g, 0.6)) return true;
+  const gotNames = new Set(splitArtists(got));
+  return splitArtists(want).some((name) => gotNames.has(name));
+}
+
 // Whether a catalog album is the one that was asked for: the title matches
 // (edition suffixes aside) and so does the artist (one of a joint credit is
 // enough). Returns 0 for no match, else a score where higher is closer.
@@ -73,10 +91,7 @@ function albumMatchScore(target, album) {
   if (!closeEnough(wantTitle, gotTitle, 0.6)) return 0;
   const wantArtist = normalizeArtistName(target.artist);
   const gotArtist = normalizeArtistName(album.artist);
-  const artistOk = closeEnough(wantArtist, gotArtist, 0.6)
-    || splitArtists(album.artist).includes(wantArtist)
-    || splitArtists(target.artist).includes(gotArtist);
-  if (!artistOk) return 0;
+  if (!creditMatches(target.artist, album.artist)) return 0;
   // The same title before edition suffixes were stripped beats an edition:
   // "Dulling the Horns" over "Dulling the Horns (Deluxe)".
   const bare = (s) => stripMarks(s).replace(/[^\p{L}\p{N}]+/gu, '');
@@ -111,6 +126,69 @@ function pickCatalogAlbum(albums, target) {
     }
   }
   return best;
+}
+
+// The artists a MusicBrainz result (a release group, a release) credits, as
+// one string the way the credit reads: "A & B", join phrases included, so a
+// single-artist credit has no trailing separator.
+function releaseGroupCredit(group) {
+  const credit = Array.isArray(group && group['artist-credit']) ? group['artist-credit'] : [];
+  return credit
+    .map((c) => {
+      const name = (c && (c.name || (c.artist && c.artist.name))) || '';
+      return name ? `${name}${(c && c.joinphrase) || ''}` : '';
+    })
+    .join('')
+    .trim();
+}
+
+const NON_STUDIO_SECONDARY_TYPES = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
+const primaryTypeOf = (group) => String((group && group['primary-type']) || '').toLowerCase();
+const isAlbumGroup = (group) => primaryTypeOf(group) === 'album';
+
+// A studio album: an Album with no live, compilation, soundtrack or other
+// secondary type. The opener looked for one when no result matched the album
+// asked for, which is how an unrelated record got opened.
+function isStudioReleaseGroup(group) {
+  const secondary = ((group && group['secondary-types']) || []).map((t) => String(t).toLowerCase());
+  return isAlbumGroup(group) && !secondary.some((t) => NON_STUDIO_SECONDARY_TYPES.includes(t));
+}
+
+// Which release-group search result is the album that was asked for.
+//
+// A search is by name: MusicBrainz ranks by relevance, and mixes in other
+// albums of those artists and same-titled albums by anyone. Picking
+// "an Album by the right artist, else any Album, else the first result" ignored
+// the album's own title, and with a joint credit written differently by the
+// source (see creditMatches) the artist never matched either: the album page
+// opened the first studio album in the list, whatever it was. The title and
+// artist decide first (albumMatchScore: a joint credit on either side is
+// enough, store edition suffixes aside), and only among results for that album
+// does a studio album win over a live or compilation edition of it. With no
+// result matching, the artist's own releases come next (studio first), then
+// what MusicBrainz ranked first.
+//
+// `title` may be omitted by a caller that only knows the artist (the album-card
+// actions' release-group search): then only the artist decides.
+function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
+  const list = (Array.isArray(results) ? results : []).filter((r) => r && r.id);
+  if (list.length === 0) return null;
+  const scored = list.map((r, index) => ({
+    r, index,
+    score: albumMatchScore({ artist, title }, { name: r.title, artist: releaseGroupCredit(r) })
+  }));
+  // Equal scores are the same album (title and artist): a studio edition wins
+  // over a live one, an Album over a single, then MusicBrainz's own order.
+  const best = (entries) => entries.slice().sort((a, b) =>
+    (b.score - a.score)
+    || (Number(isStudioReleaseGroup(b.r)) - Number(isStudioReleaseGroup(a.r)))
+    || (Number(isAlbumGroup(b.r)) - Number(isAlbumGroup(a.r)))
+    || (a.index - b.index))[0].r;
+  const matched = scored.filter((entry) => entry.score > 0);
+  if (matched.length > 0) return best(matched);
+  const byArtist = scored.filter((entry) => creditMatches(artist, releaseGroupCredit(entry.r)));
+  if (byArtist.length > 0) return best(byArtist);
+  return best(scored);
 }
 
 // A catalog album that is the same album the page shows, edition aside —
@@ -250,6 +328,10 @@ module.exports = {
   normalizeAlbumTitle,
   normalizeArtistName,
   albumMatchScore,
+  creditMatches,
+  releaseGroupCredit,
+  isStudioReleaseGroup,
+  pickReleaseGroupForAlbum,
   sameAlbumIdentity,
   pickCatalogAlbum,
   isCatalogAlbumEdition,

@@ -242,12 +242,16 @@ describe('album-catalog: which catalog results are editions of the album', () =>
 
   test('a joint credit still names the same artist', () => {
     // one side of a joint credit is enough — the documented pickCatalogAlbum
-    // rule — when that side is a single name: an edition the service credits
-    // to both artists still counts. (Both sides joined with different joins —
-    // "and" vs "," — is a pre-existing albumMatchScore limitation, not this
-    // filter's.)
+    // rule. An edition the service credits to both artists still counts, and
+    // since 2026-11-20 so does one where BOTH sides are joint credits joined
+    // differently ("and" vs "," vs "&"). It used to not: folding the whole
+    // credit strings left them different, which is how a release credited
+    // "Ozzy Osbourne, Black Sabbath" by Amazon matched nothing on MusicBrainz
+    // ("Ozzy Osbourne & Black Sabbath") and opened an unrelated album.
     expect(isCatalogAlbumEdition({ artist: 'Erykah Badu', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Erykah Badu & The Alchemist' })).toBe(true);
-    expect(isCatalogAlbumEdition({ artist: 'Erykah Badu and The Alchemist', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Erykah Badu, The Alchemist' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'Erykah Badu and The Alchemist', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Erykah Badu, The Alchemist' })).toBe(true);
+    // different acts are still different
+    expect(isCatalogAlbumEdition({ artist: 'Erykah Badu and The Alchemist', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Someone Else & Another' })).toBe(false);
   });
 });
 
