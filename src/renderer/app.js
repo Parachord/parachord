@@ -12277,10 +12277,22 @@ const Parachord = () => {
                 const data = await response.json();
                 const results = data['release-groups'] || [];
 
+                // Neither MusicBrainz nor a service has it: the placeholder
+                // page (title and cover) says why, with a retry that runs the
+                // shared opener — a toast left its track skeleton up forever.
+                const showNotFound = (error) => {
+                  const notFound = error instanceof Error ? error : new Error('Album not found');
+                  if (!notFound.userMessage) {
+                    notFound.userMessage = `Couldn't find "${albumTitle}" on MusicBrainz or your services.`;
+                  }
+                  showReleaseLoadError(linkPlaceholderId, notFound, {
+                    run: () => handleCollectionAlbumClick({ title: albumTitle, artist: artistName })
+                  });
+                };
+
                 if (results.length === 0) {
                   if (await openFromCatalogs()) break;
-                  showToast(`Album not found: ${albumTitle}`, 'error');
-                  setLoadingRelease(false);
+                  showNotFound();
                   break;
                 }
 
@@ -12290,8 +12302,7 @@ const Parachord = () => {
                 const match = pickReleaseGroupForAlbum(results, { artist: artistName, title: albumTitle });
                 if (!match) {
                   if (await openFromCatalogs()) break;
-                  showToast(`Album not found: ${albumTitle}`, 'error');
-                  setLoadingRelease(false);
+                  showNotFound();
                   break;
                 }
 
@@ -12310,8 +12321,13 @@ const Parachord = () => {
                   console.warn('Album catalog fallback failed:', catalogError);
                 }
                 if (!opened) {
-                  showToast(`Failed to load album: ${albumTitle}`, 'error');
-                  setLoadingRelease(false);
+                  const notFound = error instanceof Error ? error : new Error('Album not found');
+                  if (!notFound.userMessage) {
+                    notFound.userMessage = `Couldn't load "${albumTitle}". Check your connection and try again.`;
+                  }
+                  showReleaseLoadError(linkPlaceholderId, notFound, {
+                    run: () => handleCollectionAlbumClick({ title: albumTitle, artist: artistName })
+                  });
                 }
               }
             }
@@ -21625,6 +21641,7 @@ ${trackListXml}
   const retryReleaseLoad = () => {
     const retry = currentRelease?._retry;
     if (!retry) return;
+    if (typeof retry.run === 'function') { retry.run(); return; }
     if (retry.kind === 'chartsAlbum') openChartsAlbum(retry.album);
     else fetchReleaseData(retry.release, retry.artist);
   };
@@ -22314,6 +22331,17 @@ ${trackListXml}
         canApply: (prev) => !!prev && prev.id === collectionPlaceholderId && !prev.tracks
       });
     };
+    // Neither MusicBrainz nor any service has it. The placeholder stays the
+    // page on screen (title and cover), so it carries the reason and a retry
+    // that runs this opener again: before, the page kept its track skeleton
+    // forever behind a toast.
+    const showNotFound = (error) => {
+      const notFound = error instanceof Error ? error : new Error('Album not found');
+      if (!notFound.userMessage) {
+        notFound.userMessage = "Couldn't find this album on MusicBrainz or your services.";
+      }
+      showReleaseLoadError(collectionPlaceholderId, notFound, { run: () => handleCollectionAlbumClick(album) });
+    };
     try {
       console.log('Loading collection album:', album.title, 'by', album.artist);
 
@@ -22391,8 +22419,7 @@ ${trackListXml}
 
       if (results.length === 0) {
         if (await openFromCatalogs()) return;
-        showToast('Album not found', 'error');
-        setLoadingRelease(false);
+        showNotFound();
         return;
       }
 
@@ -22418,11 +22445,12 @@ ${trackListXml}
       }
 
       const match = pickReleaseGroupForAlbum(pool, { artist: album.artist, title: album.title });
-      // Every result lacked an id (never in practice): same as no result.
+      // No MusicBrainz result is this album (and none has exactly its title):
+      // the catalogs get their turn, then the page says why instead of
+      // pointing at another artist's album.
       if (!match) {
         if (await openFromCatalogs()) return;
-        showToast('Album not found', 'error');
-        setLoadingRelease(false);
+        showNotFound();
         return;
       }
 
@@ -22441,8 +22469,7 @@ ${trackListXml}
       } catch (catalogError) {
         console.warn('Album catalog fallback failed:', catalogError);
       }
-      showToast('Failed to load album', 'error');
-      setLoadingRelease(false);
+      showNotFound(error);
     }
   };
 

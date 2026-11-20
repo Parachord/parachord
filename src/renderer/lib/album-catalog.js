@@ -112,6 +112,12 @@ function creditContains(one, other) {
 // "A & C", which only share a member: sharing one would make any album of a
 // collaboration an edition of an album of another.
 function creditMatches(want, got) {
+  const asWritten = looseName(want);
+  const otherWritten = looseName(got);
+  if (!asWritten || !otherWritten) return false;
+  // A name with no letters or digits at all ("!!!", "†††") folds to nothing:
+  // compared as written, or not at all.
+  if (asWritten === otherWritten) return true;
   const w = normalizeArtistName(want);
   const g = normalizeArtistName(got);
   if (!w || !g) return false;
@@ -276,25 +282,45 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
     || (Number(isStudioReleaseGroup(b.r)) - Number(isStudioReleaseGroup(a.r)))
     || (Number(isAlbumGroup(b.r)) - Number(isAlbumGroup(a.r)))
     || (a.index - b.index))[0].r;
-  // The artist's own results only — or every result when the caller knows no
-  // artist (nothing to check against, the title alone decides).
-  const byArtist = normalizeArtistName(artist)
+  // The artist's own results only — or every result when the caller has no
+  // artist to check against (then the title alone decides). The gate is the
+  // artist as written, not its folded form: a symbol-only name ("!!!", "†††")
+  // folds to nothing but is still a name, and must not open anyone's album.
+  const hasArtist = String(artist || '').trim().length > 0;
+  const byArtist = hasArtist
     ? scored.filter((entry) => creditMatches(artist, releaseGroupCredit(entry.r)))
     : scored;
-  if (byArtist.length === 0) return null;
-  const matched = byArtist.filter((entry) => entry.score > 0);
-  return best(matched.length > 0 ? matched : byArtist);
+  if (byArtist.length > 0) {
+    const matched = byArtist.filter((entry) => entry.score > 0);
+    return best(matched.length > 0 ? matched : byArtist);
+  }
+  // A credit that does not match at all (a romanised name against its native
+  // script, a name the artist now records under: "Hikaru Utada" / 宇多田ヒカル,
+  // "Kanye West" / "Ye") is still the album when exactly one result carries
+  // the album's exact title. A search that found no such result (MusicBrainz
+  // doesn't have the album: "Another Day Once Called Tomorrow" returned
+  // "Tomorrow's Another Day" by other artists) answers null — never another
+  // artist's album.
+  const exactTitle = scored.filter((entry) => entry.closeness === 3);
+  return exactTitle.length === 1 ? exactTitle[0].r : null;
 }
 
 // A title without any trailing parenthesised or bracketed part, repeatedly:
 // "Back to the Beginning (Live)" and "Back to the Beginning" name the same
 // album for the edition list, as "Dulling the Horns (Deluxe)" already did.
-// Only a suffix is dropped, so "Queen II" is still not "Queen I".
+// Only a suffix is dropped, so "Queen II" is still not "Queen I", and a
+// volume marker is never one: "Greatest Hits (Disc 2)" is not an edition of
+// "Greatest Hits" — picking it would swap in half an album.
+const VOLUME_MARKER = /^(?:disc|cd|part|pt|vol|volume|side)\b/i;
 function bareEditionTitle(title) {
   let out = String(title || '').trim();
   for (let i = 0; i < 3; i++) {
-    const next = out.replace(/\s*[([][^()[\]]*[)\]]\s*$/, '').trim();
-    if (!next || next === out) break;
+    const suffix = out.match(/\s*[([][^()[\]]*[)\]]\s*$/);
+    if (!suffix || !suffix[0].length) break;
+    const inner = suffix[0].replace(/^\s*[([]\s*/, '').replace(/\s*[)\]]\s*$/, '');
+    if (VOLUME_MARKER.test(inner)) break;
+    const next = out.slice(0, suffix.index).trim();
+    if (!next) break;
     out = next;
   }
   return normalizeAlbumTitle(out);

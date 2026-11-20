@@ -179,6 +179,30 @@ describe('pickReleaseGroupForAlbum', () => {
     expect(pickReleaseGroupForAlbum(undefined, { artist: 'A' })).toBeNull();
   });
 
+  test('a credit that is not this artist\'s is kept only when the title is exact and unique', () => {
+    // A rename or a romanised name: "Kanye West" for MusicBrainz's "Ye",
+    // "Hikaru Utada" for 宇多田ヒカル. The album is still the album.
+    expect(pickReleaseGroupForAlbum([group('g', 'Graduation', ['Ye'])], { artist: 'Kanye West', title: 'Graduation' }).id).toBe('g');
+    expect(pickReleaseGroupForAlbum([group('f', 'First Love', ['宇多田ヒカル'])], { artist: 'Hikaru Utada', title: 'First Love' }).id).toBe('f');
+    // Two albums of that exact title and no credit match: no guess.
+    expect(pickReleaseGroupForAlbum([group('x', 'Hits', ['A']), group('y', 'Hits', ['B'])], { artist: 'C', title: 'Hits' })).toBeNull();
+    // The incident: a search that found no exact title at all.
+    const incident = [
+      group('a', "Tomorrow's Another Day", ['CMA']),
+      group('b', 'Tomorrow’s Another Day.....', ['Gothic Horizon']),
+    ];
+    expect(pickReleaseGroupForAlbum(incident, { artist: 'Defenders Of The Faith, Therion', title: 'Another Day Once Called Tomorrow' })).toBeNull();
+  });
+
+  test('a symbol-only artist name is a name, matched as written', () => {
+    expect(creditMatches('!!!', '!!!')).toBe(true);
+    expect(creditMatches('!!!', '†††')).toBe(false);
+    // and a request for that artist's album is not "no artist given" (which
+    // would let any result through by title alone)
+    expect(pickReleaseGroupForAlbum([group('x', 'Album', ['B'])], { artist: '!!!', title: 'Album' }).id).toBe('x'); // exact title, unique
+    expect(pickReleaseGroupForAlbum([group('x', 'Other', ['B'])], { artist: '!!!', title: 'Album' })).toBeNull();
+  });
+
   test('a long MusicBrainz spelling of the title beats another album of the same artist', () => {
     // MusicBrainz often spells a title out: a source's "Back to the Beginning"
     // is "Back to the Beginning: The Final Show, Live from Villa Park" here,
