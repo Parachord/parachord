@@ -12275,7 +12275,7 @@ const Parachord = () => {
                   { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
                 );
 
-                if (!response.ok) throw new Error('Album search failed');
+                if (!response.ok) throw userError('Couldn’t search MusicBrainz for this album. Try again in a minute.');
 
                 const data = await response.json();
                 const results = data['release-groups'] || [];
@@ -22359,7 +22359,7 @@ ${trackListXml}
       // Skip if already viewing this album (avoid unnecessary reloads). A
       // page showing a load error is not "viewing" it: Try again must run.
       if (activeView === 'artist' && currentRelease?.title === album.title
-        && currentArtist?.name === album.artist && !!currentRelease?.tracks && !currentRelease?._loadError) {
+        && currentArtist?.name === album.artist && !currentRelease?._loadError) {
         console.log('📀 Already viewing album:', album.title);
         return;
       }
@@ -22425,7 +22425,7 @@ ${trackListXml}
         { headers: { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' } }
       );
 
-      if (!response.ok) throw new Error('Search failed');
+      if (!response.ok) throw userError('Couldn’t search MusicBrainz for this album. Try again in a minute.');
 
       const data = await response.json();
       const results = data['release-groups'] || [];

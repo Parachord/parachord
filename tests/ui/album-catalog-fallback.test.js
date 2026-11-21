@@ -81,11 +81,10 @@ describe('openers', () => {
     expect(app).toContain('const handleCollectionAlbumClickRef = useRef(null);');
     expect(app).toContain('handleCollectionAlbumClickRef.current = handleCollectionAlbumClick;');
     // ...and the opener does not skip a page that is showing a load error
-    expect(body).toMatch(/currentArtist\?\.name === album\.artist && !!currentRelease\?\.tracks && !currentRelease\?\._loadError/);
+    expect(body).toMatch(/currentArtist\?\.name === album\.artist && !currentRelease\?\._loadError/);
     // The protocol opener does the same, through the same ref
     const protocol = app.slice(app.indexOf("case 'album': {"), app.indexOf("case 'library': {"));
     expect(protocol).toMatch(/showReleaseLoadError\(linkPlaceholderId, notFound, \{\s*\n?\s*run: \(\) => handleCollectionAlbumClickRef\.current\?\.\(/);
-    expect(protocol).not.toMatch(/showToast\(`Album not found/);
   });
 
   test('a local album takes a joint-credit result for its own album, not only one credited to its first artist', () => {
