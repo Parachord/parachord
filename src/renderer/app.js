@@ -2760,6 +2760,7 @@ PLAYING ALBUMS vs TRACKS:
   Example: To play "Punisher" album, queue_add all 11 tracks in order.
 - If user says "add album to queue": use queue_add with ALL tracks and position "last" - does NOT interrupt current playback
 - NEVER use play + queue_add together for multi-track requests — that causes the first song to play twice
+- HOW MANY TRACKS: A mix, playlist or "some songs" with no number given gets 10 tracks. If the user names a number, use exactly that number. An album gets all of its tracks.
 - NEVER say "the album will continue playing" - you must explicitly queue each track
 
 PERSONALIZATION - CRITICAL:
