@@ -35,7 +35,7 @@ const {
 const axe = loadAmazonAxe();
 
 const PRIME_MESSAGE = "Amazon Prime: Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited.";
-const UNKNOWN_MESSAGE = "Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can. Playing Amazon tracks in Parachord needs Music Unlimited.";
+const UNKNOWN_MESSAGE = "Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited, which Parachord couldn't find on your account.";
 
 // A webSession bridge mock for the session surfaces: state() answers the
 // signed-in facts, fetch() answers config.json (the plan read), signIn()
@@ -387,7 +387,7 @@ describe('amazonPlanFromTier / tierFromConfig / amazonPlanMessage (the plugin _l
     }
   });
 
-  test('unwraps an object-shaped tier, and one wording per blocked plan; none for unlimited', () => {
+  test('unwraps an object-shaped tier, and one wording per purchases-only plan; none for unlimited', () => {
     expect(lib.amazonPlanFromTier(lib.tierFromConfig({ tier: { name: 'UNLIMITED_HD' } }))).toBe('unlimited');
     expect(lib.amazonPlanFromTier(lib.tierFromConfig({ tier: { tier: 'PRIME' } }))).toBe('prime');
     expect(lib.amazonPlanFromTier(lib.tierFromConfig({}))).toBe('unknown');
@@ -480,13 +480,13 @@ describe('getStatus', () => {
     expect(reply.statusMessage).toBe(PRIME_MESSAGE);
   });
 
-  test('an unknown plan blocks too, with its own label', async () => {
+  test('any other plan (a free account, one not read) plays purchases too, with its own label (#1494)', async () => {
     sessionBridge({ tier: 'PRIME_PLUS' });
     expect((await plugin().getStatus()).playbackLimit).toEqual({
-      blocked: true, planKey: 'unknown', label: 'Plan not confirmed', message: UNKNOWN_MESSAGE, searchesHeldBack: true
+      blocked: false, ownedOnly: true, planKey: 'unknown', label: 'Purchases only', message: UNKNOWN_MESSAGE, searchesHeldBack: true
     });
     sessionBridge({ fetchResult: { success: true, status: 200, headers: {}, text: '' } }); // a bad reply reads as no tier
-    expect((await plugin().getStatus()).playbackLimit).toMatchObject({ blocked: true, planKey: 'unknown', label: 'Plan not confirmed' });
+    expect((await plugin().getStatus()).playbackLimit).toMatchObject({ blocked: false, ownedOnly: true, planKey: 'unknown', label: 'Purchases only' });
   });
 
   test('the plan is read FRESH on every status call (the old refreshPlan)', async () => {

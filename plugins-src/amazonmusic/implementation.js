@@ -1536,13 +1536,14 @@ module.exports = {
       return { section, nextCursor, envelope: true };
     }
 
-    // ── The plan gate (#1220) ────────────────────────────────────────────────
-    // The plugin's own DRM gate (assertPlanPlays in getPlaybackManifest)
+    // ── The plan gate (#1220, #1494) ─────────────────────────────────────────
+    // The plugin's own DRM gate (assertPlanPlaysAsin in getPlaybackManifest)
     // reads the same file for playback; these copies feed the plugin's own
-    // search gate. UNLIMITED… → unlimited, PRIME → prime, anything else,
-    // missing or unreadable → unknown, which BLOCKS too (a format change on
-    // Amazon's side must show up as a message, not as plays the plan may
-    // not cover).
+    // search gate. UNLIMITED… → unlimited (the catalog plays), PRIME → prime,
+    // anything else, missing or unreadable → unknown. Prime and unknown both
+    // play only the account's bought tracks, which every Amazon plan covers,
+    // so a format change on Amazon's side shows up as a message, never as
+    // plays a plan may not cover.
 
     function isUnlimitedTier(tier) {
       return typeof tier === 'string' && /^UNLIMITED/i.test(tier.trim());
@@ -1568,9 +1569,15 @@ module.exports = {
 
     // One wording for the refusal (the host's settings panel and tile show
     // the same messages from its own copy).
+    // Every plan but Music Unlimited plays the account's bought tracks
+    // (#1494): a purchase plays on any Amazon account. `unknown` is a free
+    // Amazon Music account, or a plan Parachord couldn't read; either way it
+    // plays only purchases, which every plan covers, so a format change on
+    // Amazon's side shows as this message, never as plays a plan may not
+    // cover.
     const AMAZON_PLAN_MESSAGES = {
       prime: "Amazon Prime: Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited.",
-      unknown: "Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can. Playing Amazon tracks in Parachord needs Music Unlimited."
+      unknown: "Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited, which Parachord couldn't find on your account."
     };
 
     function amazonPlanMessage(plan) {
@@ -1582,16 +1589,16 @@ module.exports = {
     // host's getStatus reply — the wording is unchanged): null when there is
     // no reading (signed out, or the read failed before the plugin knew),
     // unblocked with searchesHeldBack on unlimited (an upgrade from a blocked
-    // reading must re-search), blocked with the tile label and the plan
-    // message on every refused plan — unknown blocks too. Prime is the one
-    // in between (#1494): unblocked but ownedOnly — Amazon plays, and the
-    // plugin itself keeps it to the account's bought tracks (search answers
-    // only them, the stream request refuses the rest), so the host needs no
-    // per-track rule. The label and message say so on the tile and in
-    // Settings.
+    // reading must re-search). Every other plan (#1494) — Prime, a free
+    // account, one Parachord couldn't read — is unblocked but ownedOnly:
+    // Amazon plays, and the plugin itself keeps it to the account's bought
+    // tracks (search answers only them, the stream request refuses the
+    // rest), so the host needs no per-track rule. The label and message say
+    // so on the tile and in Settings. Nothing here is ever blocked: a
+    // purchase plays on any plan.
     const AMAZON_TILE_LABELS = {
       prime: 'Prime: purchases only',
-      unknown: 'Plan not confirmed'
+      unknown: 'Purchases only'
     };
 
     function amazonPlaybackLimit(plan) {
@@ -1599,21 +1606,12 @@ module.exports = {
       if (plan === 'unlimited') {
         return { blocked: false, planKey: 'unlimited', label: null, message: null, searchesHeldBack: true };
       }
-      if (plan === 'prime') {
-        return {
-          blocked: false,
-          ownedOnly: true,
-          planKey: 'prime',
-          label: AMAZON_TILE_LABELS.prime,
-          message: amazonPlanMessage('prime'),
-          searchesHeldBack: true
-        };
-      }
       return {
-        blocked: true,
+        blocked: false,
+        ownedOnly: true,
         planKey: plan,
         label: AMAZON_TILE_LABELS[plan] || AMAZON_TILE_LABELS.unknown,
-        message: amazonPlanMessage(plan),
+        message: amazonPlanMessage(plan) || amazonPlanMessage('unknown'),
         searchesHeldBack: true
       };
     }
@@ -3295,13 +3293,11 @@ module.exports = {
   // A reading that turns `unlimited` FROM non-unlimited clears the
   // ACCOUNT-scoped rendition-group refusals (the `license-denied` entries —
   // the next reading's plan may cover the group; the `build-refused` ones
-  // stay: the build's VMP signature did not change with the plan). On this
-  // stack a Prime account never reaches a licence at all (`assertPlanPlays`
-  // refuses before any dmls request), so an eligibility refusal is only ever
-  // recorded under an UNLIMITED reading — the reachable transition is
-  // unlimited → unknown (a scheduled re-read on a bad reply) → unlimited,
-  // and the return to unlimited is the moment the old refusals must not
-  // outlive. A RE-read of an already-unlimited plan clears nothing (the
+  // stay: the build's VMP signature did not change with the plan). Off
+  // Music Unlimited only a bought track reaches a licence (#1494,
+  // assertPlanPlaysAsin), and a group refused for it (HD on Prime, say)
+  // must not outlive an upgrade: the return to unlimited is the moment the
+  // old refusals go. A RE-read of an already-unlimited plan clears nothing (the
   // first-ever reading counts as the turn: there is nothing older to keep,
   // and the worst case is one extra refusal round-trip on the next track).
   notePlanReading: function (plan) {
@@ -3314,27 +3310,13 @@ module.exports = {
     }
   },
 
-  // Throws plan-ineligible unless the account is on Music Unlimited. The
-  // resolver treats plan-ineligible as not-ready, so nothing is cached as a
-  // 30-day noMatch and an upgrade re-resolves.
-  // `known` is a plan the caller already read: the gate must judge THAT
-  // reading, never re-read (a second read can land on the next account's
-  // plan when a sign-out races the search, the generation rule).
-  assertPlanPlays: async function (known) {
-    const lib = this.requireLib();
-    const plan = known === undefined ? await this.getPlan() : known;
-    if (plan !== 'unlimited') {
-      const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage(plan) || lib.amazonPlanMessage('unknown'));
-      // plugins.md's contract for the DRM pair: the plan as the service names
-      // it, the field the engine's refusal handlers read.
-      err.planKey = plan;
-      throw err;
-    }
-    return plan;
-  },
-
-  // The stream request's plan gate for one ASIN (#1494): Music Unlimited
-  // plays anything; Prime plays a track the account bought, checked against
+  // The stream request's plan gate for one ASIN (#1220, #1494), judging
+  // the one plan reading this call makes (a second read can land on the
+  // next account's plan when a sign-out races it, the generation rule).
+  // plan-ineligible is not-ready to the resolver, so nothing is cached as a
+  // 30-day noMatch and an upgrade re-resolves. Music Unlimited plays
+  // anything; every other plan (Prime, a free account, one Parachord
+  // couldn't read) plays a track the account bought, checked against
   // the plugin's OWN list of bought tracks (never a flag on the track, which
   // a cached source or a caller could carry); everything else refuses as
   // plan-ineligible, the engine's cue to play another source. A list that
@@ -3343,7 +3325,10 @@ module.exports = {
   assertPlanPlaysAsin: async function (asin) {
     const lib = this.requireLib();
     const plan = await this.getPlan();
-    if (plan !== 'prime') return this.assertPlanPlays(plan);
+    if (plan === 'unlimited') return plan;
+    // plugins.md's contract for the DRM pair: a refusal carries the plan as
+    // the service names it (.planKey), the field the engine's refusal
+    // handlers read.
     let owned;
     try {
       owned = await this.getOwnedTracks();
@@ -3352,7 +3337,7 @@ module.exports = {
       throw lib.notReady('not-ready', "Couldn't read your Amazon purchases. Try again in a minute.");
     }
     if (owned.byAsin.has(asin)) return plan;
-    const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage('prime'));
+    const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage(plan) || lib.amazonPlanMessage('unknown'));
     err.planKey = plan;
     throw err;
   },
@@ -3381,18 +3366,18 @@ module.exports = {
     return promise;
   },
 
-  // A Prime search (#1494): the bought tracks matching the query
+  // A search off Music Unlimited (#1494): the bought tracks matching the query
   // (ownedTracksMatching), as catalog rows. An { artist, title } query with
   // no bought match answers plan-ineligible, which is not-ready: never a
   // cached miss, so the track is searched again after an upgrade or a new
   // purchase. A Search-page string with no match is simply no rows.
-  searchOwned: async function (payload) {
+  searchOwned: async function (payload, plan) {
     const lib = this.requireLib();
     const owned = await this.getOwnedTracks();
     const rows = lib.ownedTracksMatching(owned.tracks, payload);
     if (!rows.length && typeof payload !== 'string') {
-      const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage('prime'));
-      err.planKey = 'prime';
+      const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage(plan) || lib.amazonPlanMessage('unknown'));
+      err.planKey = plan || 'unknown';
       throw err;
     }
     return rows;
@@ -3518,10 +3503,11 @@ module.exports = {
     }
     const cdm = await this.cdmAvailable();
     const limit = signedIn ? lib.amazonPlaybackLimit(plan) : null;
-    // On Prime the searches answer from the bought tracks (#1494): start
-    // reading them now, so the first searches after launch join a read
-    // already under way. Never awaited — the status reply has its own budget.
-    if (plan === 'prime') this.getOwnedTracks().catch(() => {});
+    // Off Music Unlimited the searches answer from the bought tracks
+    // (#1494): start reading them now, so the first searches after launch
+    // join a read already under way. Never awaited — the status reply has
+    // its own budget.
+    if (plan && plan !== 'unlimited') this.getOwnedTracks().catch(() => {});
     return {
       signedIn,
       playbackLimit: limit,
@@ -4284,14 +4270,13 @@ module.exports = {
         this._planState = null;
         throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
       }
-      // #1494: on Prime the searches answer from the account's bought
-      // tracks, the only ones it plays; no catalog search at all.
+      // #1494: off Music Unlimited the searches answer from the account's
+      // bought tracks, the only ones it plays; no catalog search at all.
       const plan = await this.getPlan();
       let rows;
-      if (plan === 'prime') {
-        rows = await this.searchOwned(payload);
+      if (plan !== 'unlimited') {
+        rows = await this.searchOwned(payload, plan);
       } else {
-        await this.assertPlanPlays(plan);
         const spec = lib.amazonSongSearchUrl(
           typeof payload === 'string' ? { query: payload } : payload
         );

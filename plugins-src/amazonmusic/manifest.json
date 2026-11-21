@@ -8,7 +8,7 @@
     },
     "author": "Parachord Team",
     "description": "Search and play Amazon Music in Parachord, without the Amazon Music app.",
-    "requirement": "Needs Amazon Music Unlimited to play everything. With Prime, it plays the songs you've bought.",
+    "requirement": "Plays everything with Amazon Music Unlimited. With any other Amazon account, Prime included, it plays the songs you've bought from Amazon.",
     "icon": "\ud83c\udfb5",
     "color": "#25D1DA",
     "homepage": "https://music.amazon.com",

@@ -1,6 +1,7 @@
 /**
- * #1220: Amazon plays only on Music Unlimited. The gate itself (the plugin's
- * getPlan / assertPlanPlays / getPlaybackManifest) is behavior-tested in the
+ * #1220/#1494: Amazon plays the catalog on Music Unlimited, and only the
+ * account's bought tracks on any other plan. The gate itself (the plugin's
+ * getPlan / assertPlanPlaysAsin / getPlaybackManifest) is behavior-tested in the
  * plugin suites; this file pins the wiring around it that lives in the
  * plugin source, main.js, the preload, and the renderer, where a unit test
  * can't reach. Since #1356 M10 the status read is the plugin's too — the
@@ -50,15 +51,15 @@ describe('main process', () => {
     const search = between(impl, 'search: async function', 'resolve: async function');
     const signIn = search.indexOf('if (!(await this.isSignedIn()))');
     const planRead = search.indexOf('const plan = await this.getPlan();');
-    const plan = search.indexOf('await this.assertPlanPlays(plan);');
+    const branch = search.indexOf("if (plan !== 'unlimited') {");
+    const owned = search.indexOf('await this.searchOwned(payload, plan);');
     const runner = search.indexOf('await this.specSearch({');
-    const owned = search.indexOf('await this.searchOwned(payload);');
     expect(signIn).toBeGreaterThan(-1);
-    expect(planRead).toBeGreaterThan(signIn);   // only when signed in — a signed-out search answers not-signed-in (the prompt)
-    expect(plan).toBeGreaterThan(planRead); // the gate judges that one reading (no second read)
-    expect(plan).toBeLessThan(runner);      // and before searching
-    expect(owned).toBeGreaterThan(planRead);// Prime answers from the bought tracks (#1494)
-    expect(owned).toBeLessThan(plan);
+    expect(planRead).toBeGreaterThan(signIn);  // only when signed in — a signed-out search answers not-signed-in (the prompt)
+    expect(branch).toBeGreaterThan(planRead);  // one reading decides (no second read)
+    expect(owned).toBeGreaterThan(branch);     // off Unlimited: the bought tracks (#1494)
+    expect(runner).toBeGreaterThan(owned);     // the catalog search only in the Unlimited branch
+    expect(search.match(/this\.getPlan\(/g)).toHaveLength(1);
     // The refusal reaches the resolver as notReady (never a 30-day noMatch).
     expect(search).toMatch(/reason === 'plan-ineligible'/);
     // The gate is the plugin's own copy of the dmls one: config.json via the
@@ -94,7 +95,7 @@ describe('main process', () => {
     // _lib copy: the message and the tile labels live next to the gate.
     expect(impl).toMatch(/function amazonPlaybackLimit\(plan\) \{/);
     expect(impl).toMatch(/prime: 'Prime: purchases only'/);
-    expect(impl).toMatch(/unknown: 'Plan not confirmed'/);
+    expect(impl).toMatch(/unknown: 'Purchases only'/);
     // The host handlers and their preload exposures are deleted.
     for (const ch of ['amazonmusic-get-status', 'amazonmusic-open-login', 'amazonmusic-sign-out']) {
       expect(main).not.toContain(`ipcMain.handle('${ch}'`);

@@ -729,16 +729,22 @@ describe('the plan gate (#1220) before any dmls request', () => {
     expect(resolver._planState.plan).toBe('unlimited');
   });
 
+  // Every plan but Music Unlimited plays only the account's bought tracks
+  // (#1494): a free account, or a tier Parachord can't read, like Prime.
   test.each([
-    [undefined, 'unknown', /couldn't confirm your Amazon Music plan/],
-    ['SOMETHING_NEW', 'unknown', /couldn't confirm your Amazon Music plan/]
-  ])('tier %p is refused as plan-ineligible before any dmls request', async (tier, planKey, message) => {
-    const { fetches } = mockWithConfig(configWithTier(tier));
+    [undefined, 'unknown'],
+    ['SOMETHING_NEW', 'unknown']
+  ])('tier %p plays a bought track and refuses the rest before any dmls request', async (tier, planKey) => {
+    const { amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+    const { ws, fetches } = mockWithConfig(configWithTier(tier));
+    serveAmazonLibrary(ws, { first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'Bought', artist: 'A' }]) });
     const resolver = instantiateAmazonPlugin(axe);
     const err = await resolver.getPlaybackManifest(drmTrack(), {}).catch((e) => e);
     expect(err).toMatchObject({ reason: 'plan-ineligible', planKey });
-    expect(err.message).toMatch(message);
+    expect(err.message).toBe("Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited, which Parachord couldn't find on your account.");
     expect(manifestPosts(fetches)).toHaveLength(0);
+    await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+    expect(manifestPosts(fetches)).toHaveLength(1);
   });
 
   // Prime plays the tracks the account bought (#1494), checked against the
