@@ -14,6 +14,8 @@
 // for, whichever side answered, so a catalog list whose titles match
 // MusicBrainz's gives the same ids (the rule catalogAlbumToRelease follows).
 
+const { pickReleaseGroupForAlbum } = require('./album-catalog');
+
 // The first promise to resolve to a non-empty `tracks` list wins:
 // { ...value, index }. Rejections and empty lists are skipped; null when every
 // promise has settled without tracks.
@@ -64,19 +66,14 @@ function entriesFromCatalogRelease(release) {
 }
 
 // The best release group in a MusicBrainz release-group search for an
-// artist's album: a studio album credited to the artist, else anything
-// credited to the artist, else the top result.
-const NON_STUDIO_SECONDARY_TYPES = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
-function pickReleaseGroup(results, artistName) {
-  const list = Array.isArray(results) ? results : [];
-  const artistLower = String(artistName || '').toLowerCase();
-  const creditedToArtist = (r) => ((r['artist-credit'] || [])[0] || {}).name
-    && r['artist-credit'][0].name.toLowerCase() === artistLower;
-  return list.find((r) => {
-    const primary = String(r['primary-type'] || '').toLowerCase();
-    const secondary = (r['secondary-types'] || []).map((t) => String(t).toLowerCase());
-    return primary === 'album' && creditedToArtist(r) && !secondary.some((t) => NON_STUDIO_SECONDARY_TYPES.includes(t));
-  }) || list.find(creditedToArtist) || list[0] || null;
+// artist's album (album-catalog.js: the title and the artist decide, a joint
+// credit on either side counts, a studio edition of that album wins between
+// editions). A caller that only knows the artist passes no title, and the
+// artist alone decides. This used to match the whole credit string exactly,
+// so an album credited differently by the source than by MusicBrainz
+// ("A, B" vs "A & B") was left to a studio album of anyone.
+function pickReleaseGroup(results, artistName, title = '') {
+  return pickReleaseGroupForAlbum(results, { artist: artistName, title });
 }
 
 module.exports = {
