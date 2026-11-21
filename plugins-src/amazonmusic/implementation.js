@@ -3895,10 +3895,10 @@ module.exports = {
       // bookkeeping still runs on a failed post
       text = String((e && e.message) || e);
     }
-    // Telemetry health surfaces in the plugin's status/diagnostics state (M10
-    // surfaces it in getStatus): plays must be reported or the subscription
-    // accounting drifts silently. Console.warn + the dropped counter make a
-    // rotated header set loud instead of invisible.
+    // Telemetry health is plugin state, never on the status surface (the
+    // DevTools read is the architecture doc's checking recipe): plays must be
+    // reported or the subscription accounting drifts silently. Console.warn +
+    // the dropped counter make a rotated header set loud instead of invisible.
     if (!this._telemetryHealth) this._telemetryHealth = { last: null, dropped: 0 };
     this._telemetryHealth.last = { status, at: Date.now(), actionName: actionName || null };
     if (status !== 200) {
