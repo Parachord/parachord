@@ -1060,6 +1060,168 @@ module.exports = {
       return { playlist, pages, stop };
     }
 
+    // ── The bought tracks (#1494): what a Prime account plays ────────────────
+    // A track bought from Amazon plays on any plan; only Music Unlimited plays
+    // the rest of the catalog. Amazon's search never says what the account
+    // owns (every search Track reads purchaseContext.isPurchased false, bought
+    // ones included); the library does. The Purchased page (/my/purchases)
+    // loads one gql operation, LibraryPurchasedPageQuery (variables
+    // firstLimit 50, isAuthenticated; live-captured 2026-11-21), answering
+    // data.user.purchased: a connection of Track nodes, each with
+    // purchaseContext.isPurchased true and its catalog ASIN as the node id,
+    // which is what the stream request plays. It pages by pageInfo.token as
+    // afterCursor (a 365-track library: 8 pages, ending on hasNextPage
+    // false). The Songs page (/my/songs, LikedSongsPage) lists bought and
+    // liked songs together and was the first candidate; the Purchased page
+    // lists only what was bought.
+    const OWNED_PAGE_URL = 'https://music.amazon.com/my/purchases';
+    const OWNED_OPERATION = 'LibraryPurchasedPageQuery';
+    // How long a loaded list stands: purchases change rarely, and a new one
+    // shows after this or a restart. The session generation drops it sooner.
+    const OWNED_TTL_MS = 3 * 60 * 60 * 1000;
+    // The walk's caps: 40 pages of the page's own 50 is 2000 bought songs
+    // (a page took about 0.6s live); the time cap keeps a slow library from
+    // holding the background lane.
+    const OWNED_MAX_PAGES = 40;
+    const OWNED_MAX_MS = 90000;
+
+    // A bought Track's catalog ASIN: the node id, else the /tracks/<ASIN>/
+    // url (the same ASIN, for a node whose id is shaped differently).
+    function ownedTrackAsin(node) {
+      const ASIN = /^[A-Z0-9]{10}$/;
+      if (node && typeof node.id === 'string' && ASIN.test(node.id)) return node.id;
+      const m = node && typeof node.url === 'string' && node.url.match(/\/tracks\/([A-Z0-9]{10})(?:[/?#]|$)/);
+      return m ? m[1] : null;
+    }
+
+    // The library response's song connection: the first { edges } whose
+    // nodes are Tracks, found by a bounded scan (the envelope's own path
+    // was never relied on, the way playlistEdgesFromGql treats continuation
+    // pages). null when the response carries no such connection at all.
+    function ownedSongsConnection(data) {
+      const isTrackEdge = (e) => e && e.node && typeof e.node === 'object'
+        && (e.node.__typename === 'Track' || 'purchaseContext' in e.node);
+      let emptyConnection = null;
+      const scan = (value, depth) => {
+        if (depth > 5 || !value || typeof value !== 'object') return null;
+        if (Array.isArray(value.edges)) {
+          if (value.edges.some(isTrackEdge)) return value;
+          if (!value.edges.length && !emptyConnection) emptyConnection = value;
+        }
+        for (const key of Object.keys(value)) {
+          if (key === 'edges') continue;
+          const found = scan(value[key], depth + 1);
+          if (found) return found;
+        }
+        return null;
+      };
+      return scan(data, 0) || emptyConnection;
+    }
+
+    // One library page → { tracks, nextCursor, firstCursor, rawCount,
+    // envelope }. tracks are the BOUGHT ones only (trackFromGqlEdge's row
+    // with the catalog ASIN): every row of the Purchased page says so, and a
+    // row that doesn't (a liked-only song, a node without a
+    // purchaseContext) is never taken as bought. nextCursor is pageInfo.token, the
+    // continuation the playlist pages and the home connection also take as
+    // afterCursor (the Relay endCursor is a decoy there), when hasNextPage
+    // allows it. envelope false means the response had no song connection
+    // at all: a renamed operation or field, never "owns nothing".
+    function ownedTracksFromLibraryGql(data) {
+      const conn = ownedSongsConnection(data);
+      if (!conn) return { tracks: [], nextCursor: null, firstCursor: null, rawCount: 0, envelope: false };
+      const edges = conn.edges;
+      const tracks = [];
+      for (const edge of edges) {
+        const node = edge && edge.node;
+        if (!node || !node.purchaseContext || node.purchaseContext.isPurchased !== true) continue;
+        const asin = ownedTrackAsin(node);
+        if (!asin) continue;
+        const row = trackFromGqlEdge({ ...edge, node: { ...node, id: asin } });
+        if (row) tracks.push(row);
+      }
+      const pageInfo = conn.pageInfo && typeof conn.pageInfo === 'object' ? conn.pageInfo : {};
+      const token = typeof pageInfo.token === 'string' && pageInfo.token ? pageInfo.token : null;
+      const nextCursor = pageInfo.hasNextPage === false ? null : token;
+      const firstCursor = edges.length && edges[0] && edges[0].cursor != null ? String(edges[0].cursor) : null;
+      return { tracks, nextCursor, firstCursor, rawCount: edges.length, envelope: true };
+    }
+
+    // Walk the library to the end, keeping the bought tracks, deduped by
+    // ASIN. Pure but for the injected fetchPage (one page by cursor:
+    // { error } or { data }) and now(), like paginatePlaylistTracks. Stops:
+    //   'exhausted'  — no next cursor (the end of the library)
+    //   'page-error' — a page answered an error
+    //   'not-envelope' — a later page was not a song connection
+    //   'empty-page' — a page with no rows
+    //   'no-advance' — the same page served again (its first row's cursor
+    //                  repeats, or the cursor sent came back unchanged)
+    //   'page-limit' / 'time-limit' — the caps
+    // The first page must be an envelope (the caller checks): a later stop
+    // keeps what was merged, so a partial list still plays what it has.
+    async function paginateOwnedTracks({ firstPageData, fetchPage, maxPages = OWNED_MAX_PAGES, maxMs = OWNED_MAX_MS, now = Date.now }) {
+      const first = ownedTracksFromLibraryGql(firstPageData);
+      const byAsin = new Map();
+      const add = (rows) => { for (const t of rows) if (!byAsin.has(t.asin)) byAsin.set(t.asin, t); };
+      add(first.tracks);
+      let cursor = first.nextCursor;
+      let lastFirstCursor = first.firstCursor;
+      let pages = 1;
+      let stop = null;
+      const startedAt = now();
+      while (!stop) {
+        if (!cursor) { stop = 'exhausted'; break; }
+        if (pages >= maxPages) { stop = 'page-limit'; break; }
+        if (now() - startedAt >= maxMs) { stop = 'time-limit'; break; }
+        pages += 1;
+        const page = await fetchPage(cursor);
+        if (!page || page.error) { stop = 'page-error'; break; }
+        const parsed = ownedTracksFromLibraryGql(page.data);
+        if (!parsed.envelope) { stop = 'not-envelope'; break; }
+        if (!parsed.rawCount) { stop = 'empty-page'; break; }
+        if (parsed.firstCursor != null && parsed.firstCursor === lastFirstCursor) { stop = 'no-advance'; break; }
+        lastFirstCursor = parsed.firstCursor;
+        add(parsed.tracks);
+        if (parsed.nextCursor === cursor) { stop = 'no-advance'; break; }
+        cursor = parsed.nextCursor;
+      }
+      return { tracks: Array.from(byAsin.values()), pages, stop };
+    }
+
+    // Folded for matching: case, accents and punctuation away (the explicit
+    // marker is already off a parsed title).
+    function ownedFold(s) {
+      let out = String(s || '');
+      try { out = out.normalize('NFKD').replace(/\p{M}/gu, ''); } catch (e) { /* old engines */ }
+      return out.toLowerCase().replace(/&/g, ' and ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    }
+
+    // The bought tracks a search asks for. An { artist, title } query (a
+    // resolve) matches when the titles and the artists each contain one
+    // another, folded, either way round (resolve's own gate then decides, as
+    // it does for a catalog search); a missing side matches anything. A
+    // string query (the Search page) matches when every word of it is in
+    // the track's title, artist or album. Capped, in the list's own order.
+    function ownedTracksMatching(tracks, query, { limit = 30 } = {}) {
+      const list = Array.isArray(tracks) ? tracks : [];
+      const both = (a, b) => !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
+      let test;
+      if (typeof query === 'string') {
+        const words = ownedFold(query).split(' ').filter(Boolean);
+        if (!words.length) return [];
+        test = (t) => {
+          const hay = ' ' + ownedFold([t.title, t.artist, t.album].join(' ')) + ' ';
+          return words.every((w) => hay.indexOf(w) !== -1);
+        };
+      } else {
+        const title = ownedFold(query && query.title);
+        const artist = ownedFold(query && query.artist);
+        if (!title && !artist) return [];
+        test = (t) => (!title || both(ownedFold(t.title), title)) && (!artist || both(ownedFold(t.artist), artist));
+      }
+      return list.filter(test).slice(0, limit);
+    }
+
     // ── The recommendations (#1356 M8) ───────────────────────────────────────
     // The home page's MUSIC tab and the see-more route: the request, response
     // and pagination shapes (live-captured 2026-11; see
@@ -1374,13 +1536,14 @@ module.exports = {
       return { section, nextCursor, envelope: true };
     }
 
-    // ── The plan gate (#1220) ────────────────────────────────────────────────
-    // The plugin's own DRM gate (assertPlanPlays in getPlaybackManifest)
+    // ── The plan gate (#1220, #1494) ─────────────────────────────────────────
+    // The plugin's own DRM gate (assertPlanPlaysAsin in getPlaybackManifest)
     // reads the same file for playback; these copies feed the plugin's own
-    // search gate. UNLIMITED… → unlimited, PRIME → prime, anything else,
-    // missing or unreadable → unknown, which BLOCKS too (a format change on
-    // Amazon's side must show up as a message, not as plays the plan may
-    // not cover).
+    // search gate. UNLIMITED… → unlimited (the catalog plays), PRIME → prime,
+    // anything else, missing or unreadable → unknown. Prime and unknown both
+    // play only the account's bought tracks, which every Amazon plan covers,
+    // so a format change on Amazon's side shows up as a message, never as
+    // plays a plan may not cover.
 
     function isUnlimitedTier(tier) {
       return typeof tier === 'string' && /^UNLIMITED/i.test(tier.trim());
@@ -1406,9 +1569,15 @@ module.exports = {
 
     // One wording for the refusal (the host's settings panel and tile show
     // the same messages from its own copy).
+    // Every plan but Music Unlimited plays the account's bought tracks
+    // (#1494): a purchase plays on any Amazon account. `unknown` is a free
+    // Amazon Music account, or a plan Parachord couldn't read; either way it
+    // plays only purchases, which every plan covers, so a format change on
+    // Amazon's side shows as this message, never as plays a plan may not
+    // cover.
     const AMAZON_PLAN_MESSAGES = {
-      prime: 'Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.',
-      unknown: "Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can. Playing Amazon tracks in Parachord needs Music Unlimited."
+      prime: "Amazon Prime: Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited.",
+      unknown: "Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited, which Parachord couldn't find on your account."
     };
 
     function amazonPlanMessage(plan) {
@@ -1420,11 +1589,16 @@ module.exports = {
     // host's getStatus reply — the wording is unchanged): null when there is
     // no reading (signed out, or the read failed before the plugin knew),
     // unblocked with searchesHeldBack on unlimited (an upgrade from a blocked
-    // reading must re-search), blocked with the tile label and the plan
-    // message on every refused plan — unknown blocks too.
+    // reading must re-search). Every other plan (#1494) — Prime, a free
+    // account, one Parachord couldn't read — is unblocked but ownedOnly:
+    // Amazon plays, and the plugin itself keeps it to the account's bought
+    // tracks (search answers only them, the stream request refuses the
+    // rest), so the host needs no per-track rule. The label and message say
+    // so on the tile and in Settings. Nothing here is ever blocked: a
+    // purchase plays on any plan.
     const AMAZON_TILE_LABELS = {
-      prime: 'Prime: no playback',
-      unknown: 'Plan not confirmed'
+      prime: 'Prime: purchases only',
+      unknown: 'Purchases only'
     };
 
     function amazonPlaybackLimit(plan) {
@@ -1433,10 +1607,11 @@ module.exports = {
         return { blocked: false, planKey: 'unlimited', label: null, message: null, searchesHeldBack: true };
       }
       return {
-        blocked: true,
+        blocked: false,
+        ownedOnly: true,
         planKey: plan,
         label: AMAZON_TILE_LABELS[plan] || AMAZON_TILE_LABELS.unknown,
-        message: amazonPlanMessage(plan),
+        message: amazonPlanMessage(plan) || amazonPlanMessage('unknown'),
         searchesHeldBack: true
       };
     }
@@ -2314,6 +2489,7 @@ module.exports = {
       MUSIC_HOME_FIRST_LIMIT, MUSIC_HOME_MAX_PAGES,
       AMAZON_HOMES, HOME_REFUSED_STATUS, PLAYLISTS_SECTION_ID,
       RECOMMENDATIONS_WALK_TIMEOUT_MS,
+      OWNED_PAGE_URL, OWNED_OPERATION, OWNED_TTL_MS, OWNED_MAX_PAGES, OWNED_MAX_MS,
       notReady,
       pageBlocksPlayback,
       amazonAuthCookieState,
@@ -2355,6 +2531,9 @@ module.exports = {
       playlistPageInfoFromGql,
       playlistEdgesFromGql,
       paginatePlaylistTracks,
+      ownedTracksFromLibraryGql,
+      paginateOwnedTracks,
+      ownedTracksMatching,
       PLAYLIST_BUSY_BACKOFF_MAX_MS,
       amazonNormalizeArtistName,
       recommendationItemFromGqlNode,
@@ -2985,6 +3164,9 @@ module.exports = {
     this._telemetryHealth = { last: null, dropped: 0 };
     this._lastSearchText = null;
     this._cookieWarned = false;
+    // The account's bought tracks (#1494), and a read of them in flight.
+    this._ownedTracks = null;
+    this._ownedPromise = null;
     return finalPost;
   },
 
@@ -3111,13 +3293,11 @@ module.exports = {
   // A reading that turns `unlimited` FROM non-unlimited clears the
   // ACCOUNT-scoped rendition-group refusals (the `license-denied` entries —
   // the next reading's plan may cover the group; the `build-refused` ones
-  // stay: the build's VMP signature did not change with the plan). On this
-  // stack a Prime account never reaches a licence at all (`assertPlanPlays`
-  // refuses before any dmls request), so an eligibility refusal is only ever
-  // recorded under an UNLIMITED reading — the reachable transition is
-  // unlimited → unknown (a scheduled re-read on a bad reply) → unlimited,
-  // and the return to unlimited is the moment the old refusals must not
-  // outlive. A RE-read of an already-unlimited plan clears nothing (the
+  // stay: the build's VMP signature did not change with the plan). Off
+  // Music Unlimited only a bought track reaches a licence (#1494,
+  // assertPlanPlaysAsin), and a group refused for it (HD on Prime, say)
+  // must not outlive an upgrade: the return to unlimited is the moment the
+  // old refusals go. A RE-read of an already-unlimited plan clears nothing (the
   // first-ever reading counts as the turn: there is nothing older to keep,
   // and the worst case is one extra refusal round-trip on the next track).
   notePlanReading: function (plan) {
@@ -3130,20 +3310,165 @@ module.exports = {
     }
   },
 
-  // Throws plan-ineligible unless the account is on Music Unlimited. The
-  // resolver treats plan-ineligible as not-ready, so nothing is cached as a
-  // 30-day noMatch and an upgrade re-resolves.
-  assertPlanPlays: async function () {
+  // The stream request's plan gate for one ASIN (#1220, #1494), judging
+  // the one plan reading this call makes (a second read can land on the
+  // next account's plan when a sign-out races it, the generation rule).
+  // plan-ineligible is not-ready to the resolver, so nothing is cached as a
+  // 30-day noMatch and an upgrade re-resolves. Music Unlimited plays
+  // anything; every other plan (Prime, a free account, one Parachord
+  // couldn't read) plays a track the account bought, checked against
+  // the plugin's OWN list of bought tracks (never a flag on the track, which
+  // a cached source or a caller could carry); everything else refuses as
+  // plan-ineligible, the engine's cue to play another source. A list that
+  // can't be read is a plain not-ready ("try again"), not a plan refusal: the
+  // track may well be one the account bought.
+  assertPlanPlaysAsin: async function (asin) {
     const lib = this.requireLib();
     const plan = await this.getPlan();
-    if (plan !== 'unlimited') {
+    if (plan === 'unlimited') return plan;
+    // plugins.md's contract for the DRM pair: a refusal carries the plan as
+    // the service names it (.planKey), the field the engine's refusal
+    // handlers read.
+    let owned;
+    try {
+      owned = await this.getOwnedTracks();
+    } catch (error) {
+      console.warn('[Amazon] bought tracks unavailable for a play: ' + ((error && error.message) || error));
+      throw lib.notReady('not-ready', "Couldn't read your Amazon purchases. Try again in a minute.");
+    }
+    if (owned.byAsin.has(asin)) return plan;
+    const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage(plan) || lib.amazonPlanMessage('unknown'));
+    err.planKey = plan;
+    throw err;
+  },
+
+  // The account's bought tracks (#1494): { tracks, byAsin, at, stop }, read
+  // by the library page flow on the BACKGROUND lane, joined while in flight
+  // and kept OWNED_TTL_MS. The sign-out reset list drops both the list and
+  // the read in flight, and a read that started before a sign-out never
+  // lands: it is no longer this._ownedPromise when it settles, so it
+  // answers superseded instead of storing the old account's purchases.
+  getOwnedTracks: async function ({ refresh = false } = {}) {
+    const lib = this.requireLib();
+    const have = this._ownedTracks;
+    if (!refresh && have && Date.now() - have.at < lib.OWNED_TTL_MS) return have;
+    if (this._ownedPromise) return this._ownedPromise;
+    const promise = this.enqueuePageFlow(() => this.ownedTracksPageFlow(), { lane: 'background' })
+      .then((result) => {
+        if (this._ownedPromise !== promise) throw lib.notReady('superseded', 'Signed out while reading Amazon purchases');
+        this._ownedTracks = result;
+        return result;
+      })
+      .finally(() => {
+        if (this._ownedPromise === promise) this._ownedPromise = null;
+      });
+    this._ownedPromise = promise;
+    return promise;
+  },
+
+  // A search off Music Unlimited (#1494): the bought tracks matching the query
+  // (ownedTracksMatching), as catalog rows. An { artist, title } query with
+  // no bought match answers plan-ineligible, which is not-ready: never a
+  // cached miss, so the track is searched again after an upgrade or a new
+  // purchase. A Search-page string with no match is simply no rows.
+  searchOwned: async function (payload, plan) {
+    const lib = this.requireLib();
+    const owned = await this.getOwnedTracks();
+    const rows = lib.ownedTracksMatching(owned.tracks, payload);
+    if (!rows.length && typeof payload !== 'string') {
       const err = lib.notReady('plan-ineligible', lib.amazonPlanMessage(plan) || lib.amazonPlanMessage('unknown'));
-      // plugins.md's contract for the DRM pair: the plan as the service names
-      // it, the field the engine's refusal handlers read.
-      err.planKey = plan;
+      err.planKey = plan || 'unknown';
       throw err;
     }
-    return plan;
+    return rows;
+  },
+
+  // A gql replay that rides out a busy gate (a concurrent navigation holds
+  // the host's readers/writer gate): the same bounded backoff the playlist
+  // import uses, three 400ms retries then 1s steps. Answers { data } or
+  // { error }; a gql error with no data is an error.
+  replayGqlPatiently: async function (entry, body, { maxWaitMs = 12000 } = {}) {
+    let outcome;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        outcome = await this.replayGql(entry, body);
+      } catch (error) {
+        outcome = { error: (error && error.message) || String(error) };
+      }
+      if (outcome.error !== 'busy') break;
+      const wait = attempt < 3 ? 400 : 1000;
+      const waited = attempt < 3 ? (attempt + 1) * 400 : 1200 + (attempt - 2) * 1000;
+      if (waited > maxWaitMs) break;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    if (outcome.error) return { error: outcome.error };
+    const parsed = outcome.parsed || {};
+    if (Array.isArray(parsed.errors) && parsed.errors.length && !parsed.data) {
+      return { error: String((parsed.errors[0] || {}).message || 'Amazon gql error') };
+    }
+    return { data: parsed.data };
+  },
+
+  // The library page flow behind getOwnedTracks: load /my/purchases with
+  // the capture window inside the load, take the page's own
+  // LibraryPurchasedPageQuery request (the freshest csrf-ts among the page's own, never an echo, as
+  // the home flow does), replay it and follow its pages
+  // (paginateOwnedTracks: pageInfo.token as afterCursor, the continuation
+  // the playlist pages take). A page that never asked for its songs, or a
+  // first answer that isn't a song connection, is structural: not-ready,
+  // never "owns nothing".
+  ownedTracksPageFlow: async function () {
+    const lib = this.requireLib();
+    const ws = this.hostBridge('webSession');
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    const load = await ws.load(lib.SESSION, lib.OWNED_PAGE_URL, {
+      capture: {
+        urlPrefixes: [lib.GQL_URL + '*'],
+        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS
+      }
+    });
+    if (!load || !load.success) {
+      throw lib.notReady((load && load.reason) || 'load-failed', (load && load.error) || 'Amazon library page did not finish loading');
+    }
+    if (lib.pageBlocksPlayback(load.finalUrl)) {
+      console.warn('[Amazon] bought tracks blocked: ' + load.finalUrl);
+      throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
+    }
+    const captured = (load.captures || []).filter(r => r.headers && !r.echo);
+    let entry = null;
+    let request = null;
+    let bestTs = -1;
+    for (const r of captured) {
+      const req = lib.amazonMusicHomeRequest([r.body], lib.OWNED_OPERATION);
+      if (!req) continue;
+      const ts = Number(r.headers['csrf-ts'] || r.headers['Csrf-ts']) || 0;
+      if (ts >= bestTs) { bestTs = ts; entry = r; request = req; }
+    }
+    if (!entry || !request) {
+      const ops = lib.capturedOperationNames((load.captures || []).map(r => r.body)).join(', ') || 'none';
+      console.warn('[Amazon] ' + lib.OWNED_PAGE_URL + ' never fired ' + lib.OWNED_OPERATION + '; gql operations seen: ' + ops);
+      throw lib.notReady('not-ready', 'Amazon library page never asked for its songs');
+    }
+    const first = await this.replayGqlPatiently(entry, request);
+    if (first.error) throw lib.notReady('not-ready', first.error);
+    if (!lib.ownedTracksFromLibraryGql(first.data).envelope) {
+      throw lib.notReady('not-ready', 'Amazon library response was not the expected shape');
+    }
+    const walked = await lib.paginateOwnedTracks({
+      firstPageData: first.data,
+      fetchPage: (cursor) => this.replayGqlPatiently(entry, {
+        ...request,
+        variables: { ...request.variables, afterCursor: cursor }
+      })
+    });
+    console.log('[Amazon] bought tracks: ' + walked.tracks.length + ' over ' + walked.pages + ' page(s), stopped: ' + walked.stop);
+    return {
+      tracks: walked.tracks,
+      byAsin: new Set(walked.tracks.map(t => t.asin)),
+      at: Date.now(),
+      stop: walked.stop
+    };
   },
 
   // ── The session surfaces (#1356 M10): the status reply, sign-in, sign-out ──
@@ -3178,6 +3503,11 @@ module.exports = {
     }
     const cdm = await this.cdmAvailable();
     const limit = signedIn ? lib.amazonPlaybackLimit(plan) : null;
+    // Off Music Unlimited the searches answer from the bought tracks
+    // (#1494): start reading them now, so the first searches after launch
+    // join a read already under way. Never awaited — the status reply has
+    // its own budget.
+    if (plan && plan !== 'unlimited') this.getOwnedTracks().catch(() => {});
     return {
       signedIn,
       playbackLimit: limit,
@@ -3190,7 +3520,7 @@ module.exports = {
         // The blocked plan's message; nothing to add on unlimited. Signed out,
         // the profile-picker hint rides along — choosing a profile is the
         // step people miss (the docs' sign-in section exists because of it).
-        ? (limit && limit.blocked ? limit.message : null)
+        ? (limit && limit.message ? limit.message : null)
         : (cdm
           ? 'Sign in with your Amazon Music account, then choose a profile if Amazon asks.'
           : 'This build cannot play DRM-protected Amazon streams'),
@@ -3370,8 +3700,9 @@ module.exports = {
     // The mint reads config.json (and records its plan reading), so the plan
     // gate below rarely fetches again — but the gate itself is what refuses.
     const ctx = await this.ensureSessionContext();
-    // Only Music Unlimited plays (#1220): refused BEFORE any manifest request.
-    await this.assertPlanPlays();
+    // Music Unlimited plays everything; Prime only the account's bought
+    // tracks (#1220, #1494): refused BEFORE any manifest request.
+    await this.assertPlanPlaysAsin(asin);
     const body = lib.amazonDmlsManifestBody({
       asin,
       customerId: ctx.customerId,
@@ -3939,27 +4270,34 @@ module.exports = {
         this._planState = null;
         throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
       }
-      await this.assertPlanPlays();
-      const spec = lib.amazonSongSearchUrl(
-        typeof payload === 'string' ? { query: payload } : payload
-      );
-      if (!spec) return [];
-      // The DRM session-context mint's benign query (#1356 M9): the plugin's
-      // own most recent search text, already in the user's Amazon history via
-      // this very search — the old host mint read the host store's
-      // search_history for the same reason (the plugin cannot read the host
-      // store, so it keeps its own).
-      this._lastSearchText = spec.searchText;
-      const rows = await this.specSearch({
-        url: spec.url,
-        searchText: spec.searchText,
-        specType: 'track',
-        noun: 'tracks',
-        parse: (data) => {
-          const out = lib.searchTracksFromGql(data);
-          return { rows: out.tracks, envelope: out.envelope };
-        }
-      });
+      // #1494: off Music Unlimited the searches answer from the account's
+      // bought tracks, the only ones it plays; no catalog search at all.
+      const plan = await this.getPlan();
+      let rows;
+      if (plan !== 'unlimited') {
+        rows = await this.searchOwned(payload, plan);
+      } else {
+        const spec = lib.amazonSongSearchUrl(
+          typeof payload === 'string' ? { query: payload } : payload
+        );
+        if (!spec) return [];
+        // The DRM session-context mint's benign query (#1356 M9): the plugin's
+        // own most recent search text, already in the user's Amazon history via
+        // this very search — the old host mint read the host store's
+        // search_history for the same reason (the plugin cannot read the host
+        // store, so it keeps its own).
+        this._lastSearchText = spec.searchText;
+        rows = await this.specSearch({
+          url: spec.url,
+          searchText: spec.searchText,
+          specType: 'track',
+          noun: 'tracks',
+          parse: (data) => {
+            const out = lib.searchTracksFromGql(data);
+            return { rows: out.tracks, envelope: out.envelope };
+          }
+        });
+      }
       console.log('[Amazon] resolver search', payload, rows.length);
       return rows.map(function (t) {
         return {

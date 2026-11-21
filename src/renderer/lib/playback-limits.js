@@ -24,6 +24,15 @@
 //              and the play refusal
 //   searchesHeldBack — the service's own track searches answer not-ready
 //              while blocked (Amazon), so an upgrade must search again
+//   ownedOnly — (optional, unblocked entries) the resolver plays, but only
+//              what the account owns: Amazon on Prime plays the tracks
+//              bought from Amazon (#1494). The plugin enforces it itself
+//              (its search answers only owned tracks and its stream request
+//              refuses the rest as plan-ineligible), so the resolver stays in
+//              playbackResolvers like any playable one; the host shows the
+//              label on its tile and, on entering this state, drops the
+//              resolver's saved sources (limitTransition's purge), which may
+//              be tracks the account doesn't own.
 // A service with nothing to say has no entry (or null).
 
 // Apple Music's limit: a resolver that isn't signed in can't play (MusicKit JS
@@ -66,11 +75,12 @@ function notPlayingIds(blockedIds, playbackOffIds) {
 }
 
 // ResolverCard's statusLabel/statusTitle for a resolver, or nulls. A plan
-// limit says what the plan stops; a "Play from" switched off says what's
-// left.
+// limit says what the plan stops (an ownedOnly one, what still plays); a
+// "Play from" switched off says what's left.
 function tileStatus(limits, id, playbackOffIds) {
   const limit = limits && limits[id];
   if (limit && limit.blocked) return { statusLabel: limit.label || 'No playback', statusTitle: limit.message || null };
+  if (limit && limit.ownedOnly) return { statusLabel: limit.label || 'Purchases only', statusTitle: limit.message || null };
   if (Array.isArray(playbackOffIds) && playbackOffIds.includes(id)) {
     return { statusLabel: 'Search and links only', statusTitle: 'Playing from it is off in its settings' };
   }
@@ -94,7 +104,10 @@ function pluginStatusLimit(status) {
     planKey: typeof limit.planKey === 'string' && limit.planKey ? limit.planKey : null,
     label: typeof limit.label === 'string' && limit.label ? limit.label : null,
     message: typeof limit.message === 'string' && limit.message ? limit.message : null,
-    searchesHeldBack: limit.searchesHeldBack === true
+    searchesHeldBack: limit.searchesHeldBack === true,
+    // Only an unblocked entry can be ownedOnly (a blocked resolver plays
+    // nothing at all), and only when it says so.
+    ...(limit.ownedOnly === true && !limit.blocked ? { ownedOnly: true } : {})
   };
 }
 
@@ -148,13 +161,23 @@ function pluginStatusRow(status) {
 
 // After an upgrade, a resolver whose searches were held back while blocked
 // (searchesHeldBack) should search again: they answered not-ready and left
-// fresh timestamps with no result. `lastStored` is what was remembered for this resolver ('1' was
-// blocked, '0' playable, null never seen); returns whether to re-resolve and
-// what to remember now. An unknown limit (null) changes nothing.
+// fresh timestamps with no result. `lastStored` is what was remembered for
+// this resolver ('1' was blocked, 'owned' played only owned tracks, '0'
+// playable, null never seen); returns whether to re-resolve, whether to
+// purge, and what to remember now. An unknown limit (null) changes nothing.
+//   - into '0' from '1' or 'owned' (an upgrade): re-resolve, the searches
+//     were held back or answered only owned tracks;
+//   - into 'owned' from anything else (a Prime reading, #1494): purge — drop
+//     every saved source of the resolver, found or not, since one found on
+//     another plan may be a track the account doesn't own — and so
+//     re-resolve; its search now answers only owned tracks;
+//   - into '1': nothing; the resolver leaves playback whole.
 function limitTransition(lastStored, limit) {
-  if (!limit) return { reresolve: false, store: null };
-  const now = limit.blocked ? '1' : '0';
-  return { reresolve: lastStored === '1' && now === '0' && !!limit.searchesHeldBack, store: now };
+  if (!limit) return { reresolve: false, purge: false, store: null };
+  const now = limit.blocked ? '1' : (limit.ownedOnly ? 'owned' : '0');
+  const purge = now === 'owned' && lastStored !== 'owned';
+  const upgraded = now === '0' && (lastStored === '1' || lastStored === 'owned') && !!limit.searchesHeldBack;
+  return { reresolve: purge || upgraded, purge, store: now };
 }
 
 // The localStorage key that remembers a resolver's last state, kept across

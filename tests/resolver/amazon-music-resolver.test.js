@@ -42,7 +42,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.21.4');
+    expect(axe.manifest.version).toBe('1.22.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -50,7 +50,7 @@ describe('amazonmusic .axe structure', () => {
       expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, recommendations: true, widevine: true, mobile: false })
     );
     expect(axe.requires).toEqual({ hostBridges: ['webSession'], optionalHostBridges: ['widevine'] });
-    expect(axe.manifest.minAppVersion).toEqual({ desktop: '0.9.13' });
+    expect(axe.manifest.minAppVersion).toEqual({ desktop: '0.9.14' });
     expect(axe.settings.requiresAuth).toBe(false);
     expect(axe.urlPatterns).toEqual([
       'music.amazon.com/playlists/*',
@@ -86,7 +86,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'appVersion', 'assertPlanPlays', 'cacheSeeMorePage', 'cdmAvailable', 'cleanup', 'debugCaptureGql', 'debugCapturePageFlow', 'dmls', 'dropSessionState', 'drmAsinFromTrack', 'enqueuePageFlow', 'ensureSessionContext', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'fetchConfigJson', 'getPlan', 'getPlaybackManifest', 'getRecommendations', 'getStatus', 'handlePlayerEvent', 'homePageFlow', 'hostBridge', 'init', 'isSignedIn', 'kickCertWarm', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'mintCsrfHeaders', 'mintCsrfPageFlow', 'mintSessionContext', 'musicAgent', 'musicHomePageFlow', 'notePlanReading', 'pageSections', 'play', 'playlistImportPages', 'postTelemetryEvent', 'relayLicense', 'replayGql', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'seeMorePageFlow', 'sessionState', 'signIn', 'signInPromptDecision', 'signOut', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'telemetry', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'warmCertSession', 'withPlaylistsSection'].sort()
+      ['_lib', 'appVersion', 'assertPlanPlaysAsin', 'cacheSeeMorePage', 'cdmAvailable', 'cleanup', 'debugCaptureGql', 'debugCapturePageFlow', 'dmls', 'dropSessionState', 'drmAsinFromTrack', 'enqueuePageFlow', 'ensureSessionContext', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'fetchConfigJson', 'getOwnedTracks', 'getPlan', 'getPlaybackManifest', 'getRecommendations', 'getStatus', 'handlePlayerEvent', 'homePageFlow', 'hostBridge', 'init', 'isSignedIn', 'kickCertWarm', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'mintCsrfHeaders', 'mintCsrfPageFlow', 'mintSessionContext', 'musicAgent', 'musicHomePageFlow', 'notePlanReading', 'ownedTracksPageFlow', 'pageSections', 'play', 'playlistImportPages', 'postTelemetryEvent', 'relayLicense', 'replayGql', 'replayGqlPatiently', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'searchOwned', 'seeMorePageFlow', 'sessionState', 'signIn', 'signInPromptDecision', 'signOut', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'telemetry', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'warmCertSession', 'withPlaylistsSection'].sort()
     );
   });
 });
@@ -156,10 +156,12 @@ describe('amazonmusic search', () => {
     });
   });
 
-  // #1220: off Music Unlimited the search gate answers plan-ineligible.
-  // Not-ready, not a miss: a 30-day noMatch would outlive an upgrade.
-  test('throws notReady when the plan is not Music Unlimited, so it is not cached as noMatch', async () => {
-    amazonWebSessionMock({ tracks: runnerTracks, tier: 'PRIME' });
+  // #1220/#1494: off Music Unlimited a track the account didn't buy answers
+  // plan-ineligible. Not-ready, not a miss: a 30-day noMatch would outlive an
+  // upgrade or a purchase (amazon-music-prime-purchases.test.js has the rest).
+  test('throws notReady off Music Unlimited for a track not bought, so it is not cached as noMatch', async () => {
+    const ws = amazonWebSessionMock({ tracks: runnerTracks, tier: 'SOMETHING_NEW' });
+    require('../helpers/amazon-plugin-bridge').serveAmazonLibrary(ws, { first: require('../helpers/amazon-plugin-bridge').amazonLibraryPage([]) });
     const resolver = instantiate(axe);
     await expect(resolver.resolve('Daft Punk', 'Around the World', null, {})).rejects.toMatchObject({
       notReady: true,

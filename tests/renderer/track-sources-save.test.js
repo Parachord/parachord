@@ -30,7 +30,7 @@ describe('track sources are saved soon after they change', () => {
       if (lines[j].trim() !== 'markTrackSourcesDirty();') unmarked.push(`${i + 1}: ${line.trim()}`);
     });
     // clearResolverMisses saves the cache itself, at once.
-    const clearMisses = app.slice(app.indexOf('const clearResolverMisses = (resolverId) => {'), app.indexOf('flushTrackSources();', app.indexOf('const clearResolverMisses')));
+    const clearMisses = app.slice(app.indexOf('const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {'), app.indexOf('flushTrackSources();', app.indexOf('const clearResolverMisses')));
     expect(clearMisses).toMatch(/if \(trackSourcesLoadedRef\.current\) \{\s*try \{ window\.electron\?\.store\?\.set\('cache_track_sources', trackSourcesCache\.current\); \} catch \(e\) \{\}\s*\}/);
     expect(unmarked).toEqual([]);
   });

@@ -149,7 +149,7 @@
     {
       "id": "amazonmusic",
       "name": "Amazon Music",
-      "version": "1.21.4",
+      "version": "1.22.0",
       "author": "Parachord Team",
       "description": "Plays Amazon Music through the shared Widevine player (DASH + license via Amazon session). Does not use the Amazon Music desktop app.",
       "icon": "🎵",
@@ -177,7 +177,7 @@
         "widevine"
       ],
       "minAppVersion": {
-        "desktop": "0.9.13"
+        "desktop": "0.9.14"
       }
     },
     {
