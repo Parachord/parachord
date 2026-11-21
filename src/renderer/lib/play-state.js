@@ -9,6 +9,7 @@
 // pause signals now reconcile it.
 
 const { isSameTrack, trackPositionKey } = require('./playback-helpers');
+const { isPlayableSource } = require('./playable-source');
 
 // What an engine's own play or pause signal means for isPlaying: true or
 // false to set, null to leave it. `engineOwnsTrack`: the engine that sent it
@@ -63,6 +64,26 @@ function playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack,
   return !!trackLoading && isSameTrack(loadingTrack, currentTrack);
 }
 
+// The source a Play from pick is starting (#1601), or null. The menu passes
+// its pick to handlePlay as the track's preferredResolver, and handlePlay
+// sets loadingTrack to that track before anything else; the real source
+// (_activeResolver) changes only once the play has started, so on a slow start
+// (Spotify waking, MusicKit, the Widevine manifest and licence) the menu read
+// as if the pick hadn't taken and people picked again. While that load runs
+// the trigger and the checked row show the pick; once it starts, fails or
+// another play replaces it, the source that is really playing. Display only:
+// the pick is never written onto currentTrack, so a pick that can't play
+// never leaves the menu naming a source that isn't playing (mobile, #287).
+function pendingSourcePick({ currentTrack, trackLoading, loadingTrack, playbackResolvers }) {
+  if (!trackLoading || !loadingTrack || !currentTrack) return null;
+  const resolverId = loadingTrack.preferredResolver;
+  if (!resolverId || !isSameTrack(loadingTrack, currentTrack)) return null;
+  const sources = loadingTrack.sources;
+  if (!sources || typeof sources !== 'object' || !isPlayableSource(sources[resolverId])) return null;
+  if (Array.isArray(playbackResolvers) && !playbackResolvers.includes(resolverId)) return null;
+  return resolverId;
+}
+
 // Where a refused resume starts the track again through handlePlay: where it
 // was, keeping the scrobbler's record that this listen was already submitted.
 function restartPositionForResume(track, positionSeconds, scrobbled) {
@@ -101,6 +122,7 @@ module.exports = {
   musicKitStatePlaying,
   musicKitWebHoldsTrack,
   playStartPending,
+  pendingSourcePick,
   PLAY_START_PATIENCE_MS,
   restartPositionForResume,
   nativeAppleMusicPlaying,

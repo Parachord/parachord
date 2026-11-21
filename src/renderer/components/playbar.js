@@ -15,7 +15,7 @@ const Icons = require('./icons');
 const { findSavedTrack } = require('../lib/collection-ids');
 const { trackSlug } = require('../lib/track-slug');
 const { playbarShowsTrack } = require('../lib/playbar-art');
-const { playStartPending } = require('../lib/play-state');
+const { playStartPending, pendingSourcePick } = require('../lib/play-state');
 const { purchaseSource: pickPurchaseSource } = require('../lib/purchase-source');
 const { isPlayableSource } = require('../lib/playable-source');
 const { sourceBlockId } = require('../lib/bad-match-report');
@@ -435,7 +435,10 @@ const Playbar = React.memo(function Playbar(props) {
               ),
               // Line 3: Resolver dropdown + browser indicator
               (() => {
-                const currentResolverId = determineResolverIdFromTrack(currentTrack);
+                // The source shown: a Play from pick while its play starts
+                // (pendingSourcePick, display only), else the one playing.
+                const playingSourceId = determineResolverIdFromTrack(currentTrack);
+                const currentResolverId = pendingSourcePick({ currentTrack, trackLoading, loadingTrack, playbackResolvers }) || playingSourceId;
                 const resolver = allResolvers.find(r => r.id === currentResolverId);
 
                 // Get available sources for this track
