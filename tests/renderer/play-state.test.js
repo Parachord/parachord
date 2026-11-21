@@ -27,6 +27,7 @@ const {
   nativeAppleMusicPlaying,
   spotifyPlayingTrack,
   EXTERNAL_RESUME_POLL_MS,
+  pendingSourcePick,
 } = require('../../src/renderer/lib/play-state');
 
 const track = { id: 'swapmeet-i-know', artist: 'Swapmeet', title: 'I Know!', album: 'Mount Zero', appleMusicId: '1440', spotifyUri: 'spotify:track:abc' };
@@ -254,5 +255,66 @@ describe('the playbar shows a pending start', () => {
     expect(html.match(/--now-playing-pending-base:/g)).toHaveLength(2);
     expect(html.match(/--now-playing-pending-highlight:/g)).toHaveLength(2);
     expect(html).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.now-playing-pending \{ animation: none;/);
+  });
+});
+
+// #1601: Play from shows the picked source while that play starts.
+describe('pendingSourcePick', () => {
+  const sources = { spotify: { spotifyUri: 'spotify:track:abc' }, applemusic: { appleMusicId: '1440' } };
+  const playing = { ...track, sources, _activeResolver: 'spotify' };
+  const resolvers = ['spotify', 'applemusic'];
+  const pick = (over = {}) => pendingSourcePick({
+    currentTrack: playing,
+    trackLoading: true,
+    loadingTrack: { ...playing, preferredResolver: 'applemusic' },
+    playbackResolvers: resolvers,
+    ...over,
+  });
+
+  test('a pick of another source of the track on screen shows while its play loads', () => {
+    expect(pick()).toBe('applemusic');
+  });
+
+  test('once the play started, failed or stopped loading, nothing is pending (the real source shows)', () => {
+    expect(pick({ trackLoading: false })).toBeNull();
+    expect(pick({ loadingTrack: null })).toBeNull();
+  });
+
+  test('another play replaced it: a load with no pick, or of another track, shows no pick', () => {
+    expect(pick({ loadingTrack: { ...playing } })).toBeNull();
+    expect(pick({ loadingTrack: { id: 'other', artist: 'X', title: 'Y', sources, preferredResolver: 'applemusic' } })).toBeNull();
+  });
+
+  test('a pick whose source the play no longer has (a refusal fell back) shows no pick', () => {
+    expect(pick({ loadingTrack: { ...playing, sources: { spotify: sources.spotify }, preferredResolver: 'applemusic' } })).toBeNull();
+    expect(pick({ loadingTrack: { ...playing, sources: { ...sources, applemusic: { noMatch: true } }, preferredResolver: 'applemusic' } })).toBeNull();
+    expect(pick({ loadingTrack: { ...playing, sources: { ...sources, applemusic: { appleMusicId: '1', streamable: false } }, preferredResolver: 'applemusic' } })).toBeNull();
+  });
+
+  test('a pick of a source that has left playback shows no pick', () => {
+    expect(pick({ playbackResolvers: ['spotify'] })).toBeNull();
+  });
+
+  test('it never writes the pick onto the track', () => {
+    const currentTrack = { ...playing };
+    pendingSourcePick({ currentTrack, trackLoading: true, loadingTrack: { ...playing, preferredResolver: 'applemusic' }, playbackResolvers: resolvers });
+    expect(currentTrack).toEqual(playing);
+  });
+});
+
+describe('the playbar\'s Play from shows the pick', () => {
+  const playbar = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'playbar.js'), 'utf8');
+  const line3 = playbar.slice(playbar.indexOf('// Line 3: Resolver dropdown'), playbar.indexOf('// Browser indicator pill'));
+
+  test('the trigger, the checked row and a repeat pick read the pending pick before the playing source', () => {
+    expect(line3).toContain('const playingSourceId = determineResolverIdFromTrack(currentTrack);');
+    expect(line3).toContain('const currentResolverId = pendingSourcePick({ currentTrack, trackLoading, loadingTrack, playbackResolvers }) || playingSourceId;');
+    expect(line3).toContain('checked: resId === currentResolverId,');
+    expect(line3).toContain('if (resId !== currentResolverId && currentTrack.sources[resId]) {');
+  });
+
+  test('the pick stays display-only: Play from passes it to handlePlay and never sets the track', () => {
+    expect(line3).toContain('handlePlay({ ...currentTrack, preferredResolver: resId });');
+    expect(line3).not.toMatch(/setCurrentTrack/);
   });
 });
