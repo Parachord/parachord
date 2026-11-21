@@ -96,8 +96,10 @@ describe('the plan gate (#1220) before any search', () => {
     });
   });
 
-  test('plan-ineligible when the account is Prime, before any search', async () => {
-    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'PRIME' });
+  // (Prime searches the account's bought tracks instead, #1494:
+  // amazon-music-prime-purchases.test.js.)
+  test('plan-ineligible when the plan is not confirmed, before any search', async () => {
+    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'SOMETHING_NEW' });
     const resolver = instantiateAmazonPlugin(axe);
     await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
       notReady: true,
@@ -126,7 +128,7 @@ describe('the plan gate (#1220) before any search', () => {
     // refused reading must not sit for 30 minutes: an upgrade unblocks the
     // search a minute later at the worst. The plugin's own _lib constants pin
     // the TTLs; this pins which reading gets which.
-    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'PRIME' });
+    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'SOMETHING_NEW' });
     const resolver = instantiateAmazonPlugin(axe);
     await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'plan-ineligible' });
     expect(ws.fetch).toHaveBeenCalledTimes(1);
@@ -135,7 +137,7 @@ describe('the plan gate (#1220) before any search', () => {
     expect(ws.fetch).toHaveBeenCalledTimes(2); // re-read — not the 30-min cache
     // ...and an unlimited reading within the 30-min TTL is served from cache.
     ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'UNLIMITED_AUDIO' }) });
-    resolver._planState.at = Date.now() - (61 * 1000); // the refusal re-read re-cached 'prime'
+    resolver._planState.at = Date.now() - (61 * 1000); // the refusal re-read re-cached 'unknown'
     const rows = await search(resolver, 'daft punk');
     expect(rows).toHaveLength(2);
     resolver._planState.at = Date.now() - (29 * 60 * 1000); // within the 30-min unlimited TTL
@@ -793,9 +795,9 @@ describe('the session generation (a sign-out the plugin cannot see the event of)
     // The concurrent search did NOT join account A's in-flight read — it
     // started its own fetch under the new generation.
     expect(releases).toHaveLength(2);
-    releases[0]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'PRIME', customerId: 'A1' }) });
+    releases[0]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'SOMETHING_NEW', customerId: 'A1' }) });
     releases[1]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'UNLIMITED_AUDIO', customerId: 'B2' }) });
-    // A's own search still answers A's reading (Prime → plan-ineligible);
+    // A's own search still answers A's reading (unconfirmed → plan-ineligible);
     // B's search proceeds.
     await expect(p1).rejects.toMatchObject({ notReady: true, code: 'plan-ineligible' });
     const rows = await p2;

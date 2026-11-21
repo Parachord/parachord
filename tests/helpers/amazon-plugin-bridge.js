@@ -540,3 +540,96 @@ function amazonRecommendationsMock({ homePage, seeMorePage, capturesFor, viewUrl
   ws.sentRequests = sentRequests;
   return ws;
 }
+
+// ── The bought tracks fixtures (#1494) ─────────────────────────────────────
+
+// The library Purchased page's own LibraryPurchasedPageQuery request, as a
+// load captures it (variables as captured 2026-11-21: firstLimit 50,
+// isAuthenticated).
+function amazonLibraryCapture({ csrfTs = '3000', echo = false, hash = 'purchasedhash' } = {}) {
+  return {
+    url: 'https://gql.music.amazon.com/',
+    method: 'POST',
+    echo,
+    body: JSON.stringify({
+      operationName: 'LibraryPurchasedPageQuery',
+      variables: { firstLimit: 50, isAuthenticated: true },
+      extensions: { persistedQuery: { version: 1, sha256Hash: hash } }
+    }),
+    headers: { 'x-api-key': 'amzn1.application.x', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': csrfTs }
+  };
+}
+
+// One library song row (#1494): a bought Track has
+// purchaseContext.isPurchased true and a library playParams id; a row that
+// says false (a liked-only song, the shape the Songs page carries) must never
+// count as bought. Both carry the catalog ASIN as the node id, as the live
+// Purchased page does.
+function amazonLibrarySong({ asin, title, artist, album = 'An Album', albumAsin = 'BALBUM0001', bought = true, duration = 200, cursor }) {
+  return {
+    cursor: cursor || `c-${asin}`,
+    node: {
+      __typename: 'Track',
+      id: asin,
+      title,
+      url: `/tracks/${asin}/`,
+      duration,
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: artist } }] },
+      album: { id: albumAsin, title: album },
+      images: [{ url: `https://m.media-amazon.com/images/I/${asin}.jpg`, width: 500, imageType: 'PRIMARY' }],
+      purchaseContext: { isPurchased: bought },
+      playParams: bought
+        ? { id: `mrn:1.0:library:track:objectid:${asin.toLowerCase()}`, selections: ['PLAY', 'SHUFFLE', 'STATION', 'PREVIEW'] }
+        : { id: `mrn:1.0:catalog:track:asin:${asin}`, selections: ['STATION', 'PREVIEW'] }
+    }
+  };
+}
+
+// One LibraryPurchasedPageQuery answer, in the live envelope
+// (data.user.purchased: edges and pageInfo; endCursor is null there). token is
+// the continuation the next page is asked for with (afterCursor).
+function amazonLibraryPage(songs, { token = null, hasNextPage = !!token } = {}) {
+  return {
+    data: {
+      user: {
+        purchased: {
+          edges: songs.map(amazonLibrarySong),
+          pageInfo: { hasNextPage, token, endCursor: null, hasPreviousPage: null, startCursor: null, __typename: 'PageInfo' }
+        }
+      }
+    }
+  };
+}
+
+// Serve the library through a webSession mock: a load of /my/purchases
+// captures the page's own LibraryPurchasedPageQuery request, and a replay of it answers the page
+// its afterCursor asks for (pages[cursor || 'first']). Other loads and
+// replays go to the mock's own handlers. Returns the replayed bodies.
+function serveAmazonLibrary(ws, pages, { capture = amazonLibraryCapture() } = {}) {
+  const replays = [];
+  const load = ws.load.getMockImplementation();
+  ws.load.mockImplementation(async (id, url, o) => {
+    if (String(url).endsWith('/my/purchases')) {
+      return { success: true, finalUrl: url, captures: capture ? [capture] : [] };
+    }
+    return load(id, url, o);
+  });
+  const pageFetch = ws.pageFetch.getMockImplementation();
+  ws.pageFetch.mockImplementation(async (id, request) => {
+    let body = null;
+    try { body = JSON.parse(request.body); } catch (e) { /* not ours */ }
+    if (body && body.operationName === 'LibraryPurchasedPageQuery') {
+      replays.push(body);
+      const page = pages[(body.variables && body.variables.afterCursor) || 'first'];
+      if (!page) return { success: true, status: 500, text: '{}' };
+      return { success: true, status: 200, text: JSON.stringify(page) };
+    }
+    return pageFetch ? pageFetch(id, request) : { success: true, status: 404, text: '' };
+  });
+  return replays;
+}
+
+module.exports.amazonLibraryCapture = amazonLibraryCapture;
+module.exports.amazonLibrarySong = amazonLibrarySong;
+module.exports.amazonLibraryPage = amazonLibraryPage;
+module.exports.serveAmazonLibrary = serveAmazonLibrary;

@@ -34,7 +34,7 @@ const {
 
 const axe = loadAmazonAxe();
 
-const PRIME_MESSAGE = 'Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.';
+const PRIME_MESSAGE = "Amazon Prime: Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited.";
 const UNKNOWN_MESSAGE = "Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can. Playing Amazon tracks in Parachord needs Music Unlimited.";
 
 // A webSession bridge mock for the session surfaces: state() answers the
@@ -471,11 +471,11 @@ describe('getStatus', () => {
     expect(reply.statusMessage).toBeNull();
   });
 
-  test('Prime blocks with the tile label and the one wording', async () => {
+  test('Prime plays the bought tracks only, with the tile label and the one wording (#1494)', async () => {
     sessionBridge({ tier: 'PRIME' });
     const reply = await plugin().getStatus();
     expect(reply.playbackLimit).toEqual({
-      blocked: true, planKey: 'prime', label: 'Prime: no playback', message: PRIME_MESSAGE, searchesHeldBack: true
+      blocked: false, ownedOnly: true, planKey: 'prime', label: 'Prime: purchases only', message: PRIME_MESSAGE, searchesHeldBack: true
     });
     expect(reply.statusMessage).toBe(PRIME_MESSAGE);
   });
@@ -504,7 +504,7 @@ describe('getStatus', () => {
     sessionBridge({ tier: 'PRIME' });
     return plugin().getStatus().then((reply) => {
       expect(pluginStatusLimit(reply)).toEqual({
-        blocked: true, planKey: 'prime', label: 'Prime: no playback', message: PRIME_MESSAGE, searchesHeldBack: true
+        blocked: false, ownedOnly: true, planKey: 'prime', label: 'Prime: purchases only', message: PRIME_MESSAGE, searchesHeldBack: true
       });
     });
   });

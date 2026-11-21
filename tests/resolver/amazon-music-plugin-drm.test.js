@@ -730,7 +730,6 @@ describe('the plan gate (#1220) before any dmls request', () => {
   });
 
   test.each([
-    ['PRIME', 'prime', /^Amazon Prime: Amazon is used for album art, artist photos and links\. Playing Amazon tracks in Parachord needs Music Unlimited\.$/],
     [undefined, 'unknown', /couldn't confirm your Amazon Music plan/],
     ['SOMETHING_NEW', 'unknown', /couldn't confirm your Amazon Music plan/]
   ])('tier %p is refused as plan-ineligible before any dmls request', async (tier, planKey, message) => {
@@ -740,6 +739,58 @@ describe('the plan gate (#1220) before any dmls request', () => {
     expect(err).toMatchObject({ reason: 'plan-ineligible', planKey });
     expect(err.message).toMatch(message);
     expect(manifestPosts(fetches)).toHaveLength(0);
+  });
+
+  // Prime plays the tracks the account bought (#1494), checked against the
+  // plugin's own list from the library page, never a flag on the track.
+  describe('on Prime', () => {
+    const { amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+    const primeWithLibrary = (pages) => {
+      const mock = mockWithConfig(configWithTier('PRIME'));
+      serveAmazonLibrary(mock.ws, pages || {
+        first: amazonLibraryPage([
+          { asin: 'B0OWNED001', title: 'Bought', artist: 'A' },
+          { asin: 'B0LIKED001', title: 'Liked', artist: 'A', bought: false }
+        ])
+      });
+      return mock;
+    };
+
+    test('a bought track plays', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+      expect(manifestPosts(fetches)).toHaveLength(1);
+    });
+
+    test('a track the account only liked, or never bought, is refused before any dmls request', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      for (const asin of ['B0LIKED001', 'B0NEVER001']) {
+        const err = await resolver.getPlaybackManifest(drmTrack(asin), {}).catch((e) => e);
+        expect(err).toMatchObject({ reason: 'plan-ineligible', planKey: 'prime' });
+        expect(err.message).toBe("Amazon Prime: Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited.");
+      }
+      expect(manifestPosts(fetches)).toHaveLength(0);
+    });
+
+    test('a flag on the track is not proof of a purchase', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      const track = { ...drmTrack('B0NEVER001'), amazonPurchased: true, owned: true };
+      await expect(resolver.getPlaybackManifest(track, {})).rejects.toMatchObject({ reason: 'plan-ineligible' });
+      expect(manifestPosts(fetches)).toHaveLength(0);
+    });
+
+    test('a library that cannot be read is "try again", not a plan refusal', async () => {
+      const mock = mockWithConfig(configWithTier('PRIME'));
+      serveAmazonLibrary(mock.ws, {}, { capture: null });
+      const resolver = instantiateAmazonPlugin(axe);
+      const err = await resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {}).catch((e) => e);
+      expect(err).toMatchObject({ reason: 'not-ready' });
+      expect(err.message).toBe("Couldn't read your Amazon purchases. Try again in a minute.");
+      expect(manifestPosts(mock.fetches)).toHaveLength(0);
+    });
   });
 });
 

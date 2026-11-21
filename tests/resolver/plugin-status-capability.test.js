@@ -182,9 +182,9 @@ describe('a status reply feeds the playback limit map and the tile', () => {
     // The upgrade re-search rule reads a plugin reply like any other limit:
     // blocked stays blocked, and blocked with searches held back, then
     // playable, searches again.
-    expect(PlaybackLimits.limitTransition('1', limits.awesomemusic)).toEqual({ reresolve: false, store: '1' });
+    expect(PlaybackLimits.limitTransition('1', limits.awesomemusic)).toEqual({ reresolve: false, purge: false, store: '1' });
     const upgraded = PlaybackLimits.pluginStatusLimit({ playbackLimit: { blocked: false, planKey: 'premium', searchesHeldBack: true } });
-    expect(PlaybackLimits.limitTransition('1', upgraded)).toEqual({ reresolve: true, store: '0' });
+    expect(PlaybackLimits.limitTransition('1', upgraded)).toEqual({ reresolve: true, purge: false, store: '0' });
   });
 
   test('a playable reply changes nothing, and an unreported plan is no verdict', async () => {

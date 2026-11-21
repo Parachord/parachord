@@ -49,11 +49,16 @@ describe('main process', () => {
     const impl = read('plugins-src/amazonmusic/implementation.js');
     const search = between(impl, 'search: async function', 'resolve: async function');
     const signIn = search.indexOf('if (!(await this.isSignedIn()))');
-    const plan = search.indexOf('await this.assertPlanPlays();');
+    const planRead = search.indexOf('const plan = await this.getPlan();');
+    const plan = search.indexOf('await this.assertPlanPlays(plan);');
     const runner = search.indexOf('await this.specSearch({');
+    const owned = search.indexOf('await this.searchOwned(payload);');
     expect(signIn).toBeGreaterThan(-1);
-    expect(plan).toBeGreaterThan(signIn);   // only when signed in — a signed-out search answers not-signed-in (the prompt)
+    expect(planRead).toBeGreaterThan(signIn);   // only when signed in — a signed-out search answers not-signed-in (the prompt)
+    expect(plan).toBeGreaterThan(planRead); // the gate judges that one reading (no second read)
     expect(plan).toBeLessThan(runner);      // and before searching
+    expect(owned).toBeGreaterThan(planRead);// Prime answers from the bought tracks (#1494)
+    expect(owned).toBeLessThan(plan);
     // The refusal reaches the resolver as notReady (never a 30-day noMatch).
     expect(search).toMatch(/reason === 'plan-ineligible'/);
     // The gate is the plugin's own copy of the dmls one: config.json via the
@@ -88,7 +93,7 @@ describe('main process', () => {
     // The mapping (the renderer\u2019s old amazonPlaybackLimit) is the plugin\u2019s
     // _lib copy: the message and the tile labels live next to the gate.
     expect(impl).toMatch(/function amazonPlaybackLimit\(plan\) \{/);
-    expect(impl).toMatch(/prime: 'Prime: no playback'/);
+    expect(impl).toMatch(/prime: 'Prime: purchases only'/);
     expect(impl).toMatch(/unknown: 'Plan not confirmed'/);
     // The host handlers and their preload exposures are deleted.
     for (const ch of ['amazonmusic-get-status', 'amazonmusic-open-login', 'amazonmusic-sign-out']) {

@@ -8054,14 +8054,22 @@ const Parachord = () => {
   // fresh timestamp. cacheValid then treats every enabled resolver as already
   // queried for 7 days. Zero those timestamps too, not only entries that
   // carry the marker.
-  const clearResolverMisses = (resolverId) => {
+  //
+  // `sources: true` drops the resolver's FOUND sources too, not only its
+  // misses: on entering a plan that plays only owned tracks (Amazon on Prime,
+  // #1494, playback-limits.js limitTransition's purge), a source found on
+  // another plan may be a track the account doesn't own. The queue and an
+  // open playlist keep theirs until they resolve again; playing one the
+  // plan refuses plays another source (the engine's plan refusal).
+  const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {
+    const gone = (value) => !!value && (dropFound || !!value.noMatch);
     const cache = trackSourcesCache.current || {};
     for (const key of Object.keys(cache)) {
       const entry = cache[key];
       if (!entry?.sources) continue;
       const am = entry.sources[resolverId];
-      if (am && !am.noMatch) continue;
-      if (am?.noMatch) {
+      if (am && !gone(am)) continue;
+      if (gone(am)) {
         const sources = { ...entry.sources };
         delete sources[resolverId];
         entry.sources = sources;
@@ -8077,7 +8085,7 @@ const Parachord = () => {
       let changed = false;
       const next = { ...prev };
       for (const key of Object.keys(next)) {
-        if (!next[key]?.[resolverId]?.noMatch) continue;
+        if (!gone(next[key]?.[resolverId])) continue;
         const copy = { ...next[key] };
         delete copy[resolverId];
         if (copy.__noMatchAll) delete copy.__noMatchAll;
@@ -8090,7 +8098,7 @@ const Parachord = () => {
       if (!prev?.tracks?.length) return prev;
       let changed = false;
       const tracks = prev.tracks.map(t => {
-        if (!t?.sources?.[resolverId]?.noMatch) return t;
+        if (!gone(t?.sources?.[resolverId])) return t;
         changed = true;
         const sources = { ...t.sources };
         delete sources[resolverId];
@@ -8113,8 +8121,13 @@ const Parachord = () => {
       const key = PlaybackLimits.limitStorageKey(resolverId);
       let last = null;
       try { last = localStorage.getItem(key); } catch (e) {}
-      const { reresolve, store } = PlaybackLimits.limitTransition(last, limit);
-      if (reresolve) {
+      const { reresolve, purge, store } = PlaybackLimits.limitTransition(last, limit);
+      if (purge) {
+        // A plan that plays only owned tracks (#1494): sources found before
+        // may not be owned, so they go, and the resolver searches again.
+        console.log(`[Playback limits] ${resolverId} plays only owned tracks (${limit.planKey}); dropping its saved sources and searching again`);
+        clearResolverMisses(resolverId, { sources: true });
+      } else if (reresolve) {
         console.log(`[Playback limits] ${resolverId} can play now (${limit.planKey}); searching it again`);
         clearResolverMisses(resolverId);
       }
