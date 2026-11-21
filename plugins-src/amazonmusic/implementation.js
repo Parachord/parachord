@@ -1722,6 +1722,39 @@ module.exports = {
     // The benign mint query before the plugin has seen a search of its own
     // (the old host mint's default).
     const MINT_BENIGN_QUERY = 'the';
+    // How long the csrf triplet a page flow's own requests carried stands in
+    // for a mint (#1603): the purchases read loads a page whose gql requests
+    // carry a live triplet, and a mint queued right behind it takes those
+    // instead of loading the songs search too. A minted context already lives
+    // until the dmls refuses it, so this bounds only how old the page's
+    // values may be when the mint takes them.
+    const CSRF_HARVEST_MAX_AGE_MS = 10 * 60 * 1000;
+    // The plan read's config.json serves a mint that starts within this long
+    // (a play reads the plan, then mints: one read, not two).
+    const CONFIG_REUSE_MS = 10000;
+
+    // The csrf triplet from a page load's captures, or null. The page emits
+    // PLACEHOLDER csrf values (literally foo/bar) on requests that do not need
+    // them; only real spec-search-class requests carry live ones. A dmls call
+    // made with placeholders fails server-side (its "REQUIRED_COOKIES_MISSING"
+    // is the bad-csrf symptom, live-verified 2026-10), so only values that
+    // look real count. The page's OWN request is preferred over our echo (an
+    // echoed capture is a replay of a template minted under this session:
+    // valid, but session-aged).
+    function csrfHeadersFromCaptures(captures) {
+      const looksReal = (h) =>
+        typeof h['csrf-token'] === 'string' && h['csrf-token'].length >= 20
+        && /^\d+$/.test(String(h['csrf-rnd'] || '')) && /^\d+$/.test(String(h['csrf-ts'] || ''));
+      const real = (captures || []).filter((r) => r && r.headers && looksReal(r.headers));
+      const entry = real.find((r) => !r.echo) || real[0] || null;
+      if (!entry) return null;
+      return {
+        csrfToken: entry.headers['csrf-token'],
+        csrfRnd: entry.headers['csrf-rnd'] || null,
+        csrfTs: entry.headers['csrf-ts'] || null,
+        deviceId: entry.headers['x-amzn-device-id'] || null
+      };
+    }
 
     // license-400 denialReason semantics (live captures): only these mean the
     // build's certificate (development VMP) is what Amazon is refusing — the
@@ -2490,6 +2523,8 @@ module.exports = {
       AMAZON_HOMES, HOME_REFUSED_STATUS, PLAYLISTS_SECTION_ID,
       RECOMMENDATIONS_WALK_TIMEOUT_MS,
       OWNED_PAGE_URL, OWNED_OPERATION, OWNED_TTL_MS, OWNED_MAX_PAGES, OWNED_MAX_MS,
+      CSRF_HARVEST_MAX_AGE_MS, CONFIG_REUSE_MS,
+      csrfHeadersFromCaptures,
       notReady,
       pageBlocksPlayback,
       amazonAuthCookieState,
@@ -3167,6 +3202,8 @@ module.exports = {
     // The account's bought tracks (#1494), and a read of them in flight.
     this._ownedTracks = null;
     this._ownedPromise = null;
+    this._csrfHarvest = null;
+    this._configRead = null;
     return finalPost;
   },
 
@@ -3248,6 +3285,10 @@ module.exports = {
         });
         if (out && out.success && typeof out.text === 'string') {
           config = JSON.parse(out.text); // a bad reply reads as no tier → unknown
+          // A mint right after this read takes it (#1603).
+          if (this._sessionGeneration === startedGeneration) {
+            this._configRead = { config, at: Date.now(), generation: startedGeneration };
+          }
         }
       } catch (e) { /* a failed fetch reads as no tier → unknown */ }
       const plan = lib.amazonPlanFromTier(lib.tierFromConfig(config));
@@ -3435,6 +3476,7 @@ module.exports = {
       console.warn('[Amazon] bought tracks blocked: ' + load.finalUrl);
       throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
     }
+    this.keepCsrfHeaders(load.captures);
     const captured = (load.captures || []).filter(r => r.headers && !r.echo);
     let entry = null;
     let request = null;
@@ -3697,12 +3739,14 @@ module.exports = {
     if (!(await this.isSignedIn())) {
       throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
-    // The mint reads config.json (and records its plan reading), so the plan
-    // gate below rarely fetches again — but the gate itself is what refuses.
-    const ctx = await this.ensureSessionContext();
     // Music Unlimited plays everything; Prime only the account's bought
-    // tracks (#1220, #1494): refused BEFORE any manifest request.
+    // tracks (#1220, #1494): refused BEFORE any manifest request. The gate
+    // runs before the mint (#1603): off Unlimited it waits on the purchases
+    // read, whose page leaves the csrf triplet the mint then takes, so a
+    // first play after launch costs one page load, not that read and a
+    // second page. The mint reuses the gate's config.json read.
     await this.assertPlanPlaysAsin(asin);
+    const ctx = await this.ensureSessionContext();
     const body = lib.amazonDmlsManifestBody({
       asin,
       customerId: ctx.customerId,
@@ -3935,6 +3979,8 @@ module.exports = {
         'Amazon Music: dmls request failed (' + ((out && out.error) || (out && out.reason) || 'bridge unavailable') + ')');
     }
     if (out.status === 400 && /Unauthorized|Authentication|REQUIRED_COOKIES/i.test(out.text || '')) {
+      // The refused triplet may be a kept one: the re-mint loads a page.
+      this._csrfHarvest = null;
       if (!authRetry) {
         this._drmSessionContext = null;
         throw lib.notReady('not-signed-in', 'Amazon Music session expired — sign in again');
@@ -4024,6 +4070,10 @@ module.exports = {
 
   fetchConfigJson: async function () {
     const lib = this.requireLib();
+    const read = this._configRead;
+    if (read && read.generation === this._sessionGeneration && Date.now() - read.at < lib.CONFIG_REUSE_MS) {
+      return read.config;
+    }
     const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
     const out = await ws.fetch(lib.SESSION, {
@@ -4049,10 +4099,32 @@ module.exports = {
     return this.enqueuePageFlow(() => this.mintCsrfPageFlow(q), { lane: 'foreground' });
   },
 
+  // The csrf triplet a page flow's own requests carried (#1603), kept with
+  // the session generation it was read under, for a mint that follows.
+  keepCsrfHeaders: function (captures) {
+    const headers = this.requireLib().csrfHeadersFromCaptures(captures);
+    if (headers) this._csrfHarvest = { headers, at: Date.now(), generation: this._sessionGeneration };
+  },
+
+  keptCsrfHeaders: function () {
+    const h = this._csrfHarvest;
+    if (!h || h.generation !== this._sessionGeneration) return null;
+    if (Date.now() - h.at > this.requireLib().CSRF_HARVEST_MAX_AGE_MS) return null;
+    return h.headers;
+  },
+
   mintCsrfPageFlow: async function (q) {
     const lib = this.requireLib();
     const ws = this.hostBridge('webSession');
     if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    // A page flow that ran just before this one (the purchases read a Prime
+    // play waits on, #1603) left its own live triplet: take it instead of a
+    // second page load.
+    const kept = this.keptCsrfHeaders();
+    if (kept) {
+      console.log('[Amazon] session-headers mint: the last page flow\'s headers');
+      return kept;
+    }
     console.log('[Amazon] session-headers mint: page flow for "' + q + '"');
     // The capture window is the spec searches' (the quiet window sized for a
     // cold view's late first gql), and the lens is the old host mint's (the
@@ -4074,26 +4146,10 @@ module.exports = {
       console.warn('[Amazon] session-headers mint blocked: ' + load.finalUrl);
       throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
     }
-    // The page emits PLACEHOLDER csrf values (literally foo/bar) on requests
-    // that do not need them — only the real spec-search-class requests carry
-    // live ones. A dmls call made with placeholders fails server-side (its
-    // "REQUIRED_COOKIES_MISSING" is the bad-csrf symptom, live-verified
-    // 2026-10), so only values that look real count. The page's OWN capture is
-    // preferred over our echo (an echoed capture is a replay of some template
-    // minted under this session — valid, but session-aged).
-    const tokenLooksReal = (h) =>
-      typeof h['csrf-token'] === 'string' && h['csrf-token'].length >= 20
-      && /^\d+$/.test(String(h['csrf-rnd'] || '')) && /^\d+$/.test(String(h['csrf-ts'] || ''));
-    const captured = (load.captures || []).filter((r) => r.headers && tokenLooksReal(r.headers));
-    const entry = captured.find((r) => !r.echo) || captured[0] || null;
-    if (entry) {
+    const headers = lib.csrfHeadersFromCaptures(load.captures);
+    if (headers) {
       console.log('[Amazon] session-headers mint ok');
-      return {
-        csrfToken: entry.headers['csrf-token'],
-        csrfRnd: entry.headers['csrf-rnd'] || null,
-        csrfTs: entry.headers['csrf-ts'] || null,
-        deviceId: entry.headers['x-amzn-device-id'] || null
-      };
+      return headers;
     }
     // transient — never a sign-in prompt
     throw lib.notReady('load-failed', 'session headers: the page fired no captured request');
