@@ -57,8 +57,8 @@ describe('refreshFromSource', () => {
     expect(r.playlist.tracks).toEqual(B);
   });
 
-  test('an empty answer for a playlist with tracks is a bad response: nothing changes', () => {
-    expect(refreshFromSource(synced(), { tracks: [], snapshotId: 'snap-2' }, { now: NOW })).toEqual({ outcome: 'unchanged', playlist: null });
+  test('an empty answer for a playlist with tracks changes nothing, and says it was empty (not "up to date")', () => {
+    expect(refreshFromSource(synced(), { tracks: [], snapshotId: 'snap-2' }, { now: NOW })).toEqual({ outcome: 'empty', playlist: null });
   });
 
   test('not a synced import, or a hosted XSPF: nothing to refresh this way', () => {
@@ -96,5 +96,16 @@ describe('the playlist page\'s Refresh', () => {
     expect(block).toContain('`This playlist changed on ${serviceName} and here. Choose which to keep above.`');
     expect(block).toContain('busy: refreshing,');
     expect(block).toContain('const serviceName = pluginName(from.resolver);');
+  });
+});
+
+describe('the Refresh says what came back, and logs it', () => {
+  const page = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'src', 'renderer', 'components', 'playlist-view-page.js'), 'utf8');
+  const block = page.slice(page.indexOf('// Refresh a playlist imported from a service now'), page.indexOf('// Edit / Cancel+Done buttons'));
+  test('an empty answer has its own message', () => {
+    expect(block).toContain("`${serviceName} sent no tracks for this playlist, so it’s left as it is.`");
+  });
+  test('the diagnostic log records the counts, whether they matched, and the outcome', () => {
+    expect(block).toMatch(/console\.log\(`🔄 Refresh "\$\{playlist\.title\}" from \$\{from\.resolver\}: \$\{fetched\.tracks\.length\} fetched, \$\{\(playlist\.tracks \|\| \[\]\)\.length\} here/);
   });
 });
