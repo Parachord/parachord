@@ -381,6 +381,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       return;
                     }
                     const result = refreshFromSource(playlist, fetched, { now: Date.now() });
+                    // What came back, for the diagnostic log: a "nothing new"
+                    // that isn't is either the service's own answer or ours.
+                    console.log(`🔄 Refresh "${playlist.title}" from ${from.resolver}: ${fetched.tracks.length} fetched, ${(playlist.tracks || []).length} here, same tracks: ${tracksFingerprint(fetched.tracks) === tracksFingerprint(playlist.tracks || [])}, unchanged since last sync: ${tracksFingerprint(fetched.tracks) === from.tracksFingerprint}, snapshot ${fetched.snapshotId && fetched.snapshotId === from.snapshotId ? 'same' : 'new'} → ${result.outcome}`);
                     if (result.playlist) {
                       const next = result.playlist;
                       setPlaylists(prev => prev.map(p => p.id === id ? next : p));
@@ -392,6 +395,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       ? `Updated from ${serviceName}: ${countOf(result.playlist.tracks.length, 'track')}`
                       : result.outcome === 'conflict'
                       ? `This playlist changed on ${serviceName} and here. Choose which to keep above.`
+                      : result.outcome === 'empty'
+                      ? `${serviceName} sent no tracks for this playlist, so it’s left as it is.`
                       : `Already up to date with ${serviceName}`);
                   } catch (err) {
                     console.error('Refresh from service failed:', err);

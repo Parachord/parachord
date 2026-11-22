@@ -252,8 +252,10 @@ function sourceOwnsPlaylist(playlist) {
  * `playlist` is the record to save, or null when there's nothing to save:
  *   'unchanged'  the service has what we have, or hasn't changed since the
  *                last sync (edits made here stand: the push banner offers
- *                them), or answered nothing for a playlist with tracks (a bad
- *                response, as applyPulledTracks reads it)
+ *                them)
+ *   'empty'      the service answered no tracks for a playlist that has
+ *                some: a bad response (as applyPulledTracks reads it), so
+ *                nothing changes, and the page says it came back empty
  *   'pulled'     the service's tracks, applied (applyPulledTracks)
  *   'conflict'   changed on the service and edited here: the tracks stay,
  *                flagged hasUpdates so the playlist page asks which to keep
@@ -266,7 +268,7 @@ function refreshFromSource(playlist, fetched, { now = Date.now() } = {}) {
   const providerId = from.resolver;
   const incoming = Array.isArray(fetched && fetched.tracks) ? fetched.tracks : [];
   const existing = Array.isArray(playlist.tracks) ? playlist.tracks : [];
-  if (incoming.length === 0 && existing.length > 0) return { outcome: 'unchanged', playlist: null };
+  if (incoming.length === 0 && existing.length > 0) return { outcome: 'empty', playlist: null };
   const remote = tracksFingerprint(incoming);
   if (remote === tracksFingerprint(existing)) return { outcome: 'unchanged', playlist: null };
   const sourceOnly = sourceOwnsPlaylist(playlist);

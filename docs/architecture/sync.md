@@ -200,7 +200,8 @@ The decision is `remoteUpdateAction` (`sync-engine/auto-pull.js`, tests in `test
 **An empty answer for a playlist that has tracks keeps the tracks** and only advances the snapshot (mobile's `pullPlaylist` does the same): Apple Music returns no tracks for some shared playlists and rate limits can return empty pages. A playlist that really was emptied on the service shows empty after its next change.
 
 **Refresh one playlist now** (2026-11-22). A playlist imported from a service with no link (a followed playlist, Spotify's Daily Brew) has a **Refresh** in the playlist page's header, next to Edit, so you don't wait for the next full sync. It fetches that one playlist (`sync:fetch-playlist-tracks`) and applies the same rules as above through `refreshFromSource` (`sync-engine/auto-pull.js`, tests in `tests/sync/refresh-from-source.test.js`), which answers one of:
-- `'unchanged'`: the service has what we have, or hasn't changed since the last sync (your edits stand, and the push banner offers them), or it answered nothing for a playlist with tracks. Nothing is saved: "Already up to date with X".
+- `'unchanged'`: the service has what we have, or hasn't changed since the last sync (your edits stand, and the push banner offers them). Nothing is saved: "Already up to date with X".
+- `'empty'`: the service answered no tracks for a playlist that has some, a bad response. Nothing is saved: "X sent no tracks for this playlist, so it’s left as it is." Every Refresh logs what came back (counts, whether the tracks matched, whether they match the last sync, the snapshot, the outcome) to the diagnostic log.
 - `'pulled'`: `applyPulledTracks`, saved: "Updated from X: N tracks".
 - `'conflict'`: changed there and edited here. The tracks stay and `hasUpdates` is set, so the banner asks which version to keep.
 
