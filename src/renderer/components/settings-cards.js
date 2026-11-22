@@ -37,6 +37,8 @@ const ResolverCard = React.memo(({
   hasUpdate,
   isInstalling,
   needsConfiguration,
+  // On but signed out (#1614): it reads as off and says to sign in.
+  signInNeeded = false,
   statusLabel = null,
   statusTitle = null,
   priorityNumber,
@@ -53,9 +55,9 @@ const ResolverCard = React.memo(({
   isDragging = false
 }) => {
   const logo = SERVICE_LOGOS[resolver.id];
-  const isEnabled = isActive === true;
-  const isAvailable = !isEnabled && !isInstalling;
-  const isGrayed = isAvailable;
+  const isEnabled = isActive === true && !signInNeeded;
+  const isAvailable = isActive !== true && !isInstalling;
+  const isGrayed = !isEnabled && !isInstalling;
 
   return React.createElement('div', {
     className: `flex flex-col items-center relative ${isDragging ? 'opacity-50' : ''}`,
@@ -165,6 +167,10 @@ const ResolverCard = React.memo(({
       style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' },
       'data-tooltip': statusTitle || undefined
     }, statusLabel),
+    // On but signed out: read as off, with what to do (#1614)
+    signInNeeded && !isInstalling && React.createElement('span', {
+      style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-warning)', marginTop: '2px' }
+    }, 'Sign in'),
     // "Available" label - not enabled
     isAvailable && React.createElement('span', {
       style: { fontSize: '11px', fontWeight: '500', color: 'var(--text-tertiary)', marginTop: '2px' }

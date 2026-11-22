@@ -78,6 +78,7 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     handleUninstallResolver,
     hostAccounts,
     hostPlayback,
+    pluginAccounts,
     playbackAbr,
     playbackQuality,
     playbackSpatial,
@@ -139,7 +140,11 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   // A plug-in that only scrobbles (Libre.fm): its scrobbler is its account.
   const scrobblingOnly = !!caps.scrobbling && !caps.recommendations;
   // The one on/off switch (lib/plugin-switch.js).
-  const switchState = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers });
+  // What the app knows about its sign-in (#1614, app.js pluginAccounts: the
+  // host's own sign-ins with each status plug-in's reply over them). Signed
+  // out, Enable and the switches under it read off and locked.
+  const signedIn = pluginAccounts ? pluginAccounts[selectedResolver.id] : undefined;
+  const switchState = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers, signedIn });
   // Scrobbling, for a plug-in that does more than scrobble (Last.fm,
   // ListenBrainz), while it's on: nested under its account (the account
   // comes first, then what needs the sign-in).
@@ -293,9 +298,9 @@ React.createElement('div', {
           (() => {
             const id = selectedResolver.id;
             const state = switchState;
-            const meta = metadataSwitchState({ plugin: selectedResolver, active: state.checked, metadataOff: (metadataOffResolvers || []).includes(id) });
-            const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id) });
-            const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id] });
+            const meta = metadataSwitchState({ plugin: selectedResolver, active: state.checked, metadataOff: (metadataOffResolvers || []).includes(id), signedIn });
+            const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id), signedIn });
+            const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id], signedIn });
             const setOn = async (next) => {
               if (next) {
                 const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
@@ -340,14 +345,14 @@ React.createElement('div', {
                 hint: meta.hint,
                 nested: true,
                 style: { padding: '6px 0' },
-              }, React.createElement(Switch, { size: 'sm', checked: meta.checked, onToggle: () => setResolverMetadataOn(id, !meta.checked) })),
+              }, React.createElement(Switch, { size: 'sm', checked: meta.checked, disabled: meta.disabled, onToggle: () => setResolverMetadataOn(id, !meta.checked) })),
               // "Use recommendations from X", for a plug-in that offers them (#1505).
               recs.shown && React.createElement(SettingRow, {
                 label: `Use recommendations from ${selectedResolver.name}`,
                 hint: recs.hint,
                 nested: true,
                 style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
-              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
+              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, disabled: recs.disabled, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
           })(),
 
           // A status-capable plugin's sign-in row (capabilities.status, the

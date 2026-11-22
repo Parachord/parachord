@@ -106,6 +106,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     playbackQuality,
     playbackSpatial,
     pluginNeedsSetup,
+    pluginAccounts,
     pluginsFilter,
     releaseDetailsCache,
     rememberQueue,
@@ -368,6 +369,12 @@ const SettingsPage = React.memo(function SettingsPage(props) {
 
                     // Build unified list: installed resolvers + marketplace-only resolvers
                     const unifiedResolvers = [];
+                    // A plug-in that's on but signed out reads as off (#1614):
+                    // app.js's pluginAccounts (the host's sign-ins with each
+                    // status plug-in's reply); no verdict never counts. It
+                    // stays in the active list: display only.
+                    const signedOut = (id) => activeResolvers.includes(id) && !!pluginAccounts && pluginAccounts[id] === false;
+                    const unnumbered = (id) => notPlayingResolverIds.includes(id) || signedOut(id);
 
                     // First, add installed resolvers in order. One that can't
                     // play on the account's plan (#1220) has no playback
@@ -376,8 +383,8 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                     // Display only — resolverOrder keeps its slot, so an
                     // upgrade puts it back where it was.
                     const installedInOrder = resolverOrder.filter(resolverId => allResolvers.some(r => r.id === resolverId));
-                    const playingInOrder = installedInOrder.filter(resolverId => !notPlayingResolverIds.includes(resolverId));
-                    const planBlockedInOrder = installedInOrder.filter(resolverId => notPlayingResolverIds.includes(resolverId));
+                    const playingInOrder = installedInOrder.filter(resolverId => !unnumbered(resolverId));
+                    const planBlockedInOrder = installedInOrder.filter(resolverId => unnumbered(resolverId));
                     [...playingInOrder, ...planBlockedInOrder].forEach((resolverId, index) => {
                         const resolver = allResolvers.find(r => r.id === resolverId);
                         const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
@@ -453,14 +460,17 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                         // app.js's pluginNeedsSetup map, from the plug-in's
                         // own status reply, what the host holds for it, or
                         // its manifest (lib/plugin-setup.js, #1522).
-                        const needsConfiguration = isActive && !!(pluginNeedsSetup && pluginNeedsSetup[resolver.id]);
+                        // On but signed out (#1614): the tile reads as off,
+                        // with "Sign in", instead of "Setup required".
+                        const signInNeeded = signedOut(resolver.id);
+                        const needsConfiguration = isActive && !signInNeeded && !!(pluginNeedsSetup && pluginNeedsSetup[resolver.id]);
 
                         // Amazon signed in but not on Music Unlimited: set up,
                         // but it plays nothing (#1220). The tooltip says why.
                         // Only resolvers with a playback priority can be dragged
                         // or dropped on: a plan-blocked one sits outside the
                         // numbered order (#1220), so its slot isn't a position.
-                        const reorderable = isActive && !notPlayingResolverIds.includes(resolver.id);
+                        const reorderable = isActive && !signInNeeded && !notPlayingResolverIds.includes(resolver.id);
                         // Enabled but limited by the account's plan: the label
                         // and its tooltip come from the resolver's limit.
                         const planStatus = isActive ? PlaybackLimits.tileStatus(playbackLimits, resolver.id, playbackOffResolvers) : { statusLabel: null, statusTitle: null };
@@ -471,6 +481,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
                           isActive: isActive,
                           hasUpdate: resolver.hasUpdate,
                           needsConfiguration: needsConfiguration,
+                          signInNeeded: signInNeeded,
                           statusLabel: planStatus.statusLabel,
                           statusTitle: planStatus.statusTitle,
                           priorityNumber: resolver.priorityNumber,
