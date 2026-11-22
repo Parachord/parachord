@@ -353,8 +353,8 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 });
               })(),
               // Refresh a playlist imported from a service now, without
-              // waiting for the next full sync (a Spotify Daily Brew, a
-              // followed playlist). The background sync's own rules
+              // waiting for the next full sync (a playlist another app
+              // rebuilds, such as a SmarterPlaylists Daily Brew, or a followed one). The background sync's own rules
               // (sync-engine/auto-pull.js refreshFromSource): the service's
               // tracks come in unless you edited it here and it changed there
               // too, which is a conflict the banner below asks about. A

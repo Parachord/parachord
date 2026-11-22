@@ -2098,6 +2098,7 @@ const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mir
 // A playlist's own cover in XSPF (#1410): read from a document's playlist-level
 // <image> only when it's a public http(s) URL, and written back out on export.
 const { playlistImageUrl, playlistImageXml, withPlaylistImage } = require('./lib/xspf-image');
+const { storedXspfFor } = require('./lib/stored-xspf');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
 const { StopSyncDialog } = require('./components/stop-sync-dialog');
@@ -32441,9 +32442,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
-    // Parse XSPF if we have the content
-    if (playlist.xspf) {
-      const parsed = parseXSPF(playlist.xspf);
+    // Parse the saved XSPF text while it still lists the playlist's tracks;
+    // after a sync pull it doesn't, and `tracks` (the branch below) is the
+    // playlist (lib/stored-xspf.js).
+    const storedXspf = storedXspfFor(playlist, parseXSPF);
+    if (storedXspf) {
+      const parsed = parseXSPF(storedXspf);
       if (parsed) {
         console.log(`🎵 Parsed ${parsed.tracks.length} tracks from XSPF`);
 
@@ -33780,7 +33784,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // menu ("Export as XSPF…") and the queue save dialog ("Save to file")
   // (parachord#1010; the handler and IPC existed with no caller). Playlists
   // created in-app (queue-*, ai-chat-*, playlist-*) carry no `xspf` field, so
-  // the document is generated from `tracks` when it is missing.
+  // the document is generated from `tracks` when it is missing, and also
+  // when it no longer lists them (a sync pull changes `tracks` only;
+  // lib/stored-xspf.js).
   const handleExportPlaylist = async (playlist) => {
     try {
       console.log(`📤 Exporting playlist: ${playlist.id}`);
@@ -33792,7 +33798,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
       // Every exported playlist carries its cover (#1410): a stored document
       // that doesn't name one gets the record's coverArt added.
-      const content = withPlaylistImage(playlist.xspf || generateXSPF({
+      const content = withPlaylistImage(storedXspfFor(playlist, parseXSPF) || generateXSPF({
         title: playlist.title || playlist.name || 'Playlist',
         creator: playlist.creator,
         createdAt: playlist.createdAt,
