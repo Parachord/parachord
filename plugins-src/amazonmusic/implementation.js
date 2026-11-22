@@ -1911,9 +1911,31 @@ module.exports = {
     // #1627): the request Amazon's web player sends from Safari
     // (parachord-mobile#780). Keyed by the catalog ASIN. The reply is HLS,
     // AAC only (256 AAC-LC, 128 / 48 HE-AAC), so FairPlay tops out at
-    // 256 kbps whatever the plan. `entitlementList` (the plan's codes) goes
-    // along only when the session has it; config.json doesn't carry it.
+    // 256 kbps whatever the plan. `entitlementList` is the plan's codes
+    // (amazonEntitlementList); an account with none gets no list, and Amazon
+    // refuses the manifest, as it does the web player's.
     const FAIRPLAY_MANIFEST_TARGET = 'getStreamingURLsWithFirstChunkV2';
+    // The plan's codes the FairPlay manifest request needs in
+    // customerInfo.entitlementList: without them Amazon answers 400
+    // INVALID_MISSING_CUSTOMER_INFO, and it serves only what the codes cover
+    // (live, #1629). Amazon's web player builds them from the account's tier
+    // (convertTierToEntitlementList in its bundle, 2026-11-22; its own enum:
+    // KATANA = Unlimited HD, HAWKFIRE = Unlimited, SONIC_RUSH = augmented
+    // Prime, ROBIN = Prime, NIGHTWING = Free). Mirrored on config.json's tier
+    // (UNLIMITED_HD and the like), so the plug-in never claims a plan the
+    // account doesn't have. Anything else: none, as the web player sends.
+    const AMAZON_ENTITLEMENTS = {
+      unlimited: ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING'],
+      prime: ['SONIC_RUSH', 'ROBIN', 'NIGHTWING'],
+      free: ['NIGHTWING']
+    };
+    function amazonEntitlementList(tier) {
+      if (isUnlimitedTier(tier)) return AMAZON_ENTITLEMENTS.unlimited.slice();
+      const t = typeof tier === 'string' ? tier.trim().toUpperCase() : '';
+      if (t === 'PRIME') return AMAZON_ENTITLEMENTS.prime.slice();
+      if (t === 'FREE') return AMAZON_ENTITLEMENTS.free.slice();
+      return [];
+    }
     function amazonFairPlayManifestBody({ asin, customerId, marketplaceId, territoryId, entitlementList, deviceId, userAgent, requestId } = {}) {
       if (!asin || !customerId || !deviceId) return null;
       const customerInfo = {
@@ -2735,6 +2757,7 @@ module.exports = {
       amazonDmlsManifestBody,
       amazonDmlsLicenseBody,
       FAIRPLAY_MANIFEST_TARGET,
+      amazonEntitlementList,
       amazonFairPlayManifestBody,
       fairPlayStreamFromReply,
       amazonNativeSessionFromConfig,
@@ -4050,6 +4073,7 @@ module.exports = {
       customerId: ctx.customerId,
       marketplaceId: ctx.marketplaceId,
       territoryId: ctx.territoryId,
+      entitlementList: lib.amazonEntitlementList(ctx.tier),
       deviceId: ctx.deviceId,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
       requestId: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)

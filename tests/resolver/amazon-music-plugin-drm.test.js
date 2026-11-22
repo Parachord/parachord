@@ -1132,6 +1132,34 @@ describe('FairPlay for an iOS host (#1627)', () => {
     expect(fairPlayStreamFromReply(null)).toBeNull();
   });
 
+  // Amazon answers 400 INVALID_MISSING_CUSTOMER_INFO without the plan's
+  // codes (#1629, live 2026-11-22). Its web player builds them from the
+  // account's tier (convertTierToEntitlementList in its own bundle): the
+  // plug-in mirrors that on config.json's tier, so it never claims a plan
+  // the account doesn't have.
+  test('amazonEntitlementList mirrors the web player: the account\'s own plan codes', () => {
+    const { amazonEntitlementList } = instantiateAmazonPlugin(axe).lib;
+    const unlimited = ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING'];
+    expect(amazonEntitlementList('UNLIMITED_HD')).toEqual(unlimited);
+    expect(amazonEntitlementList('UNLIMITED')).toEqual(unlimited);
+    expect(amazonEntitlementList('unlimited_individual')).toEqual(unlimited);
+    expect(amazonEntitlementList('PRIME')).toEqual(['SONIC_RUSH', 'ROBIN', 'NIGHTWING']);
+    expect(amazonEntitlementList('FREE')).toEqual(['NIGHTWING']);
+    expect(amazonEntitlementList('NONE')).toEqual([]);
+    expect(amazonEntitlementList(null)).toEqual([]);
+  });
+
+  test('the FairPlay manifest request carries the session tier\'s codes', async () => {
+    const { fetches } = drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply()) }] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    await resolver.getPlaybackManifest(drmTrack(), {});
+    // CONFIG_JSON's tier is UNLIMITED_HD.
+    expect(JSON.parse(fairPlayPosts(fetches)[0].body).customerInfo).toEqual({
+      marketplaceId: 'MKT', territoryId: 'US', entitlementList: ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING']
+    });
+  });
+
   test('on iOS, getPlaybackManifest asks for FairPlay HLS and answers the hls-fairplay shape', async () => {
     const { fetches } = drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply()) }] });
     const resolver = instantiateAmazonPlugin(axe);
