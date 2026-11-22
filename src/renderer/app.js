@@ -20238,6 +20238,7 @@ ${trackListXml}
             listenbrainzId: jam.id,
             title: jam.title,
             weekLabel: jam.weekLabel,
+            date: jam.date || null,
             description: jam.description,
             tracks: jam.tracks || [],
             tracksLoaded: jam.tracksLoaded,

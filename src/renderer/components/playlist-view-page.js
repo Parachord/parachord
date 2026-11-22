@@ -18,6 +18,7 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { weeklySavedName } = require('../lib/weekly-saved-name');
 const { StickyBar } = require('./filter-box');
 const { useReveal, ArtOverlay } = require('./card-art');
 const { Badge } = require('./badge');
@@ -296,7 +297,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   const newPlaylist = {
                     ...selectedPlaylist,
                     id: `playlist-${Date.now()}`,
-                    title: selectedPlaylist.weekLabel ? `Weekly Jam - ${selectedPlaylist.weekLabel}` : selectedPlaylist.title,
+                    // Its kind and its week's date, never the relative week
+                    // label, so each week's copy has its own name (#1599).
+                    title: selectedPlaylist.weekLabel ? weeklySavedName(selectedPlaylist) : selectedPlaylist.title,
                     creator: selectedPlaylist.creator || 'ListenBrainz',
                     tracks: playlistTracks,
                     addedAt: Date.now(),
@@ -304,6 +307,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     source: selectedPlaylist.source || 'listenbrainz'
                   };
                   delete newPlaylist.isEphemeral;
+                  delete newPlaylist.weekLabel;
                   setPlaylists(prev => [...prev, newPlaylist]);
                   await savePlaylistToStore(newPlaylist);
                   showToast('Playlist saved to library', 'success');
