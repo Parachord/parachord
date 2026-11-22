@@ -30,7 +30,8 @@ const { ProgressBar } = require('./progress-bar');
 const { AccountRow } = require('./account-row');
 const { Disclosure } = require('./disclosure');
 const { EmptyState, ErrorState } = require('./states');
-const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
+const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, PlaybackQualityRow, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
+const { playbackQualityLine } = require('../lib/playback-quality-line');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'fetchDynamicModels',
@@ -43,6 +44,7 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'handleRescanFolder',
   'handleUninstallResolver',
   'manageAmazonMusic',
+  'openPlaybackQualitySettings',
   'openSyncSetupModal',
   'refreshPluginStatus',
   'clearMetaServiceConfig',
@@ -75,6 +77,10 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     handleRescanFolder,
     handleUninstallResolver,
     hostAccounts,
+    hostPlayback,
+    playbackAbr,
+    playbackQuality,
+    playbackSpatial,
     installingResolvers,
     isScanning,
     localFilesStats,
@@ -85,6 +91,7 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     loveImportRunning,
     lovePushedKeysRef,
     manageAmazonMusic,
+    openPlaybackQualitySettings,
     marketplaceManifest,
     metaServiceConfigs,
     metaServices,
@@ -540,6 +547,16 @@ React.createElement('div', {
               delete resolverConfigCache.current[selectedResolver.id];
             },
           }),
+
+          // How its playback quality is set (#1608), while it's on: it follows
+          // Settings › General › Playback Quality, or where it's set instead
+          // (lib/playback-quality-line.js, by capability and manifest).
+          switchState.checked && (() => {
+            const line = playbackQualityLine(selectedResolver,
+              { quality: playbackQuality, abr: playbackAbr, spatial: playbackSpatial },
+              hostPlayback && hostPlayback[selectedResolver.id]);
+            return line && React.createElement(PlaybackQualityRow, { line, onOpenSettings: openPlaybackQualitySettings });
+          })(),
 
           // Software the plug-in needs installed first (settings.installCallout: Ollama).
           settingsOf(selectedResolver).installCallout && React.createElement(InstallCallout, { plugin: selectedResolver }),

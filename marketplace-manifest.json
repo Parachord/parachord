@@ -5,7 +5,7 @@
     {
       "id": "spotify",
       "name": "Spotify",
-      "version": "1.2.9",
+      "version": "1.2.10",
       "author": "Parachord Team",
       "description": "Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.",
       "icon": "♫",
@@ -122,7 +122,7 @@
     {
       "id": "applemusic",
       "name": "Apple Music",
-      "version": "1.5.7",
+      "version": "1.5.8",
       "author": "Parachord Team",
       "description": "Stream music via Apple Music with MusicKit. Requires Apple Music subscription and MusicKit developer token.",
       "icon": "🍎",

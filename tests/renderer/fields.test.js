@@ -91,7 +91,8 @@ test('no user-facing "resolver" in labels, toasts, dialogs or native menus', () 
 
 test('Playback Quality names the services it applies to, and on/off is a switch', () => {
   const app = require('../helpers/renderer-source').appWithPages();
-  expect(app).toContain("'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.'");
+  // The services come from the plug-in rule (#1608, tests/renderer/playback-quality-line.test.js).
+  expect(app).toContain('description: qualityCopy.description');
   expect(app).toMatch(/label: 'Adjust to your connection'[^\n]*\n\s*React\.createElement\(Switch, \{ checked: playbackAbr === true/);
 });
 
