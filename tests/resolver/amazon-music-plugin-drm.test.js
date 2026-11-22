@@ -780,6 +780,14 @@ describe('the plan gate (#1220) before any dmls request', () => {
       expect(manifestPosts(fetches)).toHaveLength(0);
     });
 
+    test('on an iOS host the gate refuses before any FairPlay request too (#1627)', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      resolver.host = { platform: 'ios', webSession: global.window.electron.webSession, appVersion: async () => '1.2.3' };
+      await expect(resolver.getPlaybackManifest(drmTrack('B0NEVER001'), {})).rejects.toMatchObject({ reason: 'plan-ineligible', planKey: 'prime' });
+      expect(dmlsFetches(fetches).filter((r) => String(r.headers['X-Amz-Target'] || '').includes('getStreamingURLsWithFirstChunkV2'))).toHaveLength(0);
+    });
+
     test('a flag on the track is not proof of a purchase', async () => {
       const { fetches } = primeWithLibrary();
       const resolver = instantiateAmazonPlugin(axe);
@@ -992,6 +1000,156 @@ describe('getStreamUrl: a purchase from the library locker (#1612)', () => {
     const mock = drmMock({ configJson: { ...CONFIG_JSON, tier: 'PRIME' } });
     serveAmazonLibrary(mock.ws, {}, { capture: null });
     await expect(instantiateAmazonPlugin(axe).getStreamUrl(drmTrack('B0OWNED001'), {})).rejects.toMatchObject({ reason: 'not-ready' });
+  });
+});
+
+// ── FairPlay for an iOS host (#1627) ────────────────────────────────────────
+// iOS has no Widevine. Amazon serves a catalog track to Safari as FairPlay HLS
+// (parachord-mobile#780): the manifest from getStreamingURLsWithFirstChunkV2,
+// the licence through the same getLicenseForPlaybackV2 call as Widevine with
+// DrmType FAIRPLAY (Safari 27.2, 2026-11-22). Picked when the host says it is
+// iOS (this.host.platform); every other host keeps Widevine DASH.
+
+const FP_CERT = 'Q0VSVElGSUNBVEU=';
+function fairPlayReply(over = {}) {
+  return {
+    contentResponseList: [{
+      contentID: { identifier: 'B00CRMX53S', identifierType: 'ASIN' },
+      protocol: 'HLS', format: 'ENCRYPTED_AAC', drmType: 'FAIRPLAY', statusCode: 'SUCCESS',
+      urlList: ['https://cdn.example.cloudfront.net/api/manifest.m3u8?dmid=1&m=m&r=RID&region=NA'],
+      httpHeaders: {
+        manifestHeaders: [{ name: 'Cookie', value: 'rid=RID' }],
+        audioSegmentHeaders: [{ name: 'Cookie', value: 'rid=RID' }],
+        keyHeaders: [
+          { name: 'x-amz-target', value: 'com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.getLicenseForPlaybackV3' },
+          { name: 'x-amz-music-drm-type', value: 'FAIRPLAY' },
+          { name: 'Cookie', value: 'rid=RID' }
+        ]
+      },
+      ...over
+    }],
+    drmPlaybackResource: { fairplay: { applicationCertificate: FP_CERT, licenseAcquisitionURL: 'https://music.amazon.com/NA/api/dmlvs/v1/getLicenseForPlaybackV3' } },
+    statusCode: 'SUCCESS'
+  };
+}
+const iosHost = () => ({ platform: 'ios', webSession: global.window.electron.webSession, appVersion: async () => '1.2.3' });
+const fairPlayPosts = (fetches) => dmlsFetches(fetches).filter((r) => String(r.headers['X-Amz-Target'] || '').includes('getStreamingURLsWithFirstChunkV2'));
+
+describe('FairPlay for an iOS host (#1627)', () => {
+  test('amazonFairPlayManifestBody builds the shape Safari sends', () => {
+    const { amazonFairPlayManifestBody } = instantiateAmazonPlugin(axe).lib;
+    const base = { asin: 'B00CRMX53S', customerId: 'CUST', marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US', deviceId: '123', userAgent: 'UA', requestId: 'req-1' };
+    const body = amazonFairPlayManifestBody(base);
+    expect(body).toEqual({
+      contentIdList: [{ identifier: 'B00CRMX53S', identifierType: 'ASIN' }],
+      customerId: 'CUST',
+      customerInfo: { marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US' },
+      protocol: 'HLS',
+      format: 'ENCRYPTED_AAC',
+      drmType: 'FAIRPLAY',
+      deviceToken: { deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '123' },
+      appMetadata: { https: true, appId: 'GreenHornet_Web', appVersion: expect.any(String), userAgent: 'UA' },
+      clientMetadata: { clientId: 'WebCP', clientRequestId: 'req-1' }
+    });
+    // The plan codes go along only when the session has them.
+    expect(amazonFairPlayManifestBody({ ...base, entitlementList: ['KATANA'] }).customerInfo.entitlementList).toEqual(['KATANA']);
+    expect(amazonFairPlayManifestBody({ ...base, asin: null })).toBeNull();
+    expect(amazonFairPlayManifestBody({ ...base, deviceId: null })).toBeNull();
+  });
+
+  test('fairPlayStreamFromReply reads the HLS URL, the certificate and the three header lists', () => {
+    const { fairPlayStreamFromReply } = instantiateAmazonPlugin(axe).lib;
+    expect(fairPlayStreamFromReply(fairPlayReply())).toEqual({
+      url: 'https://cdn.example.cloudfront.net/api/manifest.m3u8?dmid=1&m=m&r=RID&region=NA',
+      certificate: FP_CERT,
+      headers: {
+        manifest: [{ name: 'Cookie', value: 'rid=RID' }],
+        segments: [{ name: 'Cookie', value: 'rid=RID' }],
+        key: [
+          { name: 'x-amz-target', value: 'com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.getLicenseForPlaybackV3' },
+          { name: 'x-amz-music-drm-type', value: 'FAIRPLAY' },
+          { name: 'Cookie', value: 'rid=RID' }
+        ]
+      }
+    });
+    expect(fairPlayStreamFromReply(fairPlayReply({ statusCode: 'CONTENT_NOT_FOUND' }))).toBeNull();
+    expect(fairPlayStreamFromReply(fairPlayReply({ urlList: ['http://insecure/manifest.m3u8'] }))).toBeNull();
+    expect(fairPlayStreamFromReply({ ...fairPlayReply(), drmPlaybackResource: {} })).toBeNull();
+    expect(fairPlayStreamFromReply(null)).toBeNull();
+  });
+
+  test('on iOS, getPlaybackManifest asks for FairPlay HLS and answers the hls-fairplay shape', async () => {
+    const { fetches } = drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply()) }] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    const reply = await resolver.getPlaybackManifest(drmTrack('B00CRMX53S'), {});
+    const req = fairPlayPosts(fetches)[0];
+    expect(req).toBeTruthy();
+    expect(manifestPosts(fetches)).toHaveLength(0);
+    const body = JSON.parse(req.body);
+    expect(body).toMatchObject({ protocol: 'HLS', format: 'ENCRYPTED_AAC', drmType: 'FAIRPLAY', customerId: 'CUST1' });
+    expect(body.contentIdList).toEqual([{ identifier: 'B00CRMX53S', identifierType: 'ASIN' }]);
+    expect(reply).toMatchObject({
+      type: 'hls-fairplay',
+      drm: 'fairplay',
+      url: 'https://cdn.example.cloudfront.net/api/manifest.m3u8?dmid=1&m=m&r=RID&region=NA',
+      certificate: FP_CERT,
+      asin: 'B00CRMX53S'
+    });
+    expect(reply.headers.key).toHaveLength(3);
+    expect(reply.manifest).toBeUndefined();
+    expect(reply.context).toMatchObject({ drmType: 'FAIRPLAY', customerId: 'CUST1', csrfToken: MINT_HEADERS['csrf-token'] });
+    // No Widevine cert warm on a FairPlay host.
+    await flush();
+    expect(dmlsFetches(fetches)).toHaveLength(1);
+  });
+
+  test('a desktop or Android host keeps Widevine DASH', async () => {
+    for (const platform of ['desktop', 'android']) {
+      const { fetches } = drmMock();
+      const resolver = instantiateAmazonPlugin(axe);
+      resolver.host = { ...iosHost(), platform };
+      const reply = await resolver.getPlaybackManifest(drmTrack(), {});
+      expect(reply.type).toBe('dash');
+      expect(fairPlayPosts(fetches)).toHaveLength(0);
+    }
+  });
+
+  test('a FairPlay refusal or a bad reply maps like the Widevine path', async () => {
+    drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply({ statusCode: 'CONTENT_NOT_FOUND' })) }] });
+    let resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    await expect(resolver.getPlaybackManifest(drmTrack(), {})).rejects.toMatchObject({ reason: 'playback-failed' });
+
+    drmMock({ dmls: [{ status: -1, text: 'web-session fetch exceeded 30000ms' }] });
+    resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    await expect(resolver.getPlaybackManifest(drmTrack(), {})).rejects.toMatchObject({ reason: 'load-failed' });
+  });
+
+  test('relayLicense sends a FairPlay session\'s SPC as Safari does: getLicenseForPlaybackV2, DrmType FAIRPLAY', async () => {
+    const { fetches } = drmMock({ dmls: [{ status: 200, text: '{"license":"Q0tD"}' }] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    const context = { customerId: 'CUST1', deviceId: '12345678901234567', csrfToken: 'tok-x', csrfRnd: '1', csrfTs: '2', region: 'NA', drmType: 'FAIRPLAY' };
+    // An SPC is larger than a Widevine challenge (about 10 KB of base64).
+    const spc = 'A'.repeat(10000) + '==';
+    await expect(resolver.relayLicense(spc, context)).resolves.toBe('Q0tD');
+    const req = dmlsFetches(fetches)[0];
+    expect(req.headers['X-Amz-Target']).toContain('getLicenseForPlaybackV2');
+    const body = JSON.parse(req.body);
+    expect(body.DrmType).toBe('FAIRPLAY');
+    expect(body.licenseChallenge).toBe(spc);
+    expect(body.customerId).toBe('CUST1');
+    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '12345678901234567' });
+  });
+
+  test('amazonDmlsLicenseBody: WIDEVINE unless told FAIRPLAY, and nothing else', () => {
+    const { amazonDmlsLicenseBody } = instantiateAmazonPlugin(axe).lib;
+    const base = { challenge: 'Q0FR', customerId: 'C', deviceId: 'D' };
+    expect(amazonDmlsLicenseBody(base).DrmType).toBe('WIDEVINE');
+    expect(amazonDmlsLicenseBody({ ...base, drmType: 'FAIRPLAY' }).DrmType).toBe('FAIRPLAY');
+    expect(amazonDmlsLicenseBody({ ...base, drmType: 'PLAYREADY' }).DrmType).toBe('WIDEVINE');
   });
 });
 
