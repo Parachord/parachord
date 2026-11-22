@@ -800,6 +800,114 @@ describe('the plan gate (#1220) before any dmls request', () => {
   });
 });
 
+// ── the first play on Prime (#1603) ────────────────────────────────────────
+
+// The purchases read holds the page-flow queue for a page load and its
+// replays; a csrf mint behind it used to load another page (the songs
+// search), and together they missed the engine's 10 s manifest budget on the
+// first play after launch. The read now keeps the csrf triplet its own page
+// sent, and a mint right after it uses that instead of a second page load.
+describe('the first play on Prime (#1603)', () => {
+  const { amazonLibraryCapture, amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+  const PRIME_CONFIG = { ...CONFIG_JSON, tier: 'PRIME' };
+  const ownedPage = () => ({ first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'Bought', artist: 'A' }]) });
+  // The purchases page's own gql request, with a live-looking csrf triplet.
+  const liveLibraryCapture = () => {
+    const capture = amazonLibraryCapture();
+    return { ...capture, headers: { ...capture.headers, ...MINT_HEADERS_FRESH } };
+  };
+  const primeMock = (opts = {}) => {
+    const mock = drmMock({ configJson: PRIME_CONFIG, ...opts });
+    serveAmazonLibrary(mock.ws, ownedPage(), { capture: liveLibraryCapture() });
+    return mock;
+  };
+  // Every page load, the purchases page included (serveAmazonLibrary answers
+  // that one itself).
+  const pageLoads = (ws) => ws.load.mock.calls.map((c) => c[1]);
+
+  test('a play reads the purchases first and mints from that page\'s headers: one page load, not two', async () => {
+    const { ws, fetches } = primeMock();
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+    expect(pageLoads(ws)).toEqual(['https://music.amazon.com/my/purchases']);
+    expect(manifestPosts(fetches)[0].headers['csrf-token']).toBe(MINT_HEADERS_FRESH['csrf-token']);
+    expect(manifestPosts(fetches)[0].headers['csrf-ts']).toBe(MINT_HEADERS_FRESH['csrf-ts']);
+    // The plan read's config.json serves the mint too (read seconds apart).
+    expect(configFetches(fetches)).toHaveLength(1);
+  });
+
+  test('a play while the launch-time purchases read is running joins it and needs no page of its own', async () => {
+    const mock = primeMock();
+    let releaseLibrary;
+    const libraryLoaded = new Promise((resolve) => { releaseLibrary = resolve; });
+    const served = mock.ws.load.getMockImplementation();
+    mock.ws.load.mockImplementation(async (id, url, o) => {
+      if (String(url).endsWith('/my/purchases')) await libraryLoaded;
+      return served(id, url, o);
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const startupRead = resolver.getOwnedTracks(); // getStatus's prefetch
+    await flush();
+    const play = resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {});
+    await flush();
+    releaseLibrary();
+    await expect(play).resolves.toMatchObject({ manifest: expect.any(String) });
+    await startupRead;
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases']);
+  });
+
+  test('placeholder csrf values on the purchases page are not kept: the mint loads its page', async () => {
+    const mock = drmMock({ configJson: PRIME_CONFIG });
+    serveAmazonLibrary(mock.ws, ownedPage()); // the fixture's 't'/'r' placeholders
+    const resolver = instantiateAmazonPlugin(axe);
+    await resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {});
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases', 'https://music.amazon.com/search/the/songs']);
+    expect(manifestPosts(mock.fetches)[0].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
+  });
+
+  test('kept headers older than the reuse window are not used', async () => {
+    const mock = primeMock();
+    const resolver = instantiateAmazonPlugin(axe);
+    const lib = resolver.requireLib();
+    await resolver.getOwnedTracks();
+    resolver._csrfHarvest.at -= lib.CSRF_HARVEST_MAX_AGE_MS + 1;
+    await resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {});
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases', 'https://music.amazon.com/search/the/songs']);
+  });
+
+  test('a sign-out drops the kept headers with the rest of the session', async () => {
+    primeMock({ generation: 0 });
+    const resolver = instantiateAmazonPlugin(axe);
+    await resolver.sessionState();
+    await resolver.getOwnedTracks();
+    expect(resolver._csrfHarvest).toBeTruthy();
+    primeMock({ generation: 1 });
+    await resolver.sessionState();
+    expect(resolver._csrfHarvest).toBeNull();
+  });
+
+  test('a session the dmls refused re-mints from a page load, never from the kept headers', async () => {
+    const authRefusal = { status: 400, text: '{"message":"REQUIRED_COOKIES_MISSING"}' };
+    const mock = primeMock({
+      dmls: [authRefusal, { status: 200, text: JSON.stringify({ contentResponseList: [manifestReply()] }) }, { status: 200, text: '{"license":"Q0VSVF9PSw=="}' }]
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases', 'https://music.amazon.com/search/the/songs']);
+    const posts = manifestPosts(mock.fetches);
+    expect(posts[0].headers['csrf-token']).toBe(MINT_HEADERS_FRESH['csrf-token']);
+    expect(posts[1].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
+  });
+
+  test('Music Unlimited still mints from one page load and one config.json read', async () => {
+    const { ws, fetches } = drmMock();
+    const resolver = instantiateAmazonPlugin(axe);
+    await resolver.getPlaybackManifest(drmTrack(), {});
+    expect(pageLoads(ws)).toEqual(['https://music.amazon.com/search/the/songs']);
+    expect(configFetches(fetches)).toHaveLength(1);
+  });
+});
+
 // ── relayLicense ────────────────────────────────────────────────────────────
 
 describe('relayLicense', () => {
