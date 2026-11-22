@@ -17,11 +17,20 @@ const { createSplitStore, isSplitStoreKey } = require('../../main-process/split-
 let root;
 let splitDir;
 const openMain = () => new Conf({ cwd: root, configName: 'config', projectName: 'parachord-test' });
+const openKey = (key) => new Conf({ cwd: splitDir, configName: key, projectName: 'parachord-test' });
 const deps = (main) => ({
   main,
-  openKeyStore: (key) => new Conf({ cwd: splitDir, configName: key, projectName: 'parachord-test' }),
+  openKeyStore: openKey,
   listKeyStores: () => (fs.existsSync(splitDir) ? fs.readdirSync(splitDir) : [])
     .filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)),
+  playlistsDir: path.join(splitDir, 'playlists'),
+  // main.js's: rename aside, never over an earlier copy.
+  retireKeyStore: (key) => {
+    const from = path.join(splitDir, `${key}.json`);
+    let to = `${from}.premigration`;
+    if (fs.existsSync(to)) to = `${from}.stale-${fs.readdirSync(splitDir).length}`;
+    fs.renameSync(from, to);
+  },
   log: () => {},
 });
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -52,7 +61,8 @@ describe('migration out of config.json', () => {
     expect(config).toHaveProperty('saved_volume', 70);
     expect(config).not.toHaveProperty('local_playlists');
     expect(config).not.toHaveProperty('cache_album_art');
-    expect(readJson(path.join(splitDir, 'local_playlists.json'))).toEqual({ local_playlists: [{ id: 'p1' }] });
+    expect(fs.existsSync(path.join(splitDir, 'local_playlists.json'))).toBe(false);
+    expect(readJson(path.join(splitDir, 'playlists', 'index.json')).order).toEqual(['p1']);
     expect(store.get('local_playlists')).toEqual([{ id: 'p1' }]);
     expect(store.get('cache_album_art')).toEqual({ a: 1 });
     expect(store.get('saved_volume')).toBe(70);
@@ -75,6 +85,69 @@ describe('migration out of config.json', () => {
     const before = fs.statSync(path.join(root, 'config.json')).mtimeMs;
     createSplitStore(deps(main));
     expect(fs.statSync(path.join(root, 'config.json')).mtimeMs).toBe(before);
+  });
+});
+
+describe('local_playlists: from one file to a file per playlist (#801)', () => {
+  const seedSingleFile = (list) => openKey('local_playlists').set('local_playlists', list);
+  const playlistsDir = () => path.join(splitDir, 'playlists');
+
+  test('the single file moves to a file per playlist, unchanged, and is set aside', () => {
+    const list = [{ id: 'a', tracks: [{ artist: 'x', title: '1' }], tracksChangedAt: 5, lastChangeAdded: 1 }, { id: 'b', tracks: [] }];
+    seedSingleFile(list);
+    const store = createSplitStore(deps(openMain()));
+    expect(store.get('local_playlists')).toEqual(list);
+    expect(fs.existsSync(path.join(splitDir, 'local_playlists.json'))).toBe(false);
+    expect(readJson(path.join(splitDir, 'local_playlists.json.premigration'))).toEqual({ local_playlists: list });
+    // And the next launch reads the files, not the backup.
+    expect(createSplitStore(deps(openMain())).get('local_playlists')).toEqual(list);
+  });
+
+  test('a move that was interrupted (a .migrating folder) is thrown away and done again from the single file', () => {
+    seedSingleFile([{ id: 'a' }, { id: 'b' }]);
+    fs.mkdirSync(`${playlistsDir()}.migrating`, { recursive: true });
+    fs.writeFileSync(path.join(`${playlistsDir()}.migrating`, 'index.json'), '{"version":1,"order":["a"]}');
+    const store = createSplitStore(deps(openMain()));
+    expect(store.get('local_playlists').map((p) => p.id)).toEqual(['a', 'b']);
+    expect(fs.existsSync(`${playlistsDir()}.migrating`)).toBe(false);
+  });
+
+  test('an older build that wrote the single file again after the move: the per-playlist files win, and both backups stay', () => {
+    seedSingleFile([{ id: 'moved' }]);
+    createSplitStore(deps(openMain())).set('local_playlists', [{ id: 'moved', title: 'edited here' }]);
+    seedSingleFile([{ id: 'from-old-build' }]);
+    const store = createSplitStore(deps(openMain()));
+    expect(store.get('local_playlists')).toEqual([expect.objectContaining({ id: 'moved', title: 'edited here' })]);
+    const asides = fs.readdirSync(splitDir).filter((f) => f.startsWith('local_playlists.json.'));
+    expect(asides).toHaveLength(2);
+  });
+
+  test('config.json playlists (before the first split) go straight to a file per playlist', () => {
+    const main = openMain();
+    main.set({ local_playlists: [{ id: 'old' }], saved_volume: 2 });
+    const store = createSplitStore(deps(main));
+    expect(store.get('local_playlists')).toEqual([{ id: 'old' }]);
+    expect(readJson(path.join(root, 'config.json'))).toEqual({ saved_volume: 2 });
+  });
+
+  test('savePlaylist and getPlaylist go through to the playlist files', () => {
+    const store = createSplitStore(deps(openMain()));
+    store.set('local_playlists', [{ id: 'a', title: 'A' }]);
+    store.savePlaylist({ id: 'a', title: 'A2' });
+    store.savePlaylist({ id: 'b', title: 'B' });
+    expect(store.getPlaylist('a').title).toBe('A2');
+    expect(createSplitStore(deps(openMain())).get('local_playlists').map((p) => p.title)).toEqual(['A2', 'B']);
+  });
+
+  test('`store`, has and delete see the playlist files', () => {
+    const store = createSplitStore(deps(openMain()));
+    expect(store.has('local_playlists')).toBe(false);
+    store.set('local_playlists', [{ id: 'a' }]);
+    expect(store.has('local_playlists')).toBe(true);
+    expect(store.store.local_playlists).toEqual([{ id: 'a' }]);
+    store.delete('local_playlists');
+    expect(store.has('local_playlists')).toBe(false);
+    expect(store.store).not.toHaveProperty('local_playlists');
   });
 });
 
