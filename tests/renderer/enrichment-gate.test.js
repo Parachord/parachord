@@ -92,3 +92,51 @@ describe('app.js wiring', () => {
     expect(app).toMatch(/resolveTrack\(track, track\.artist \|\| track\.artistName \|\| 'Unknown Artist', \{ forceEnrichment: true \}\)/);
   });
 });
+
+describe('a local-only track that starts playing fills its other sources', () => {
+  const { needsPlayFill, mergeFoundSources } = require('../../src/renderer/lib/enrichment-gate');
+  const isLocal = (id) => id === 'localfiles';
+  const isPlayable = (s) => !!s && !s.noMatch && s.streamable !== false;
+  const opts = { isLocal, isPlayable };
+
+  test('only a local file to play from: fill', () => {
+    expect(needsPlayFill({ sources: { localfiles: { filePath: '/a.flac' } } }, opts)).toBe(true);
+    // misses and purchase-only sources don't count as somewhere to play
+    expect(needsPlayFill({ sources: { localfiles: { filePath: '/a' }, spotify: { noMatch: true }, bandcamp: { streamable: false } } }, opts)).toBe(true);
+  });
+  test('another service already plays it, or nothing plays it: no fill', () => {
+    expect(needsPlayFill({ sources: { localfiles: { filePath: '/a' }, spotify: { spotifyUri: 'x' } } }, opts)).toBe(false);
+    expect(needsPlayFill({ sources: { spotify: { spotifyUri: 'x' } } }, opts)).toBe(false);
+    expect(needsPlayFill({ sources: {} }, opts)).toBe(false);
+    expect(needsPlayFill({ sources: ['spotify'] }, opts)).toBe(false);
+    expect(needsPlayFill(null, opts)).toBe(false);
+  });
+  test('what the fill found joins the playing track: real sources only, nothing replaced', () => {
+    const current = { localfiles: { filePath: '/a', streamQuality: { codec: 'flac' } } };
+    const found = { localfiles: { filePath: '/other' }, spotify: { spotifyUri: 's' }, bandcamp: { noMatch: true } };
+    expect(mergeFoundSources(current, found)).toEqual({ localfiles: current.localfiles, spotify: { spotifyUri: 's' } });
+    expect(mergeFoundSources(current, null)).toEqual(current);
+    expect(mergeFoundSources(current, { __noMatchAll: true })).toEqual(current);
+  });
+});
+
+describe('app.js: the play-path fill', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const effect = app.slice(app.indexOf('const playingTrackId = currentTrack?.id || null;'), app.indexOf('}, [playingTrackId]);'));
+
+  test('fires once per track, only for a local-only track, bypassing the gate', () => {
+    expect(effect).toContain('if (enrichmentAttemptedRef.current.has(track.id)) return;');
+    expect(effect).toContain('needsPlayFill(track, { isLocal: isLocalResolver, isPlayable: isPlayableSource })');
+    expect(effect).toContain('enrichmentAttemptedRef.current.add(track.id);');
+    expect(effect).toContain("{ forceEnrichment: true }");
+  });
+  test('what it finds joins the playing track, and only that track', () => {
+    expect(effect).toMatch(/setCurrentTrack\(prev => \{\s*if \(!prev \|\| prev\.id !== track\.id\) return prev;\s*const merged = mergeFoundSources\(prev\.sources, found\);/);
+  });
+  test('the scheduler\'s background pass still goes through the gate (onScreen only for on-screen rows)', () => {
+    expect(app).toMatch(/skipsLocalFill\(\{ hasLocalSource, forceEnrichment, onScreen \}\)/);
+    expect((app.match(/\{ forceEnrichment: true \}\)/g) || []).length).toBe(2); // calls: the idle trickle and the play fill, nothing else
+  });
+});

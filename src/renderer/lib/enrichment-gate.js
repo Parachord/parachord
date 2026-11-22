@@ -16,6 +16,13 @@
 // The idle trickle bypasses the gate too (`forceEnrichment`), one track per
 // 10 seconds while the window is in the background.
 //
+// And a track that starts playing with a local file as its only playable
+// source fills once (`needsPlayFill`): played from the queue, Collection
+// Radio, a link or listen-along it was never on screen, so nothing else asks
+// its other services, and the playbar's "Play from" picker, which lists only
+// the playing track's own sources, had nothing to offer. What the fill finds
+// joins the playing track through `mergeFoundSources`.
+//
 // Pure; loads under plain Node.
 
 'use strict';
@@ -30,4 +37,27 @@ const isOnScreenResolution = (info) => !!info && ON_SCREEN_CONTEXT_TYPES.has(inf
 const skipsLocalFill = ({ hasLocalSource, forceEnrichment, onScreen }) =>
   !!hasLocalSource && !forceEnrichment && !onScreen;
 
-module.exports = { isOnScreenResolution, skipsLocalFill, ON_SCREEN_CONTEXT_TYPES };
+// Whether a track that just started playing should fill its other sources:
+// every playable source it has is a local file. `isLocal(id)` and
+// `isPlayable(source)` are the app's own tests (isLocalResolver,
+// lib/playable-source.js).
+const needsPlayFill = (track, { isLocal, isPlayable }) => {
+  const sources = track && track.sources;
+  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return false;
+  const playable = Object.keys(sources).filter((id) => isPlayable(sources[id]));
+  return playable.length > 0 && playable.every((id) => isLocal(id));
+};
+
+// The playing track's sources with what the fill found added: real sources
+// only (no misses), and never replacing one the track already has.
+const mergeFoundSources = (current, found) => {
+  const out = { ...(current || {}) };
+  for (const [id, source] of Object.entries(found || {})) {
+    // A source is an object; resolveTrack's `__noMatchAll: true` marker isn't.
+    if (!source || typeof source !== 'object' || source.noMatch || out[id]) continue;
+    out[id] = source;
+  }
+  return out;
+};
+
+module.exports = { isOnScreenResolution, skipsLocalFill, needsPlayFill, mergeFoundSources, ON_SCREEN_CONTEXT_TYPES };

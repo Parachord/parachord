@@ -2074,7 +2074,7 @@ const { useLocalFiles } = require('./hooks/use-local-files');
 // The Collection with local files merged in (#1532): one song list, one
 // album list, every source on each entry.
 // When resolveTrack's local-file gate applies: everything not on screen (#1532).
-const { isOnScreenResolution, skipsLocalFill } = require('./lib/enrichment-gate');
+const { isOnScreenResolution, skipsLocalFill, needsPlayFill, mergeFoundSources } = require('./lib/enrichment-gate');
 const { albumIdentity, mergeCollectionSongs, deriveLocalAlbums, mergeCollectionAlbums, deriveLocalArtists, mergeCollectionArtists, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval, savedAlbumIdsFor, findSavedAlbumCopy } = require('./lib/local-albums');
 const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage, PlaylistViewLoading } = require('./components/playlist-view-page');
@@ -9276,6 +9276,35 @@ const Parachord = () => {
       if (intervalId) clearInterval(intervalId);
     };
   }, [cacheLoaded]);
+
+  // A track that starts playing with a local file as its only playable source
+  // fills its other sources once (needsPlayFill, lib/enrichment-gate.js).
+  // Played from somewhere not on screen (the queue, Collection Radio, a link,
+  // listen-along), it only ever met the gated resolutions above, so its other
+  // services were never asked and the playbar's "Play from" picker, which
+  // lists only the playing track's own sources, had nothing to offer. One
+  // fill per track per session (enrichmentAttemptedRef, shared with the
+  // trickle); the gate still holds for every bulk and background pass. What
+  // it finds joins the playing track (mergeFoundSources), never replacing a
+  // source it has; resolveTrack also writes it to trackSources and the cache.
+  const playingTrackId = currentTrack?.id || null;
+  useEffect(() => {
+    const track = currentTrack;
+    if (!track || !track.id || track.id !== playingTrackId) return;
+    if (enrichmentAttemptedRef.current.has(track.id)) return;
+    if (!needsPlayFill(track, { isLocal: isLocalResolver, isPlayable: isPlayableSource })) return;
+    enrichmentAttemptedRef.current.add(track.id);
+    resolveTrack(track, track.artist || track.artistName || 'Unknown Artist', { forceEnrichment: true })
+      .then((found) => {
+        if (!found || typeof found !== 'object') return;
+        setCurrentTrack(prev => {
+          if (!prev || prev.id !== track.id) return prev;
+          const merged = mergeFoundSources(prev.sources, found);
+          return Object.keys(merged).length === Object.keys(prev.sources || {}).length ? prev : { ...prev, sources: merged };
+        });
+      })
+      .catch((err) => console.warn('[Play fill] Could not look for other sources:', err?.message || err));
+  }, [playingTrackId]);
 
   // Fire-and-forget telemetry recorder. Best-effort — failures are
   // logged in main and never propagate to UI state.
