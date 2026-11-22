@@ -84,9 +84,13 @@ describe('Apple Music: signed out leaves playback until it connects (2026-11)', 
     const check = between(app, 'const checkMusicKitAvailable = async () => {', 'checkMusicKitAvailable();');
     expect(check).toMatch(/finally \{\s*setAppleMusicAuthChecked\(true\);/);
   });
-  test('a tile that can\'t play stays in full colour (it is on), unnumbered, with its warning line', () => {
+  // A plan that can't play keeps a signed-in tile in full colour (it is on).
+  // A signed-out one reads as off instead (#1614: a plug-in that needs a
+  // sign-in never shows as enabled until it's signed in).
+  test('a tile that can\'t play stays in full colour (it is on), unnumbered, with its warning line; signed out, it reads as off', () => {
     const card = read('src/renderer/components/settings-cards.js');
-    expect(card).toMatch(/const isGrayed = isAvailable;/);
+    expect(card).toMatch(/const isEnabled = isActive === true && !signInNeeded;/);
+    expect(card).toMatch(/const isGrayed = !isEnabled && !isInstalling;/);
     expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
   });
 });
@@ -264,7 +268,7 @@ describe('app wiring', () => {
     // dropped on.
     expect(app).toMatch(/\[\.\.\.playingInOrder, \.\.\.planBlockedInOrder\]\.forEach\(\(resolverId, index\) => \{/);
     expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
-    expect(app).toMatch(/const reorderable = isActive && !notPlayingResolverIds\.includes\(resolver\.id\);/);
+    expect(app).toMatch(/const reorderable = isActive && !signInNeeded && !notPlayingResolverIds\.includes\(resolver\.id\);/);
     expect(app).toMatch(/draggable: reorderable,/);
     expect(app).toMatch(/onDrop: reorderable \? /);
     expect(app).not.toMatch(/setResolverOrder\([^)]*planBlocked/);

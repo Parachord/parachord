@@ -78,6 +78,7 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     handleUninstallResolver,
     hostAccounts,
     hostPlayback,
+    pluginAccounts,
     playbackAbr,
     playbackQuality,
     playbackSpatial,
@@ -139,7 +140,11 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   // A plug-in that only scrobbles (Libre.fm): its scrobbler is its account.
   const scrobblingOnly = !!caps.scrobbling && !caps.recommendations;
   // The one on/off switch (lib/plugin-switch.js).
-  const switchState = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers });
+  // What the app knows about its sign-in (#1614, app.js pluginAccounts: the
+  // host's own sign-ins with each status plug-in's reply over them). Signed
+  // out, Enable and the switches under it read off and locked.
+  const signedIn = pluginAccounts ? pluginAccounts[selectedResolver.id] : undefined;
+  const switchState = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers, signedIn });
   // Scrobbling, for a plug-in that does more than scrobble (Last.fm,
   // ListenBrainz), while it's on: nested under its account (the account
   // comes first, then what needs the sign-in).
@@ -184,6 +189,81 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
       hasImportedLoves: !!loveImportCursorRef.current?.[id],
     });
   };
+
+  // A plug-in that needs a sign-in (a sign-in the app runs, settings.account
+  // type 'sign-in'; or one that signs in itself, capabilities.status) can't
+  // be turned on until it's signed in (#1614), so its account and keys come
+  // first and Enable after them: the dialog reads in the order you do it.
+  // Always, signed in or not, so nothing moves after signing in. A plug-in
+  // that works without one keeps Enable first (Last.fm's Scrobbling sign-in
+  // stays nested under it).
+  const accountFirst = (accountType === 'sign-in' && !!hostAccount)
+    || (!!selectedResolver?.capabilities?.status && typeof selectedResolver.getStatus === 'function');
+  // On/off: the ONE control that turns a plug-in on (#1498 step 2;
+  // lib/plugin-switch.js says what it shows for each kind of
+  // plug-in). It replaced the music plug-ins' "Use X" switch, the
+  // footer's Enable/Done button and the body "Enable X" switches. A
+  // plug-in that can't run without a key shows it disabled, saying
+  // what to add first.
+  const enableSection = (() => {
+            const id = selectedResolver.id;
+            const state = switchState;
+            const meta = metadataSwitchState({ plugin: selectedResolver, active: state.checked, metadataOff: (metadataOffResolvers || []).includes(id), signedIn });
+            const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id), signedIn });
+            const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id], signedIn });
+            const setOn = async (next) => {
+              if (next) {
+                const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
+                if (!isLoaded) {
+                  // Not downloaded (a marketplace plug-in), or removed before:
+                  // take it off the removed list and install it now.
+                  const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
+                  if (uninstalled.includes(id)) await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(x => x !== id));
+                  const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === id);
+                  if (marketplaceItem) await handleInstallFromMarketplace(marketplaceItem);
+                  // Installing a music plug-in also turns it on (it joins the
+                  // active list). Toggling it here as well would read the
+                  // active list from before the install and switch it straight
+                  // back off.
+                  if (selectedResolver.type !== 'meta-service') return;
+                }
+              }
+              if (selectedResolver.type === 'meta-service') {
+                saveMetaServiceConfig(id, { ...metaServiceConfigs[id], enabled: next });
+              } else if (next !== activeResolvers.includes(id)) {
+                toggleResolver(id);
+              }
+            };
+            return React.createElement('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
+              React.createElement(SettingRow, {
+                label: `Enable ${selectedResolver.name}`,
+                hint: state.hint || undefined,
+                style: { padding: 0 },
+              }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) })),
+              // "Play from X" under it, while it's on (#1505): off keeps it for
+              // search, covers and links and takes it out of the priority
+              // order; a plan that can't play locks it off, saying why.
+              play.shown && React.createElement(SettingRow, {
+                label: `Play from ${selectedResolver.name}`,
+                hint: play.hint,
+                nested: true,
+                style: { padding: '6px 0', marginTop: '12px' },
+              }, React.createElement(Switch, { size: 'sm', checked: play.checked, disabled: play.disabled, onToggle: () => setResolverPlaybackOn(id, !play.checked) })),
+              // "Use metadata from X": covers and artist photos (#1505).
+              meta.shown && React.createElement(SettingRow, {
+                label: `Use metadata from ${selectedResolver.name}`,
+                hint: meta.hint,
+                nested: true,
+                style: { padding: '6px 0' },
+              }, React.createElement(Switch, { size: 'sm', checked: meta.checked, disabled: meta.disabled, onToggle: () => setResolverMetadataOn(id, !meta.checked) })),
+              // "Use recommendations from X", for a plug-in that offers them (#1505).
+              recs.shown && React.createElement(SettingRow, {
+                label: `Use recommendations from ${selectedResolver.name}`,
+                hint: recs.hint,
+                nested: true,
+                style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
+              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, disabled: recs.disabled, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
+          })();
 
   return React.createElement(Modal, { bare: true, label: "Plugin settings", scrimClassName: 'z-50', onClose: () => { setSelectedResolver(null); }, panelProps: { style: {
           backgroundColor: 'var(--card-bg)',
@@ -284,71 +364,7 @@ React.createElement('div', {
             )
           ),
 
-          // On/off: the ONE control that turns a plug-in on (#1498 step 2;
-          // lib/plugin-switch.js says what it shows for each kind of
-          // plug-in). It replaced the music plug-ins' "Use X" switch, the
-          // footer's Enable/Done button and the body "Enable X" switches. A
-          // plug-in that can't run without a key shows it disabled, saying
-          // what to add first.
-          (() => {
-            const id = selectedResolver.id;
-            const state = switchState;
-            const meta = metadataSwitchState({ plugin: selectedResolver, active: state.checked, metadataOff: (metadataOffResolvers || []).includes(id) });
-            const recs = recommendationsSwitchState({ plugin: selectedResolver, active: state.checked, recommendationsOff: (recommendationsOffResolvers || []).includes(id) });
-            const play = playbackSwitchState({ plugin: selectedResolver, active: state.checked, playbackOff: (playbackOffResolvers || []).includes(id), limit: playbackLimits && playbackLimits[id] });
-            const setOn = async (next) => {
-              if (next) {
-                const isLoaded = allResolvers.some(r => r.id === id) || metaServices.some(s => s.id === id);
-                if (!isLoaded) {
-                  // Not downloaded (a marketplace plug-in), or removed before:
-                  // take it off the removed list and install it now.
-                  const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
-                  if (uninstalled.includes(id)) await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(x => x !== id));
-                  const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === id);
-                  if (marketplaceItem) await handleInstallFromMarketplace(marketplaceItem);
-                  // Installing a music plug-in also turns it on (it joins the
-                  // active list). Toggling it here as well would read the
-                  // active list from before the install and switch it straight
-                  // back off.
-                  if (selectedResolver.type !== 'meta-service') return;
-                }
-              }
-              if (selectedResolver.type === 'meta-service') {
-                saveMetaServiceConfig(id, { ...metaServiceConfigs[id], enabled: next });
-              } else if (next !== activeResolvers.includes(id)) {
-                toggleResolver(id);
-              }
-            };
-            return React.createElement('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
-              React.createElement(SettingRow, {
-                label: `Enable ${selectedResolver.name}`,
-                hint: state.hint || undefined,
-                style: { padding: 0 },
-              }, React.createElement(Switch, { checked: state.checked, disabled: state.disabled, onToggle: () => setOn(!state.checked) })),
-              // "Play from X" under it, while it's on (#1505): off keeps it for
-              // search, covers and links and takes it out of the priority
-              // order; a plan that can't play locks it off, saying why.
-              play.shown && React.createElement(SettingRow, {
-                label: `Play from ${selectedResolver.name}`,
-                hint: play.hint,
-                nested: true,
-                style: { padding: '6px 0', marginTop: '12px' },
-              }, React.createElement(Switch, { size: 'sm', checked: play.checked, disabled: play.disabled, onToggle: () => setResolverPlaybackOn(id, !play.checked) })),
-              // "Use metadata from X": covers and artist photos (#1505).
-              meta.shown && React.createElement(SettingRow, {
-                label: `Use metadata from ${selectedResolver.name}`,
-                hint: meta.hint,
-                nested: true,
-                style: { padding: '6px 0' },
-              }, React.createElement(Switch, { size: 'sm', checked: meta.checked, onToggle: () => setResolverMetadataOn(id, !meta.checked) })),
-              // "Use recommendations from X", for a plug-in that offers them (#1505).
-              recs.shown && React.createElement(SettingRow, {
-                label: `Use recommendations from ${selectedResolver.name}`,
-                hint: recs.hint,
-                nested: true,
-                style: { padding: '6px 0', marginTop: (play.shown || meta.shown) ? '0' : '12px' },
-              }, React.createElement(Switch, { size: 'sm', checked: recs.checked, onToggle: () => setResolverRecommendationsOn(id, !recs.checked) })));
-          })(),
+          !accountFirst && enableSection,
 
           // A status-capable plugin's sign-in row (capabilities.status, the
           // generic surface of #1356): the plugin's own getStatus reply —
@@ -442,6 +458,9 @@ React.createElement('div', {
             keysLabel: clientKeys && clientKeys.label,
           },
             clientKeys && hostAccount.keys && React.createElement(ClientKeys, { plugin: selectedResolver, keys: hostAccount.keys, authPort, showToast })),
+
+          // A plug-in that needs a sign-in: Enable after its account (#1614).
+          accountFirst && enableSection,
 
           // An account read from a username (settings.account.type
           // 'username': Last.fm, ListenBrainz), with its optional keys.

@@ -63,7 +63,8 @@ describe('the Plug-Ins grid reads the map', () => {
   test('settings-page.js has no per-service setup condition', () => {
     const start = page.indexOf('const needsConfiguration');
     expect(start).toBeGreaterThan(-1);
-    expect(page.slice(start, page.indexOf('\n', start))).toBe('const needsConfiguration = isActive && !!(pluginNeedsSetup && pluginNeedsSetup[resolver.id]);');
+    // A signed-out plug-in's tile says "Sign in" instead (#1614).
+    expect(page.slice(start, page.indexOf('\n', start))).toBe('const needsConfiguration = isActive && !signInNeeded && !!(pluginNeedsSetup && pluginNeedsSetup[resolver.id]);');
     for (const gone of ['spotifyConnected', 'appleMusicConnected', 'soundcloudConnected', 'watchFolders', 'pluginStatuses']) {
       expect(page).not.toContain(gone);
     }

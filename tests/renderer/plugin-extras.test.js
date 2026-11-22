@@ -268,6 +268,43 @@ describe('one layout (the #1498 contact-sheet review)', () => {
   });
 });
 
+// A plug-in that needs a sign-in can't be turned on until it's signed in
+// (#1614), so its account comes first and Enable after it: the dialog reads
+// in the order you do it. Always, signed in or not, so nothing jumps after
+// signing in. A plug-in that works without one keeps Enable first.
+describe('the account comes before Enable for a plug-in that needs a sign-in (#1614)', () => {
+  const at = (html, text) => { const i = html.indexOf(text); expect(i).toBeGreaterThan(-1); return i; };
+
+  test('a sign-in the app runs (settings.account.type "sign-in"): account, its keys, then Enable', () => {
+    const plugin = base({ settings: { account: { type: 'sign-in' }, clientKeys: { label: 'Client ID', fields: ['clientId'] } }, configurable: { clientId: { label: 'Client ID' } } });
+    for (const signedIn of [false, true]) {
+      const html = render(plugin, {
+        hostAccounts: { newservice: { signedIn, signIn: noop, signOut: noop, keys: { source: 'user', values: { clientId: 'x' }, setValue: noop, save: noop, clear: noop } } },
+        activeResolvers: ['newservice'],
+        pluginAccounts: { newservice: signedIn },
+      });
+      expect(at(html, 'New Service account')).toBeLessThan(at(html, 'Enable New Service'));
+      expect(at(html, 'Client ID')).toBeLessThan(at(html, 'Enable New Service'));
+    }
+  });
+
+  test('a plug-in that signs in itself (capabilities.status): its account row, then Enable', () => {
+    const plugin = base({ capabilities: { resolve: true, status: true }, getStatus: async () => ({}) });
+    const html = render(plugin, { pluginStatuses: { newservice: { signedIn: false, statusMessage: 'Setup required' } }, pluginAccounts: { newservice: false } });
+    expect(at(html, 'Setup required')).toBeLessThan(at(html, 'Enable New Service'));
+  });
+
+  test('a plug-in that needs no sign-in keeps Enable first (Last.fm\'s username account and Scrobbling stay under it)', () => {
+    const plugin = base({
+      type: 'meta-service', capabilities: { recommendations: true },
+      configurable: { username: { label: 'New Service username' } },
+      settings: { account: { type: 'username' } },
+    });
+    const html = render(plugin, { hostAccounts: { newservice: { connect: noop, remove: noop } } });
+    expect(at(html, 'Enable New Service')).toBeLessThan(at(html, 'New Service username'));
+  });
+});
+
 describe('one help-link style (HelpLink in fields.js)', () => {
   const HELP = /<a href="#" data-help-link="" style="color:var\(--accent-primary\);font-size:12px;font-weight:500;text-decoration:none">([^<]*) →<\/a>/g;
   const links = (html) => [...html.matchAll(HELP)].map((m) => m[1]);

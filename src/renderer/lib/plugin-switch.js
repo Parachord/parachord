@@ -98,9 +98,16 @@ function keyLabel(plugin, key) {
 
 // pluginSwitchState({ plugin, config, activeResolvers }) →
 //   { checked, disabled, hint }
-function pluginSwitchState({ plugin, config, activeResolvers }) {
+// `signedIn` is what the app knows about the plug-in's sign-in (app.js
+// pluginAccounts: its own sign-ins and each status plug-in's reply). A music
+// plug-in that needs one never shows as enabled until it's signed in: false
+// reads off and locked, saying to sign in, even while it's in the active
+// list. Display only: it stays active and keeps doing what works signed out.
+// No verdict (undefined/null) is the active list as before (#1614).
+function pluginSwitchState({ plugin, config, activeResolvers, signedIn }) {
   const c = config || {};
   if (plugin.type !== 'meta-service') {
+    if (signedIn === false) return { checked: false, disabled: true, hint: `Sign in to ${plugin.name} first` };
     return { checked: (activeResolvers || []).includes(plugin.id), disabled: false, hint: hintFor(plugin) };
   }
   if (isGatedService(plugin)) {
@@ -119,10 +126,19 @@ function pluginSwitchState({ plugin, config, activeResolvers }) {
 //
 // playbackSwitchState({ plugin, active, playbackOff, limit }) →
 //   { shown, checked, disabled, hint }
-function playbackSwitchState({ plugin, active, playbackOff, limit }) {
+// A plug-in that reports its own sign-in (capabilities.status) gives nothing
+// while signed out, so the switches nested under Enable show off and locked
+// until it is (#1614). `signedIn` is its last status verdict
+// (lib/plugin-setup.js statusSignedIn): only false locks; no verdict (not
+// read yet, a failed read) never blocks, as the limit map reads it. The saved
+// off-lists don't change, so the choices come back as they were.
+const signedOutState = (plugin, shown) => ({ shown, checked: false, disabled: true, hint: `Sign in to ${plugin.name} first` });
+
+function playbackSwitchState({ plugin, active, playbackOff, limit, signedIn }) {
   const caps = plugin.capabilities || {};
   const shown = plugin.type !== 'meta-service' && !!caps.resolve && !!active;
   if (limit && limit.blocked) return { shown, checked: false, disabled: true, hint: limit.message || limit.label || 'Your plan can\u2019t play from it' };
+  if (signedIn === false) return signedOutState(plugin, shown);
   return playbackOff
     ? { shown, checked: false, disabled: false, hint: 'Off: found in search, played from other plug-ins' }
     : { shown, checked: true, disabled: false, hint: 'Plays tracks, in your priority order' };
@@ -131,21 +147,23 @@ function playbackSwitchState({ plugin, active, playbackOff, limit }) {
 // The "Recommendations from X" switch (#1505), for a plug-in that's on and
 // offers recommendations (Amazon, Apple Music, Last.fm, ListenBrainz): off,
 // the Recommendations page and Home leave its picks out.
-function recommendationsSwitchState({ plugin, active, recommendationsOff }) {
+function recommendationsSwitchState({ plugin, active, recommendationsOff, signedIn }) {
   const caps = plugin.capabilities || {};
   const shown = !!caps.recommendations && !!active;
+  if (signedIn === false) return signedOutState(plugin, shown);
   return recommendationsOff
-    ? { shown, checked: false, hint: 'Its picks are left out of Recommendations and Home' }
-    : { shown, checked: true, hint: 'Its picks in Recommendations and on Home' };
+    ? { shown, checked: false, disabled: false, hint: 'Its picks are left out of Recommendations and Home' }
+    : { shown, checked: true, disabled: false, hint: 'Its picks in Recommendations and on Home' };
 }
 
 // The "Use metadata from X" switch (#1505), for a music plug-in that's on:
 // album covers and artist photos. Off, they come from the other plug-ins.
-function metadataSwitchState({ plugin, active, metadataOff }) {
+function metadataSwitchState({ plugin, active, metadataOff, signedIn }) {
   const shown = plugin.type !== 'meta-service' && !!(plugin.capabilities || {}).resolve && !!active;
+  if (signedIn === false) return signedOutState(plugin, shown);
   return metadataOff
-    ? { shown, checked: false, hint: 'Covers and artist photos come from other plug-ins' }
-    : { shown, checked: true, hint: 'Album covers and artist photos' };
+    ? { shown, checked: false, disabled: false, hint: 'Covers and artist photos come from other plug-ins' }
+    : { shown, checked: true, disabled: false, hint: 'Album covers and artist photos' };
 }
 
 module.exports = { metadataSwitchState, playbackSwitchState, recommendationsSwitchState, pluginSwitchState, authFieldOf, needsKey, hasKey, keyLabel };
