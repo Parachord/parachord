@@ -33,7 +33,8 @@
 //
 // The layout is the dialog's one order (CLAUDE.md, "Every plug-in's settings
 // are one layout"): on/off, the account, the keys it signs in with, what
-// needs the sign-in, other settings, Advanced last. Flat rows divided by
+// needs the sign-in, other settings, Advanced last. A plug-in that needs a
+// sign-in to work puts its account and keys before on/off (#1614). Flat rows divided by
 // lines, from the shared parts only. Props-driven; hooks are qualified; loads
 // under plain Node (window is read only inside handlers).
 
