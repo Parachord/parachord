@@ -427,8 +427,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       // full syncs (wizard "Sync Now", cleanup-duplicates) still process every
       // playlist that needs work.
       //
-      // One read of local_playlists for the whole pass: it's a large file that
-      // the store parses on every get, so the per-playlist re-read the loop
+      // One read of local_playlists for the whole pass: every get parses the
+      // whole list (main-process/playlist-store.js), so the per-playlist re-read the loop
       // does for its batch would cost a parse per selected playlist here. The
       // fresh copy picks up a renderer write made while the list was fetched,
       // as that re-read does.

@@ -60,7 +60,10 @@ describe('playlists-save uses the guard', () => {
     const src = require('fs').readFileSync(require('path').join(__dirname, '../../main.js'), 'utf8');
     const start = src.indexOf("ipcMain.handle('playlists-save'");
     const body = src.slice(start, src.indexOf('ipcMain.handle(', start + 1));
-    expect(body).toMatch(/keepDroppedLinks\(playlistData, playlists\[existingIndex\], getSyncLinks\(\)\)/);
-    expect(body).toMatch(/playlists\[existingIndex\] = guarded/);
+    expect(body).toMatch(/const existing = store\.getPlaylist\(playlistData\.id\)/);
+    expect(body).toMatch(/keepDroppedLinks\(playlistData, existing, getSyncLinks\(\)\)/);
+    expect(body).toMatch(/store\.savePlaylist\(guarded\)/);
+    // One record per save, never the whole list (#801).
+    expect(body).not.toMatch(/store\.set\('local_playlists'/);
   });
 });

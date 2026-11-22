@@ -156,6 +156,16 @@ const store = createSplitStore({
       return [];
     }
   },
+  // local_playlists: a file per playlist (main-process/playlist-store.js, #801).
+  playlistsDir: path.join(splitStoreDir, 'playlists'),
+  // The single local_playlists.json, once moved: renamed aside (never over an
+  // earlier copy), so it stays on disk as a backup but is no longer read.
+  retireKeyStore: (key) => {
+    const from = path.join(splitStoreDir, `${key}.json`);
+    let to = `${from}.premigration`;
+    if (fs.existsSync(to)) to = `${from}.stale-${Date.now()}`;
+    try { fs.renameSync(from, to); } catch (error) { if (error.code !== 'ENOENT') console.error(`Couldn't set ${key}.json aside:`, error.message); }
+  },
 });
 let mainWindow;
 let authServer;
@@ -5253,28 +5263,24 @@ ipcMain.handle('playlists-save', async (event, playlistData) => {
   console.log('  Playlist ID:', playlistData?.id);
 
   try {
-    const playlists = store.get('local_playlists') || [];
+    // One record: read the stored one and write its file only, never the
+    // whole list (main-process/playlist-store.js, #801).
+    const existing = store.getPlaylist(playlistData.id);
 
-    // Check if playlist already exists
-    const existingIndex = playlists.findIndex(p => p.id === playlistData.id);
-
-    if (existingIndex >= 0) {
+    if (existing) {
       // Update existing playlist. A stale renderer copy must not erase a
       // mirror link that is still live (sync-engine/playlist-save-guard.js).
-      const { playlist: guarded, kept } = keepDroppedLinks(playlistData, playlists[existingIndex], getSyncLinks());
+      const { playlist: guarded, kept } = keepDroppedLinks(playlistData, existing, getSyncLinks());
       if (kept.length > 0) {
         console.warn(`  ⚠️ Save of "${playlistData.title}" left out its ${kept.join(', ')} link(s); kept them`);
       }
-      playlists[existingIndex] = guarded;
+      store.savePlaylist(guarded);
       console.log('  ✅ Updated existing playlist');
     } else {
       // Add new playlist
-      playlists.push(playlistData);
+      store.savePlaylist(playlistData);
       console.log('  ✅ Added new playlist');
     }
-
-    store.set('local_playlists', playlists);
-    console.log(`  ✅ Saved ${playlists.length} playlist(s) to electron-store`);
     return { success: true };
   } catch (error) {
     console.error('  ❌ Save failed:', error.message);
