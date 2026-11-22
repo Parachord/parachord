@@ -57,6 +57,19 @@ describe('ownedTracksFromLibraryGql', () => {
     expect(page.rawCount).toBe(3);
   });
 
+  test('keeps the purchased copy\'s library id (COID) from playParams, for its plain stream (#1612)', () => {
+    const page = lib.ownedTracksFromLibraryGql(amazonLibraryPage([BOUGHT_A, BOUGHT_B]).data);
+    expect(page.tracks.map((t) => t.coid)).toEqual(['b000000001', 'b000000002']);
+  });
+
+  test('a row whose playParams is not a library object has no COID', () => {
+    const data = amazonLibraryPage([BOUGHT_A]).data;
+    data.user.purchased.edges[0].node.playParams = { id: 'mrn:1.0:catalog:track:asin:B000000001' };
+    expect(lib.ownedTracksFromLibraryGql(data).tracks[0].coid).toBeUndefined();
+    delete data.user.purchased.edges[0].node.playParams;
+    expect(lib.ownedTracksFromLibraryGql(data).tracks[0].coid).toBeUndefined();
+  });
+
   test('a node without a purchaseContext is not bought', () => {
     const data = amazonLibraryPage([BOUGHT_A]).data;
     delete data.user.purchased.edges[0].node.purchaseContext;
