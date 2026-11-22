@@ -908,6 +908,93 @@ describe('the first play on Prime (#1603)', () => {
   });
 });
 
+// ── a purchase's plain stream (#1612) ────────────────────────────────────────
+
+// Amazon's own web player streams a purchase from the library locker
+// (getStreamingURLs by the purchased copy's COID) as a progressive MP3, with
+// no DRM. getStreamUrl asks for it, only for a track on the plug-in's own
+// purchases list.
+describe('getStreamUrl: a purchase from the library locker (#1612)', () => {
+  const { amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+  const STREAM = 'https://d1.cloudfront.net/obj?response-content-disposition=filename%3D%2205%20-%20Song.mp3%22&coid=b0owned001&Expires=1&Signature=s&Key-Pair-Id=k';
+  const lockerReply = (over = {}) => ({
+    contentResponseList: [{
+      contentID: { identifier: 'b0owned001', identifierType: 'COID' },
+      protocol: 'PROGRESSIVE', statusCode: 'SUCCESS', cdnTypeList: ['cf'], assetQualities: [],
+      expiration: 1795000000, urlList: [STREAM], ...over
+    }],
+    statusCode: 'SUCCESS'
+  });
+  const lockerMock = (dmls, tier = 'PRIME') => {
+    const mock = drmMock({ configJson: { ...CONFIG_JSON, tier }, dmls });
+    serveAmazonLibrary(mock.ws, { first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'Bought', artist: 'A' }]) });
+    return mock;
+  };
+  const lockerPosts = (fetches) => dmlsFetches(fetches).filter((r) => String(r.headers['X-Amz-Target'] || '').endsWith('.getStreamingURLs'));
+
+  test('a bought track: one getStreamingURLs request by its COID, answering the signed URL', async () => {
+    const { fetches } = lockerMock([{ status: 200, text: JSON.stringify(lockerReply()) }]);
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0OWNED001'), {})).resolves.toBe(STREAM);
+    const posts = lockerPosts(fetches);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].url).toBe('https://music.amazon.com/NA/api/dmls/');
+    expect(posts[0].headers['X-Amz-Target']).toBe('com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.getStreamingURLs');
+    expect(posts[0].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
+    const body = JSON.parse(posts[0].body);
+    expect(body).toMatchObject({
+      contentIdList: [{ identifier: 'b0owned001', identifierType: 'COID' }],
+      bitRate: 'HIGH',
+      deviceToken: { deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '12345678901234567' },
+      appMetadata: { https: true, appId: 'GreenHornet_Web' },
+      clientMetadata: { clientId: 'WebCP' },
+      customerId: 'CUST1'
+    });
+    expect(typeof body.clientMetadata.clientRequestId).toBe('string');
+    expect(body.clientMetadata.clientRequestId.length).toBeGreaterThan(8);
+    // No manifest request: this path has no DRM.
+    expect(manifestPosts(fetches)).toHaveLength(0);
+  });
+
+  test('on Music Unlimited a purchase streams the same way', async () => {
+    lockerMock([{ status: 200, text: JSON.stringify(lockerReply()) }], 'UNLIMITED_HD');
+    await expect(instantiateAmazonPlugin(axe).getStreamUrl(drmTrack('B0OWNED001'), {})).resolves.toBe(STREAM);
+  });
+
+  test('a track the account doesn\'t own has no plain stream: null, no request, whatever the track says', async () => {
+    const { fetches } = lockerMock([]);
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0NEVER001'), {})).resolves.toBeNull();
+    await expect(resolver.getStreamUrl({ ...drmTrack('B0NEVER001'), amazonCoid: 'forged', owned: true }, {})).resolves.toBeNull();
+    expect(lockerPosts(fetches)).toHaveLength(0);
+  });
+
+  test('a refusal or an answer with no https URL is load-failed, never a URL', async () => {
+    for (const reply of [
+      { status: 500, text: 'oops' },
+      { status: 200, text: 'not json' },
+      { status: 200, text: JSON.stringify(lockerReply({ statusCode: 'CONTENT_NOT_FOUND', urlList: [] })) },
+      { status: 200, text: JSON.stringify(lockerReply({ urlList: ['http://insecure.example/x.mp3'] })) },
+    ]) {
+      lockerMock([reply]);
+      await expect(instantiateAmazonPlugin(axe).getStreamUrl(drmTrack('B0OWNED001'), {})).rejects.toMatchObject({ reason: 'load-failed' });
+    }
+  });
+
+  test('signed out: not-signed-in, no request', async () => {
+    const mock = drmMock({ signedIn: false });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0OWNED001'), {})).rejects.toMatchObject({ reason: 'not-signed-in' });
+    expect(lockerPosts(mock.fetches)).toHaveLength(0);
+  });
+
+  test('purchases that can\'t be read are "try again", not null', async () => {
+    const mock = drmMock({ configJson: { ...CONFIG_JSON, tier: 'PRIME' } });
+    serveAmazonLibrary(mock.ws, {}, { capture: null });
+    await expect(instantiateAmazonPlugin(axe).getStreamUrl(drmTrack('B0OWNED001'), {})).rejects.toMatchObject({ reason: 'not-ready' });
+  });
+});
+
 // ── relayLicense ────────────────────────────────────────────────────────────
 
 describe('relayLicense', () => {

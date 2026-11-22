@@ -1865,7 +1865,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // and the plugin's context stay renderer-side). No shipped plugin
     // implements the pair yet — Amazon keeps the provider path below until
     // its dmls moves.
-    if (isWidevineResolver(resolverId)) {
+    // A Widevine plug-in that also hands the host a plain stream
+    // (getStreamUrl: Amazon's bought tracks from the library locker, #1612)
+    // plays that through the html5Stream branch below when the DRM stream
+    // doesn't start. Chosen by the method, like the DRM pair itself.
+    let drmFallback = false;
+    widevinePath: if (isWidevineResolver(resolverId)) {
       const streamLabel = resolver.name || resolverId;
       console.log(`🔐 Playing ${streamLabel} track via Widevine:`, sourceToPlay.title);
 
@@ -2079,6 +2084,21 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             return;
           }
         } else {
+          // The DRM stream didn't start (a licence refused, a manifest past
+          // its budget, a load that failed). A plug-in with a plain stream
+          // for this track plays that instead (#1612); past the plan
+          // refusal and the sign-in prompt above, so never for a track the
+          // account can't play.
+          if (typeof resolver.getStreamUrl === 'function') {
+            console.warn(`🔐 ${streamLabel}: the DRM stream didn't start (${error && error.message}); trying its plain stream`);
+            await stopWidevineIfActive();
+            if (playbackGenerationRef.current !== thisGeneration) {
+              setTrackLoading(false);
+              return;
+            }
+            drmFallback = true;
+            break widevinePath;
+          }
           console.error(`❌ ${streamLabel} playback error:`, error);
           if (autoSkipIfAdvancing(`${streamLabel} playback: ${error.message}`)) return;
           setTrackLoading(false);
@@ -2171,9 +2191,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // self-hosted server): the .axe's getStreamUrl builds a direct stream URL
     // from the saved config (never from the track) and the shared element
     // fetches it cross-origin with Range support. The host does not name them.
-    if (isHtml5StreamResolver(resolverId)) {
+    if (drmFallback || isHtml5StreamResolver(resolverId)) {
       const streamLabel = resolver.name || resolverId;
-      console.log(`📡 Playing ${streamLabel} track:`, sourceToPlay.title);
+      console.log(`📡 Playing ${streamLabel} track${drmFallback ? ' (its plain stream)' : ''}:`, sourceToPlay.title);
 
       // Stop Spotify polling when switching to Subsonic playback
       if (playbackPollerRef.current) {
@@ -2234,6 +2254,18 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         return;
       }
 
+      if (!streamUrl && drmFallback) {
+        // No plain stream for this track either: the DRM failure's message.
+        console.error(`❌ ${streamLabel}: no plain stream for this track`);
+        if (autoSkipIfAdvancing(`${streamLabel} playback: no DRM or plain stream`)) return;
+        setTrackLoading(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Couldn’t play the track',
+          message: `This ${streamLabel} track didn’t start. Try another source, or try again.`
+        });
+        return;
+      }
       if (!streamUrl) {
         console.error(`❌ No ${streamLabel} stream URL available`);
         if (autoSkipIfAdvancing(`${streamLabel}: no stream URL (check its settings in Settings › Plug-Ins)`)) return;

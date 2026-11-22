@@ -42,7 +42,7 @@ describe('capabilities.html5Stream', () => {
     expect(appSrc).toContain("const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;");
     expect(appSrc).toContain("const usesSharedAudio = (id) => isLocalResolver(id) || isHtml5StreamResolver(id) || isWidevineResolver(id);");
     // the play branch, the progress-tracker skip and the element's error dialog
-    expect(appSrc).toContain('if (isHtml5StreamResolver(resolverId)) {');
+    expect(appSrc).toContain('if (drmFallback || isHtml5StreamResolver(resolverId)) {');
     expect(appSrc).toContain('const isHtml5Stream = isHtml5StreamResolver(activeResolver);');
     expect(appSrc).toContain('if (owner && isHtml5StreamResolver(owner)) {');
     // the resolver's own name labels its dialogs

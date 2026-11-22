@@ -1127,6 +1127,16 @@ module.exports = {
     // afterCursor (the Relay endCursor is a decoy there), when hasNextPage
     // allows it. envelope false means the response had no song connection
     // at all: a renamed operation or field, never "owns nothing".
+    // The purchased copy's library object id (COID) from a library row's
+    // playParams ("mrn:1.0:library:track:objectid:<id>"), or null. The library
+    // locker streams a purchase by it (#1612).
+    const OWNED_COID_RE = /^mrn:1\.0:library:track:objectid:([^\s/?#]+)$/;
+    function ownedTrackCoid(node) {
+      const id = node && node.playParams && node.playParams.id;
+      const m = typeof id === 'string' ? OWNED_COID_RE.exec(id) : null;
+      return m ? m[1] : null;
+    }
+
     function ownedTracksFromLibraryGql(data) {
       const conn = ownedSongsConnection(data);
       if (!conn) return { tracks: [], nextCursor: null, firstCursor: null, rawCount: 0, envelope: false };
@@ -1138,7 +1148,9 @@ module.exports = {
         const asin = ownedTrackAsin(node);
         if (!asin) continue;
         const row = trackFromGqlEdge({ ...edge, node: { ...node, id: asin } });
-        if (row) tracks.push(row);
+        if (!row) continue;
+        const coid = ownedTrackCoid(node);
+        tracks.push(coid ? { ...row, coid } : row);
       }
       const pageInfo = conn.pageInfo && typeof conn.pageInfo === 'object' ? conn.pageInfo : {};
       const token = typeof pageInfo.token === 'string' && pageInfo.token ? pageInfo.token : null;
@@ -1829,6 +1841,34 @@ module.exports = {
         deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
         appInfo: { musicAgent: String(musicAgent || '') }
       };
+    }
+
+    // A purchase's plain stream from the library locker (#1612): the request
+    // Amazon's own web player sends from Purchased (live capture,
+    // parachord-mobile#780: Safari played a bought track as a progressive
+    // MP3 from a signed CloudFront URL, no DRM, no licence). Keyed by the
+    // purchased copy's COID, not the catalog ASIN.
+    const STREAMING_URLS_TARGET = 'getStreamingURLs';
+    const STREAMING_BIT_RATE = 'HIGH';
+    const WEB_APP_ID = 'GreenHornet_Web';
+    const WEB_APP_VERSION = MUSIC_AGENT_CLIENT.split('/')[1] || '1.0';
+    function amazonStreamingUrlsBody({ coid, customerId, deviceId, userAgent, requestId } = {}) {
+      if (!coid || !customerId || !deviceId) return null;
+      return {
+        contentIdList: [{ identifier: String(coid), identifierType: 'COID' }],
+        bitRate: STREAMING_BIT_RATE,
+        deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
+        appMetadata: { https: true, appId: WEB_APP_ID, appVersion: WEB_APP_VERSION, userAgent: String(userAgent || '') },
+        clientMetadata: { clientId: 'WebCP', clientRequestId: String(requestId || '') },
+        customerId
+      };
+    }
+    // The first https URL of a SUCCESS answer, or null.
+    function streamingUrlFromReply(json) {
+      const list = json && Array.isArray(json.contentResponseList) ? json.contentResponseList : [];
+      const item = list[0];
+      if (!item || item.statusCode !== 'SUCCESS' || !Array.isArray(item.urlList)) return null;
+      return item.urlList.find((u) => typeof u === 'string' && /^https:\/\//.test(u)) || null;
     }
 
     // GET https://music.amazon.com/config.json answers the session facts the
@@ -2523,6 +2563,9 @@ module.exports = {
       AMAZON_HOMES, HOME_REFUSED_STATUS, PLAYLISTS_SECTION_ID,
       RECOMMENDATIONS_WALK_TIMEOUT_MS,
       OWNED_PAGE_URL, OWNED_OPERATION, OWNED_TTL_MS, OWNED_MAX_PAGES, OWNED_MAX_MS,
+      STREAMING_URLS_TARGET,
+      amazonStreamingUrlsBody,
+      streamingUrlFromReply,
       CSRF_HARVEST_MAX_AGE_MS, CONFIG_REUSE_MS,
       csrfHeadersFromCaptures,
       notReady,
@@ -3508,6 +3551,9 @@ module.exports = {
     return {
       tracks: walked.tracks,
       byAsin: new Set(walked.tracks.map(t => t.asin)),
+      // The purchased copy's COID by catalog ASIN: the library locker
+      // streams a purchase by it (getStreamUrl, #1612).
+      coidByAsin: new Map(walked.tracks.filter(t => t.coid).map(t => [t.asin, t.coid])),
       at: Date.now(),
       stop: walked.stop
     };
@@ -3728,6 +3774,50 @@ module.exports = {
       || (byId && byId.amazonAsin)
       || t.asin
       || null;
+  },
+
+  // A purchase as a plain stream URL from the library locker (#1612): what
+  // Amazon's own web player plays a bought track from, a progressive MP3
+  // from a signed URL that expires in about 25 minutes, with no DRM. Only
+  // for a track on the plug-in's own purchases list (never a flag on the
+  // track, as assertPlanPlaysAsin); null for anything else. The host plays
+  // it where it has no Widevine engine, or when the DRM stream didn't start
+  // (use-playback-engine.js). The URL is built at play time and never kept
+  // or logged: it is a replayable credential for that file.
+  getStreamUrl: async function (track, config) {
+    const lib = this.requireLib();
+    const asin = this.drmAsinFromTrack(track);
+    if (!asin) return null;
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    let owned;
+    try {
+      owned = await this.getOwnedTracks();
+    } catch (error) {
+      console.warn('[Amazon] bought tracks unavailable for a purchase stream: ' + ((error && error.message) || error));
+      throw lib.notReady('not-ready', "Couldn't read your Amazon purchases. Try again in a minute.");
+    }
+    const coid = owned.coidByAsin && owned.coidByAsin.get(asin);
+    if (!coid) return null;
+    const ctx = await this.ensureSessionContext();
+    const body = lib.amazonStreamingUrlsBody({
+      coid,
+      customerId: ctx.customerId,
+      deviceId: ctx.deviceId,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      requestId: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)
+    });
+    const { status, text } = await this.dmls(ctx, lib.STREAMING_URLS_TARGET, body);
+    if (status !== 200) {
+      throw lib.notReady('load-failed', 'Amazon Music: the purchase stream request failed (HTTP ' + status + ')');
+    }
+    let json = null;
+    try { json = JSON.parse(text); } catch (e) { /* below */ }
+    const url = lib.streamingUrlFromReply(json);
+    if (!url) throw lib.notReady('load-failed', 'Amazon Music: no stream for this purchase');
+    console.log('[Amazon] purchase stream ready');
+    return url;
   },
 
   getPlaybackManifest: async function (track, config) {
