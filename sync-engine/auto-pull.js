@@ -233,6 +233,56 @@ function recordPushToSource(playlist, providerId, { externalId, snapshotId, trac
   };
 }
 
+/**
+ * A playlist the service it syncs from owns itself (Spotify's own: Daily
+ * Brew, Discover Weekly, Daily Mix): its stored owner is the service's id.
+ * A local edit can never reach it (the service refuses writes to playlists
+ * the user doesn't own), so a refresh always takes the service's tracks, the
+ * `sourceOnly` rule sync-start applies by the same owner.
+ */
+function sourceOwnsPlaylist(playlist) {
+  const from = playlist && playlist.syncedFrom;
+  return !!(from && from.ownerId && from.resolver && from.ownerId === from.resolver);
+}
+
+/**
+ * Refresh one synced playlist from its service now (the playlist page's
+ * Refresh), by the background sync's rules. `fetched` is what the service
+ * answered: { tracks, snapshotId }. Answers { outcome, playlist }, where
+ * `playlist` is the record to save, or null when there's nothing to save:
+ *   'unchanged'  the service has what we have, or hasn't changed since the
+ *                last sync (edits made here stand: the push banner offers
+ *                them), or answered nothing for a playlist with tracks (a bad
+ *                response, as applyPulledTracks reads it)
+ *   'pulled'     the service's tracks, applied (applyPulledTracks)
+ *   'conflict'   changed on the service and edited here: the tracks stay,
+ *                flagged hasUpdates so the playlist page asks which to keep
+ *   'not-synced' not imported from a service, or a hosted XSPF (its link is
+ *                its upstream and has its own refresh)
+ */
+function refreshFromSource(playlist, fetched, { now = Date.now() } = {}) {
+  const from = playlist && playlist.syncedFrom;
+  if (!from || !from.resolver || !from.externalId || isHostedXspf(playlist)) return { outcome: 'not-synced', playlist: null };
+  const providerId = from.resolver;
+  const incoming = Array.isArray(fetched && fetched.tracks) ? fetched.tracks : [];
+  const existing = Array.isArray(playlist.tracks) ? playlist.tracks : [];
+  if (incoming.length === 0 && existing.length > 0) return { outcome: 'unchanged', playlist: null };
+  const remote = tracksFingerprint(incoming);
+  if (remote === tracksFingerprint(existing)) return { outcome: 'unchanged', playlist: null };
+  const sourceOnly = sourceOwnsPlaylist(playlist);
+  // The service is where it was at the last sync: what differs is an edit
+  // made here, which the push banner already offers.
+  if (!sourceOnly && typeof from.tracksFingerprint === 'string' && remote === from.tracksFingerprint) {
+    return { outcome: 'unchanged', playlist: null };
+  }
+  const action = remoteUpdateAction(playlist, providerId, { sourceOnly });
+  if (action === 'conflict') return { outcome: 'conflict', playlist: { ...playlist, hasUpdates: true } };
+  return {
+    outcome: 'pulled',
+    playlist: applyPulledTracks(playlist, { providerId, remotePlaylist: { snapshotId: (fetched && fetched.snapshotId) || from.snapshotId }, tracks: incoming, now }),
+  };
+}
+
 module.exports = {
   shouldPushToSource,
   recordPushToSource,
@@ -244,4 +294,6 @@ module.exports = {
   remoteUpdateAction,
   applyPulledTracks,
   keepEditsMadeDuringPull,
+  sourceOwnsPlaylist,
+  refreshFromSource,
 };
