@@ -42,15 +42,21 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.22.1');
+    expect(axe.manifest.version).toBe('1.22.2');
   });
 
   test('declares streaming capabilities without auth', () => {
     expect(axe.capabilities).toEqual(
-      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, recommendations: true, widevine: true, mobile: false })
+      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, recommendations: true, widevine: true })
     );
     expect(axe.requires).toEqual({ hostBridges: ['webSession'], optionalHostBridges: ['widevine'] });
-    expect(axe.manifest.minAppVersion).toEqual({ desktop: '0.9.14' });
+    // #1562: the phones are gated like desktop, by the webSession bridge and
+    // a floor per platform, not a blanket mobile: false. Android 0.9.13 is
+    // the first build with the bridge rule, this.host and webSession. No iOS
+    // floor: iOS has no webSession bridge, so the rule hides it there, and its
+    // two-part version ("0.2") is one mobile's floor check can't compare.
+    expect(axe.capabilities).not.toHaveProperty('mobile');
+    expect(axe.manifest.minAppVersion).toEqual({ desktop: '0.9.14', android: '0.9.13' });
     expect(axe.settings.requiresAuth).toBe(false);
     expect(axe.urlPatterns).toEqual([
       'music.amazon.com/playlists/*',
@@ -885,6 +891,16 @@ describe('playlist URL routing', () => {
     // reach (they all check for a resolver first).
     expect(l.findResolverForUrl('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
     expect(l.getUrlType('https://music.amazon.com/tracks/B000SNWG5Q')).toBe('unknown');
+  });
+});
+
+describe('the marketplace entry on the phones (#1562)', () => {
+  const catalog = require('../../marketplace-manifest.json');
+  const entry = (catalog.plugins || catalog).find((p) => p.id === 'amazonmusic');
+
+  test('the catalog carries the same floors and no blanket mobile: false', () => {
+    expect(entry.minAppVersion).toEqual({ desktop: '0.9.14', android: '0.9.13' });
+    expect(entry.capabilities).not.toHaveProperty('mobile');
   });
 });
 

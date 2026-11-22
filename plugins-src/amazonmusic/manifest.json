@@ -2,9 +2,10 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.22.1",
+    "version": "1.22.2",
     "minAppVersion": {
-      "desktop": "0.9.14"
+      "desktop": "0.9.14",
+      "android": "0.9.13"
     },
     "author": "Parachord Team",
     "description": "Search and play Amazon Music in Parachord, without the Amazon Music app.",
@@ -23,7 +24,6 @@
     "albumSearch": true,
     "artistImage": true,
     "widevine": true,
-    "mobile": false,
     "recommendations": true,
     "status": true
   },
