@@ -61,6 +61,35 @@ describe('syncBannerState', () => {
     expect(syncBannerState(imported({ ...hosted, hasUpdates: true }))).toBeNull();
     expect(syncBannerState(imported({ ...hosted, tracks: NEW, hasUpdates: true, locallyModified: true, lastModified: 2000 })).state).toBe('push');
   });
+
+  // The hosted refresh flags a change from the link (locallyModified) so the
+  // next sync sends it to the mirrors. That's not your change: the banner
+  // said "You changed this playlist" after KCRW Rewind's feed updated
+  // (2026-11-22). The refresh records the link's own tracklist
+  // (linkTracksFingerprint); tracks that match it are the link's, and the
+  // sync sends them on by itself.
+  test('a hosted XSPF whose tracks are its link\'s own shows nothing, though the refresh flagged it for the sync', () => {
+    const hosted = { sourceUrl: 'https://example.com/a.xspf', source: 'hosted', linkTracksFingerprint: tracksFingerprint(NEW) };
+    expect(syncBannerState(imported({ ...hosted, tracks: NEW, locallyModified: true, lastModified: 2000 }))).toBeNull();
+  });
+
+  test('an edit on top of the link\'s tracks is yours: the push offer shows', () => {
+    const hosted = { sourceUrl: 'https://example.com/a.xspf', source: 'hosted', linkTracksFingerprint: tracksFingerprint(NEW) };
+    const edited = [...NEW, { title: 'Added here', artist: 'C' }];
+    expect(syncBannerState(imported({ ...hosted, tracks: edited, locallyModified: true, lastModified: 2000 })).state).toBe('push');
+  });
+
+  test('resolving or enriching the link\'s tracks is still the link\'s tracks', () => {
+    const hosted = { sourceUrl: 'https://example.com/a.xspf', source: 'hosted', linkTracksFingerprint: tracksFingerprint(NEW) };
+    const resolved = NEW.map((t) => ({ ...t, id: 'x', album: 'Some Album', sources: { spotify: { id: '1' } } }));
+    expect(syncBannerState(imported({ ...hosted, tracks: resolved, locallyModified: true, lastModified: 2000 }))).toBeNull();
+  });
+
+  test('the hosted refresh records the link\'s tracklist on every poll', () => {
+    const app = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+    const refresh = app.slice(app.indexOf('const refreshed = refreshedTracks(existing, { previousLinkTracks, linkTracks: parsed.tracks || [] });'));
+    expect(refresh.slice(0, 2500)).toContain('linkTracksFingerprint: tracksFingerprint(parsed.tracks || []),');
+  });
 });
 
 describe('pulledOpenPlaylist', () => {

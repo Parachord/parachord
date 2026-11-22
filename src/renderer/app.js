@@ -1425,7 +1425,7 @@ const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context')
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
 const { SERVICE_REFRESH_MS, playlistUpdateMode, isPolledHostedXspf, serviceRefreshDue, hostedListForMode } = require('./lib/playlist-update-mode');
 const { refreshedTracks } = require('./lib/hosted-refresh');
-const { shouldPushToSource, recordPushToSource } = require('../../sync-engine/auto-pull');
+const { shouldPushToSource, recordPushToSource, tracksFingerprint } = require('../../sync-engine/auto-pull');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -33359,6 +33359,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             creator: playlistCreator,
             ...(playlistCover ? { coverArt: playlistCover } : {}),
             tracks: refreshed.tracks,
+            // The link's own tracklist, on every poll: the sync banner reads
+            // tracks that match it as the link's change, not yours
+            // (lib/playlist-sync-banner.js).
+            linkTracksFingerprint: tracksFingerprint(parsed.tracks || []),
             lastUpdated: Date.now(),
             ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
           }, Date.now());
