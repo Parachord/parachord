@@ -20,6 +20,13 @@ function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', g
     reads: {},
     get(k) { this.reads[k] = (this.reads[k] || 0) + 1; return this.data[k] === undefined ? undefined : structuredClone(this.data[k]); },
     set(k, v) { this.data[k] = v; },
+    // The split store's one-record read (main-process/playlist-store.js).
+    playlistReads: 0,
+    getPlaylist(id) {
+      this.playlistReads++;
+      const found = (this.data.local_playlists || []).find((p) => p && p.id === id);
+      return found ? structuredClone(found) : null;
+    },
   };
   const handlers = new Map();
   const sent = [];
@@ -389,6 +396,20 @@ describe('sync:start pulls a changed import without asking', () => {
       expect(saved(`listenbrainz-same${i}`).tracks).toEqual(OLD);
     }
     expect(harness.store.reads.local_playlists).toBeLessThan(10);
+  });
+
+  test('a cycle reads the whole list the same number of times however many playlists it pulls (#801)', async () => {
+    const cycle = async (n) => {
+      const ids = Array.from({ length: n }, (_, i) => `p${i}`);
+      const { harness, fetched } = await run({ local: ids.map((id) => imported(id)), remotes: ids.map(remote) });
+      expect(fetched).toHaveLength(n);
+      return harness.store;
+    };
+    const two = await cycle(2);
+    const six = await cycle(6);
+    expect(six.reads.local_playlists).toBe(two.reads.local_playlists);
+    // Each pulled playlist's fresh copy is read on its own.
+    expect(six.playlistReads).toBeGreaterThan(two.playlistReads);
   });
 
   test('a playlist stuck with the old update flag is pulled on the next sync', async () => {
