@@ -16,7 +16,7 @@
 
 const REF_FIELDS = [
   'id', 'title', 'creator', 'description', 'source', 'sourceUrl',
-  'listenbrainzId', 'weekLabel', 'isExternal', 'isEphemeral'
+  'listenbrainzId', 'weekLabel', 'date', 'isExternal', 'isEphemeral'
 ];
 
 // The reopenable reference for an ephemeral playlist; undefined for a saved one.
