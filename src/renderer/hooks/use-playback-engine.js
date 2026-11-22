@@ -1040,7 +1040,10 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       try {
         console.log('⏹️ Pausing Apple Music (web) before playing new track');
         if (musicKitWeb.musicKit && musicKitWeb.musicKit.playbackState === 2) musicKitWeb.__parachordStopping = true;
-        musicKitWeb.pause();
+        // Waited for with the other engines' pauses: a pause landing after the
+        // next play had started cut into it ("play() request was interrupted
+        // by a call to pause()").
+        pausePromises.push(Promise.resolve(musicKitWeb.pause()).catch(() => {}));
       } catch (_e) {} // Silently ignore - may not be configured or playing
     }
 

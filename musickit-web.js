@@ -16,6 +16,10 @@ class MusicKitWeb {
     // attempt (see getAuthStatus). One attempt per distinct token keeps
     // us from looping if the SDK truly won't honor injection, while
     // still letting a fresh post-reauth token try once.
+    // One play at a time, newest wins (_runPlay).
+    this._playChain = Promise.resolve();
+    this._playIntent = 0;
+    this._pauseIntent = 0;
     this._lastLateInjectionToken = null;
     // MusicKit's stream bitrate, from the global Quality setting
     // (setQuality); applied after every configure.
@@ -132,6 +136,12 @@ class MusicKitWeb {
           build: '1.0.0',
         },
         sourceType: 24, // Web player source type
+        // MusicKit otherwise shows its own dialog for every playback error
+        // (a play another play interrupted read "The play() request was
+        // interrupted by a call to pause()"). Parachord handles a failed
+        // play itself: the plug-in falls back, the engine tries another
+        // source.
+        suppressErrorDialog: true,
       };
 
       // Debug: Log the full configuration to verify app name is correct
@@ -361,6 +371,34 @@ class MusicKitWeb {
   /**
    * Play a song by Apple Music catalog ID
    */
+  // One play at a time, newest wins. Two setQueue calls in flight together
+  // broke playback: the second cut into the first's play() ("interrupted by
+  // a call to pause()") and the first, landing late, left MusicKit stopped.
+  // Each play waits for the one before it; when its turn comes, it runs only
+  // if no newer play or pause was asked for meanwhile. A play already
+  // running when a pause comes (handlePlay pauses MusicKit before every
+  // play, whatever engine plays next) is paused once its setQueue lands, so
+  // it can't start Apple Music under another engine. Answers
+  // { playing: true } or { playing: false, superseded: true }.
+  _runPlay(label, run) {
+    const intent = ++this._playIntent;
+    const turn = this._playChain.catch(() => {}).then(async () => {
+      if (intent !== this._playIntent) {
+        console.log(`[MusicKitWeb] Skipping ${label}: a newer play or a pause came first`);
+        return { playing: false, superseded: true };
+      }
+      const result = await run();
+      if (this._pauseIntent > intent) {
+        console.log(`[MusicKitWeb] ${label} landed after a pause; pausing it`);
+        try { await this.musicKit.pause(); } catch (e) { /* not playing */ }
+        return { playing: false, superseded: true };
+      }
+      return result;
+    });
+    this._playChain = turn;
+    return turn;
+  }
+
   async play(songId) {
     if (!this.musicKit) {
       throw new Error('MusicKit not configured');
@@ -370,20 +408,22 @@ class MusicKitWeb {
       throw new Error('Not authorized - call authorize() first');
     }
 
-    try {
-      console.log('[MusicKitWeb] Playing song:', songId);
+    return this._runPlay(`song ${songId}`, async () => {
+      try {
+        console.log('[MusicKitWeb] Playing song:', songId);
 
-      // Set the queue to the song
-      await this.musicKit.setQueue({
-        song: songId,
-        startPlaying: true
-      });
+        // Set the queue to the song
+        await this.musicKit.setQueue({
+          song: songId,
+          startPlaying: true
+        });
 
-      return { playing: true, songId };
-    } catch (error) {
-      console.error('[MusicKitWeb] Play failed:', error);
-      throw error;
-    }
+        return { playing: true, songId };
+      } catch (error) {
+        console.error('[MusicKitWeb] Play failed:', error);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -398,20 +438,22 @@ class MusicKitWeb {
       throw new Error('Not authorized');
     }
 
-    try {
-      console.log('[MusicKitWeb] Setting queue with', songIds.length, 'songs');
+    return this._runPlay(`a queue of ${songIds.length}`, async () => {
+      try {
+        console.log('[MusicKitWeb] Setting queue with', songIds.length, 'songs');
 
-      await this.musicKit.setQueue({
-        songs: songIds,
-        startWith: startIndex,
-        startPlaying: true
-      });
+        await this.musicKit.setQueue({
+          songs: songIds,
+          startWith: startIndex,
+          startPlaying: true
+        });
 
-      return { playing: true, queueLength: songIds.length };
-    } catch (error) {
-      console.error('[MusicKitWeb] Play queue failed:', error);
-      throw error;
-    }
+        return { playing: true, queueLength: songIds.length };
+      } catch (error) {
+        console.error('[MusicKitWeb] Play queue failed:', error);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -419,6 +461,9 @@ class MusicKitWeb {
    */
   async pause() {
     if (!this.musicKit) return;
+    // A pause overtakes any play still waiting its turn, and one still
+    // running pauses itself when it lands (_runPlay).
+    this._pauseIntent = ++this._playIntent;
 
     try {
       await this.musicKit.pause();
@@ -449,6 +494,7 @@ class MusicKitWeb {
    */
   async stop() {
     if (!this.musicKit) return;
+    this._pauseIntent = ++this._playIntent;
 
     try {
       await this.musicKit.stop();
