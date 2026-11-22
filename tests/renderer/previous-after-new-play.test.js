@@ -111,8 +111,8 @@ describe('the engine wiring', () => {
   const lists = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/track-lists.js'), 'utf8');
 
   test('handlePlay records the track it replaces unless the caller already did', () => {
-    const start = engine.slice(engine.indexOf('const handlePlay = async (trackOrSource, { historyHandled = false, fromQueue = false } = {}) => {'));
-    expect(start.slice(0, 600)).toMatch(/if \(!historyHandled\) \{\s*const outgoing = currentTrackRef\.current;\s*playHistoryRef\.current = fromQueue\s*\? \(outgoing && !isSameTrack\(outgoing, trackOrSource\) \? pushPlayHistory\(playHistoryRef\.current, outgoing\) : playHistoryRef\.current\)\s*: historyForReplacedTrack\(playHistoryRef\.current, outgoing, trackOrSource\);/);
+    const start = engine.slice(engine.indexOf('const handlePlay = async (trackOrSource, { historyHandled = false, fromQueue = false, sourceSwitch = false } = {}) => {'));
+    expect(start.slice(0, 700)).toMatch(/if \(!historyHandled\) \{\s*const outgoing = currentTrackRef\.current;\s*playHistoryRef\.current = fromQueue\s*\? \(outgoing && !isSameTrack\(outgoing, trackOrSource\) \? pushPlayHistory\(playHistoryRef\.current, outgoing\) : playHistoryRef\.current\)\s*: historyForReplacedTrack\(playHistoryRef\.current, outgoing, trackOrSource\);/);
   });
 
   test('Next, Previous and the repeat-all wrap handle history themselves', () => {

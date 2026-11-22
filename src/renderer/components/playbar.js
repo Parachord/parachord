@@ -571,7 +571,7 @@ const Playbar = React.memo(function Playbar(props) {
                               checked: resId === currentResolverId,
                               onSelect: () => {
                                 if (resId !== currentResolverId && currentTrack.sources[resId]) {
-                                  handlePlay({ ...currentTrack, preferredResolver: resId });
+                                  handlePlay({ ...currentTrack, preferredResolver: resId }, { sourceSwitch: true });
                                 }
                               },
                               onContextMenu: sourceMenuFor(resId)

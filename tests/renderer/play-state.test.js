@@ -314,7 +314,7 @@ describe('the playbar\'s Play from shows the pick', () => {
   });
 
   test('the pick stays display-only: Play from passes it to handlePlay and never sets the track', () => {
-    expect(line3).toContain('handlePlay({ ...currentTrack, preferredResolver: resId });');
+    expect(line3).toContain('handlePlay({ ...currentTrack, preferredResolver: resId }, { sourceSwitch: true });');
     expect(line3).not.toMatch(/setCurrentTrack/);
   });
 });
