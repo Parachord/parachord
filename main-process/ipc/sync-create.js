@@ -22,6 +22,7 @@
 // (tests/main-process/sync-create-ipc.test.js).
 
 const { channelGateBlocksCreate, findNonOwnedSourceConflict } = require('../../sync-engine/playlist-push-candidate');
+const { pushHold } = require('../../sync-engine/push-hold');
 
 function registerSyncCreateIpc({
   ipcMain,
@@ -81,6 +82,14 @@ ipcMain.handle('sync:create-playlist', async (event, providerId, name, descripti
     let unresolved = [];
     if (provider.resolveTracks) {
       const resolveResult = await provider.resolveTracks(tracks, auth.token, lbHydrationOpts(providerId));
+      // A track whose lookup went unanswered would be removed by the push:
+      // hold, link nothing, and let the next sync try again (#1637,
+      // sync-engine/push-hold.js).
+      const hold = pushHold(resolveResult);
+      if (hold) {
+        console.warn(`[Sync] Holding the link of "${name}" to its ${providerId} playlist: ${hold.count || 'some'} track lookup(s) went unanswered; the next sync tries again`);
+        return { success: false, held: true, error: 'held-unanswered' };
+      }
       resolved = resolveResult.resolved;
       unresolved = resolveResult.unresolved;
     }
@@ -252,6 +261,13 @@ ipcMain.handle('sync:create-playlist', async (event, providerId, name, descripti
     let unresolved = [];
     if (provider.resolveTracks) {
       const resolveResult = await provider.resolveTracks(tracks, auth.token, lbHydrationOpts(providerId));
+      // A new mirror created without the tracks whose lookups went unanswered
+      // would miss them for good: hold the create (#1637).
+      const hold = pushHold(resolveResult);
+      if (hold) {
+        console.warn(`[Sync] Not creating "${name}" on ${providerId} yet: ${hold.count || 'some'} track lookup(s) went unanswered; the next sync tries again`);
+        return { success: false, held: true, error: 'held-unanswered' };
+      }
       resolved = resolveResult.resolved;
       unresolved = resolveResult.unresolved;
       console.log(`[Sync] Resolved ${resolved.length}/${tracks.length} tracks for ${providerId} (${unresolved.length} unresolved)`);
@@ -339,7 +355,7 @@ ipcMain.handle('sync:resolve-tracks', async (event, providerId, tracks) => {
 
   try {
     const result = await provider.resolveTracks(tracks, auth.token, lbHydrationOpts(providerId));
-    return { success: true, resolved: result.resolved, unresolved: result.unresolved };
+    return { success: true, resolved: result.resolved, unresolved: result.unresolved, unreachable: result.unreachable || [] };
   } catch (error) {
     return { success: false, error: error.message };
   }

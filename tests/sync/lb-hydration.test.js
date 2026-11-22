@@ -132,14 +132,17 @@ describe('resolveTracks threads the hydration guard', () => {
     expect(recorded).toEqual([['B', MBID]]);
   });
 
-  test('nothing reachable: unresolved this cycle but NOT recorded as a miss', async () => {
+  test('nothing reachable: unreachable this cycle (not a miss) and NOT recorded as one', async () => {
     // Recording it would start the 7→30 day cooldown for an outage that isn't
-    // the track's fault (the 2026-09 mapper outage did exactly that).
+    // the track's fault (the 2026-09 mapper outage did exactly that). And it's
+    // `unreachable`, not `unresolved`, so a push holds instead of dropping the
+    // track from the mirror (#1637).
     global.fetch = jest.fn(async () => { throw new TypeError('Failed to fetch'); });
     const hydration = { resolve: () => ({ skip: false }), record: jest.fn(), flush: jest.fn() };
-    const { resolved, unresolved } = await lb.resolveTracks([{ artist: 'A', title: 'B' }], 'tok', { hydration });
+    const { resolved, unresolved, unreachable } = await lb.resolveTracks([{ artist: 'A', title: 'B' }], 'tok', { hydration });
     expect(resolved).toEqual([]);
-    expect(unresolved).toHaveLength(1);
+    expect(unresolved).toEqual([]);
+    expect(unreachable).toHaveLength(1);
     expect(hydration.record).not.toHaveBeenCalled();
   });
 

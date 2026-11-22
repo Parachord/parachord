@@ -5478,7 +5478,9 @@ function getLbHydration() {
       const entry = cache.get(key);
       if (entry && entry.mbid) return { skip: true, mbid: entry.mbid }; // resolved — reuse
       if (!shouldLookup(entry, Date.now())) return { skip: true, mbid: null }; // miss in cooldown
-      if (!budget.tryConsume(Date.now())) return { skip: true, mbid: null }; // budget spent this cycle
+      // Budget spent this cycle: not a miss, a lookup still owed (`pending`), so a
+      // push holds rather than dropping the track (#1637).
+      if (!budget.tryConsume(Date.now())) return { skip: true, mbid: null, pending: true };
       return { skip: false }; // fresh / cooldown-expired → look up live
     },
     record(track, mbid) {

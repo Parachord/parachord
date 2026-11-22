@@ -39,6 +39,7 @@ const { syncBannerState } = require('../lib/playlist-sync-banner');
 const { NoticeBanner } = require('./notice-banner');
 const { duplicateCount, withoutDuplicates, offersRemoval, duplicateCopy } = require('../lib/playlist-duplicates');
 const { tracksFingerprint, refreshFromSource } = require('../../../sync-engine/auto-pull');
+const { pushHold } = require('../../../sync-engine/push-hold');
 
 // Column widths that follow the content area (#1389). At the 1000px minimum
 // window the content is 744px: a fixed 240px art column and 140px of source
@@ -562,7 +563,22 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   name: playlist.title,
                   description: playlist.description
                 };
-                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks, metadata);
+                // Matched on the service first, like the sync's own push: the
+                // push replaces the playlist there with what matched, so it
+                // waits while any lookup went unanswered (#1637,
+                // sync-engine/push-hold.js). Sending the raw list dropped every
+                // track without a Spotify id.
+                let resolveResult;
+                try {
+                  resolveResult = await window.electron.sync.resolveTracks(provider, playlist.tracks || []);
+                } catch (resolveErr) {
+                  console.warn('Send: track lookup failed:', resolveErr);
+                }
+                if (pushHold(resolveResult)) {
+                  showToast(`Couldn’t check every track on ${providerName} just now, so nothing was sent. Try again in a minute.`, 'error');
+                  return;
+                }
+                const result = await window.electron.sync.pushPlaylist(provider, externalId, resolveResult.resolved, metadata);
                 if (result?.success) {
                   const applyPush = prev => ({
                     ...prev,

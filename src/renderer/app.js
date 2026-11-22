@@ -1395,6 +1395,7 @@ const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
 const { SERVICE_REFRESH_MS, playlistUpdateMode, isPolledHostedXspf, serviceRefreshDue, hostedListForMode } = require('./lib/playlist-update-mode');
 const { refreshedTracks } = require('./lib/hosted-refresh');
 const { shouldPushToSource, recordPushToSource, tracksFingerprint } = require('../../sync-engine/auto-pull');
+const { pushHold } = require('../../sync-engine/push-hold');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -4501,17 +4502,25 @@ const Parachord = () => {
                     console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                     let pushOk = false;
                     try {
-                      // Resolve tracks to provider-specific URIs before pushing
-                      let tracksForPush = playlist.tracks || [];
+                      // Resolve tracks to provider-specific URIs before pushing. The push
+                      // REPLACES the mirror with what resolved, so it holds while any lookup
+                      // went unanswered (a rate limit, the network, the mapper) or the lookup
+                      // itself failed: pushing without those tracks removed them from the
+                      // mirror (#1637, sync-engine/push-hold.js). The playlist stays marked
+                      // (syncedAt doesn't move), so the next sync tries again.
+                      let resolveResult;
                       try {
-                        const resolveResult = await window.electron.sync.resolveTracks(providerId, tracksForPush);
-                        if (resolveResult.success) {
-                          tracksForPush = resolveResult.resolved;
-                          playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
-                        }
+                        resolveResult = await window.electron.sync.resolveTracks(providerId, playlist.tracks || []);
                       } catch (resolveErr) {
                         console.warn(`[Sync] Track resolution failed for "${playlist.title}" on ${providerId}:`, resolveErr.message);
                       }
+                      const hold = pushHold(resolveResult);
+                      if (hold) {
+                        console.warn(`[Sync] Holding the push of "${playlist.title}" to ${providerId}: ${hold.reason === 'unanswered' ? `${hold.count} track lookup(s) went unanswered` : 'the track lookup failed'}; the next sync tries again`);
+                        continue;
+                      }
+                      const tracksForPush = resolveResult.resolved;
+                      playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
 
                       const pushResult = await window.electron.sync.pushPlaylist(
                         providerId,
@@ -10140,17 +10149,25 @@ const Parachord = () => {
                 console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                 let pushOk = false;
                 try {
-                  // Resolve tracks to provider-specific URIs before pushing
-                  let tracksForPush = playlist.tracks || [];
+                  // Resolve tracks to provider-specific URIs before pushing. The push
+                  // REPLACES the mirror with what resolved, so it holds while any lookup
+                  // went unanswered (a rate limit, the network, the mapper) or the lookup
+                  // itself failed: pushing without those tracks removed them from the
+                  // mirror (#1637, sync-engine/push-hold.js). The playlist stays marked
+                  // (syncedAt doesn't move), so the next sync tries again.
+                  let resolveResult;
                   try {
-                    const resolveResult = await window.electron.sync.resolveTracks(providerId, tracksForPush);
-                    if (resolveResult.success) {
-                      tracksForPush = resolveResult.resolved;
-                      playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
-                    }
+                    resolveResult = await window.electron.sync.resolveTracks(providerId, playlist.tracks || []);
                   } catch (resolveErr) {
                     console.warn(`[Sync] Track resolution failed for "${playlist.title}" on ${providerId}:`, resolveErr.message);
                   }
+                  const hold = pushHold(resolveResult);
+                  if (hold) {
+                    console.warn(`[Sync] Holding the push of "${playlist.title}" to ${providerId}: ${hold.reason === 'unanswered' ? `${hold.count} track lookup(s) went unanswered` : 'the track lookup failed'}; the next sync tries again`);
+                    continue;
+                  }
+                  const tracksForPush = resolveResult.resolved;
+                  playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
 
                   const pushResult = await window.electron.sync.pushPlaylist(
                     providerId,

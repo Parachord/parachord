@@ -66,12 +66,15 @@ describe('spotify.js fail-fast while the breaker is open', () => {
     global.fetch = jest.fn();
     // Open the breaker far into the future via the persistence-restore hook.
     spotify._setBreakerStore({ load: () => ({ openUntil: Date.now() + 6 * HOUR_MS, level: 2 }) });
-    const { resolved, unresolved } = await spotify.resolveTracks(
+    const { resolved, unresolved, unreachable } = await spotify.resolveTracks(
       [{ title: 'X', artist: 'Y' }], 'tok'
     );
     expect(global.fetch).not.toHaveBeenCalled(); // fail-fast: no hammering the banned client_id
     expect(resolved).toEqual([]);
-    expect(unresolved).toEqual([{ artist: 'Y', title: 'X' }]);
+    // A cooldown is an unanswered lookup, never a miss: a push holds on it
+    // rather than dropping the track from the mirror (#1637).
+    expect(unresolved).toEqual([]);
+    expect(unreachable).toEqual([{ artist: 'Y', title: 'X' }]);
   });
 });
 
