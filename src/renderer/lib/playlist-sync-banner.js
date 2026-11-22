@@ -11,7 +11,12 @@
 // conflict stays visible after later syncs move `syncedAt`.
 //
 // A hosted XSPF never pulls from the service (its XSPF is the upstream), so
-// it only shows push, on the timestamp rule it always used.
+// it only shows push, on the timestamp rule it always used, and only for
+// your edits: the hosted refresh also flags a change that came from the link
+// (locallyModified, so the next sync sends it to the mirrors), and tracks
+// that match the link's own tracklist (linkTracksFingerprint, recorded on
+// every poll) are the link's, not yours. The banner said "You changed this
+// playlist" after a feed update (2026-11-22).
 //
 // Pure, no React, loads under plain Node.
 
@@ -25,6 +30,8 @@ function syncBannerState(playlist) {
   const localIsNewer = (playlist.lastModified || 0) > sourceSyncedAt;
 
   if (isHostedXspf(playlist)) {
+    if (typeof playlist.linkTracksFingerprint === 'string'
+      && tracksFingerprint(playlist.tracks) === playlist.linkTracksFingerprint) return null;
     return playlist.locallyModified && localIsNewer ? { state: 'push', localIsNewer } : null;
   }
   if (!hasRealLocalEdits(playlist, provider)) return null;
