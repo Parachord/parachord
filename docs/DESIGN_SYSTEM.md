@@ -236,6 +236,7 @@ Components use `React.createElement()` (no JSX) and live in `src/renderer/compon
 | How far along something is | `ProgressBar` | `progress-bar.js` | `value`, `max`, `color` (a service's, else the accent), `label` for screen readers |
 | A dialog | `Modal` | `modal.js` | Focus moves in and comes back, Escape and the scrim close it, one title size and three widths. `ConfirmModal` for confirm/cancel (the confirm button named for its action, `destructive` for red); `DontShowAgain` for the checkbox |
 | A panel that slides out beside the sidebar (Add to playlist) | `SidePanel` | `modal.js` | `Modal`'s focus handling and labelling; Escape goes to an inner field first; its scrim can leave the sidebar uncovered |
+| A notice at the top of the playlist page, with actions (send your changes, a conflict, duplicate tracks) | `NoticeBanner` | `notice-banner.js` | `tone`: success, warning or info; `icon`, `title`, `text`, `actions` |
 | A success, info or error message | `showToast(message, type, action, options)` | `toast.js` (`ToastRegion`) | Success is a toast, never a dialog |
 | A menu at the pointer whose actions run in the page (the header's Copy link) | `ContextMenu` | `menu.js` | `Menu`'s panel, keys and look at `{ x, y }`, kept inside the window |
 | A menu (right-click or "More") | `Menu`, items from `lib/item-menus.js` | `menu.js` | Portalled, keyboard and typeahead, flips up near the bottom; the dark 12px look. An item's `toggle` puts an on/off switch (a `menuitemcheckbox`) beside it |

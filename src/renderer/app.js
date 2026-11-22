@@ -321,41 +321,10 @@ window.resolveMbidViaIsrc = async (isrc, opts) => {
   }
 };
 
-// Pick an ISRC from a track. ISRC is per-recording, not per-service, so
-// any valid match anywhere on the track object is authoritative.
-//
-// Checks top-level `track.isrc` first (where the native MusicKit AM path
-// and the iTunes-Search-fallback put it), then walks each
-// `track.sources[*].isrc` (where Spotify writes it after parachord#893,
-// and where Apple Music's source record carries it because the resolver
-// result is spread into the source). Validates the canonical ISRC format
-// (2-letter country + 3-char alphanumeric registrant + 7 digits) and
-// normalizes (trim + uppercase) before returning.
-//
-// Returns null when no source carries a usable one. Skips sources with
-// `noMatch` set — those are dropped resolutions, not real source links.
-//
-// Mirrors the achordion.axe `resolveIsrc` helper (parachord#892) — same
-// rules so the two stay byte-equivalent across desktop's two ISRC sites.
-window.pickTrackIsrc = function(track) {
-  if (!track) return null;
-  const isValidIsrc = (s) => typeof s === 'string' && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(s);
-  if (typeof track.isrc === 'string' && track.isrc) {
-    const norm = track.isrc.trim().toUpperCase();
-    if (isValidIsrc(norm)) return norm;
-  }
-  if (track.sources) {
-    for (const id of Object.keys(track.sources)) {
-      const s = track.sources[id];
-      if (!s || s.noMatch) continue;
-      if (typeof s.isrc === 'string' && s.isrc) {
-        const norm = s.isrc.trim().toUpperCase();
-        if (isValidIsrc(norm)) return norm;
-      }
-    }
-  }
-  return null;
-};
+// Pick an ISRC from a track (src/renderer/lib/track-isrc.js, where the rules
+// and their history live; a module so pure code can use it too).
+const { pickTrackIsrc } = require('./lib/track-isrc');
+window.pickTrackIsrc = pickTrackIsrc;
 
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Four tiers:
@@ -35367,6 +35336,7 @@ useEffect(() => {
     getPlaylistMirrorTargets, handleExportPlaylist, handleImportPlaylistFromUrl, handlePlay, handlePlaylistDragEnd,
     linkUpdateMode, markPlaylistAsLocallyModified, moveInEditedPlaylist, navigateTo,
     refreshHostedPlaylist, savePlaylistToStore, setPlaylistUpdateMode, setQueueWithContext,
+    showConfirmDialog,
   });
 
   // A recommended (or Home's service-mix) playlist card's art: the
