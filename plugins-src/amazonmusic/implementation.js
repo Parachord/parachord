@@ -1234,6 +1234,38 @@ module.exports = {
       return list.filter(test).slice(0, limit);
     }
 
+    // The bought copy's COID for a track (#1629). By the track's ASIN first;
+    // on Music Unlimited, resolution plays a catalog copy, often another
+    // release than the one bought, so then by the song: the same title
+    // (folded, whole: "Overthrown (Live)" is another recording) and an artist
+    // that contains the other, folded, either way round (a credit that names
+    // more artists). Several copies: the closest length, and none more than
+    // OWNED_LENGTH_SLACK_S off when both lengths are known (another
+    // recording, not this song). Only rows with a COID; null when none fits.
+    const OWNED_LENGTH_SLACK_S = 15;
+    function ownedCoidFor(tracks, { asin, title, artist, duration } = {}) {
+      const rows = (Array.isArray(tracks) ? tracks : []).filter((t) => t && t.coid);
+      const byAsin = asin ? rows.find((t) => t.asin === asin) : null;
+      if (byAsin) return byAsin.coid;
+      const wantTitle = ownedFold(title);
+      const wantArtist = ownedFold(artist);
+      if (!wantTitle || !wantArtist) return null;
+      const both = (a, b) => !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
+      const same = rows.filter((t) => ownedFold(t.title) === wantTitle && both(ownedFold(t.artist), wantArtist));
+      if (!same.length) return null;
+      const length = typeof duration === 'number' && duration > 0 ? duration : null;
+      if (length == null) return same[0].coid;
+      let best = null;
+      let bestGap = Infinity;
+      for (const t of same) {
+        const gap = typeof t.duration === 'number' && t.duration > 0 ? Math.abs(t.duration - length) : null;
+        if (gap == null) { if (!best) best = t; continue; }
+        if (gap <= OWNED_LENGTH_SLACK_S && gap < bestGap) { best = t; bestGap = gap; }
+      }
+      if (best && bestGap === Infinity && same.every((t) => typeof t.duration === 'number' && t.duration > 0)) return null;
+      return best ? best.coid : null;
+    }
+
     // ── The recommendations (#1356 M8) ───────────────────────────────────────
     // The home page's MUSIC tab and the see-more route: the request, response
     // and pagination shapes (live-captured 2026-11; see
@@ -2621,6 +2653,7 @@ module.exports = {
       STREAMING_URLS_TARGET,
       amazonStreamingUrlsBody,
       streamingUrlFromReply,
+      ownedCoidFor,
       CSRF_HARVEST_MAX_AGE_MS, CONFIG_REUSE_MS,
       csrfHeadersFromCaptures,
       notReady,
@@ -3856,7 +3889,14 @@ module.exports = {
       console.warn('[Amazon] bought tracks unavailable for a purchase stream: ' + ((error && error.message) || error));
       throw lib.notReady('not-ready', "Couldn't read your Amazon purchases. Try again in a minute.");
     }
-    const coid = owned.coidByAsin && owned.coidByAsin.get(asin);
+    // By the ASIN, else by the song: on Unlimited the source is a catalog
+    // copy, often not the release that was bought (#1629).
+    const coid = lib.ownedCoidFor(owned.tracks, {
+      asin,
+      title: track && track.title,
+      artist: track && track.artist,
+      duration: track && track.duration
+    });
     if (!coid) return null;
     const ctx = await this.ensureSessionContext();
     const body = lib.amazonStreamingUrlsBody({
