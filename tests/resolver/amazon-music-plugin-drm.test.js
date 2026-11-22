@@ -922,6 +922,51 @@ describe('the first play on Prime (#1603)', () => {
 // (getStreamingURLs by the purchased copy's COID) as a progressive MP3, with
 // no DRM. getStreamUrl asks for it, only for a track on the plug-in's own
 // purchases list.
+// On Music Unlimited, resolution plays a catalog copy, often another release
+// of the song than the one bought, so the purchased copy's COID isn't under
+// the source's ASIN (#1629: "Overthrown" resolved to a different copy and
+// the plain-stream fallback found nothing). ownedCoidFor matches the bought
+// tracks by artist and title when the ASIN misses, and by length when
+// several copies match.
+describe('ownedCoidFor: the bought copy of a song (#1629)', () => {
+  const { ownedCoidFor } = instantiateAmazonPlugin(axe).lib;
+  const owned = [
+    { asin: 'B0BOUGHT01', coid: 'c-bought-01', title: 'Overthrown', artist: 'Pinegrove', duration: 214 },
+    { asin: 'B0BOUGHT02', coid: 'c-bought-02', title: 'Overthrown (Live)', artist: 'Pinegrove', duration: 260 },
+    { asin: 'B0NOCOID01', title: 'No Copy', artist: 'Pinegrove', duration: 100 }
+  ];
+
+  test('the ASIN first', () => {
+    expect(ownedCoidFor(owned, { asin: 'B0BOUGHT02', title: 'anything', artist: 'x' })).toBe('c-bought-02');
+  });
+
+  test('else the same artist and title, folded', () => {
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'overthrown', artist: 'PINEGROVE', duration: 213 })).toBe('c-bought-01');
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'Overthrown', artist: 'Pinegrove' })).toBe('c-bought-01');
+  });
+
+  test('a credit that names more artists still matches', () => {
+    const rows = [{ asin: 'B0X', coid: 'c-x', title: 'You Found Me', artist: 'Waxahatchee', duration: 254 }];
+    expect(ownedCoidFor(rows, { asin: 'B0Y', title: 'You Found Me', artist: 'Waxahatchee, Kevin Morby', duration: 254 })).toBe('c-x');
+  });
+
+  test('several copies: the closest length wins, and one far off is another recording', () => {
+    const two = [
+      { asin: 'B01', coid: 'c-studio', title: 'Song', artist: 'A', duration: 200 },
+      { asin: 'B02', coid: 'c-remaster', title: 'Song', artist: 'A', duration: 203 }
+    ];
+    expect(ownedCoidFor(two, { asin: 'B09', title: 'Song', artist: 'A', duration: 202 })).toBe('c-remaster');
+    expect(ownedCoidFor(two, { asin: 'B09', title: 'Song', artist: 'A', duration: 320 })).toBeNull();
+  });
+
+  test('no match, no COID, or nothing to match on is null', () => {
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'Another Song', artist: 'Pinegrove' })).toBeNull();
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'No Copy', artist: 'Pinegrove', duration: 100 })).toBeNull();
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1' })).toBeNull();
+    expect(ownedCoidFor(null, { asin: 'B0BOUGHT01' })).toBeNull();
+  });
+});
+
 describe('getStreamUrl: a purchase from the library locker (#1612)', () => {
   const { amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
   const STREAM = 'https://d1.cloudfront.net/obj?response-content-disposition=filename%3D%2205%20-%20Song.mp3%22&coid=b0owned001&Expires=1&Signature=s&Key-Pair-Id=k';
@@ -939,6 +984,15 @@ describe('getStreamUrl: a purchase from the library locker (#1612)', () => {
     return mock;
   };
   const lockerPosts = (fetches) => dmlsFetches(fetches).filter((r) => String(r.headers['X-Amz-Target'] || '').endsWith('.getStreamingURLs'));
+
+  test('on Unlimited, a catalog copy of a bought song finds the bought copy by artist and title (#1629)', async () => {
+    const mock = drmMock({ configJson: { ...CONFIG_JSON, tier: 'UNLIMITED_HD' }, dmls: [{ status: 200, text: JSON.stringify(lockerReply()) }] });
+    // drmTrack's song (Kara Jackson, "no fun", 210s), bought under another ASIN.
+    serveAmazonLibrary(mock.ws, { first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'no fun', artist: 'Kara Jackson', duration: 211 }]) });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0CATALOG9'), {})).resolves.toBe(STREAM);
+    expect(JSON.parse(lockerPosts(mock.fetches)[0].body).contentIdList).toEqual([{ identifier: 'b0owned001', identifierType: 'COID' }]);
+  });
 
   test('a bought track: one getStreamingURLs request by its COID, answering the signed URL', async () => {
     const { fetches } = lockerMock([{ status: 200, text: JSON.stringify(lockerReply()) }]);
@@ -1076,6 +1130,34 @@ describe('FairPlay for an iOS host (#1627)', () => {
     expect(fairPlayStreamFromReply(fairPlayReply({ urlList: ['http://insecure/manifest.m3u8'] }))).toBeNull();
     expect(fairPlayStreamFromReply({ ...fairPlayReply(), drmPlaybackResource: {} })).toBeNull();
     expect(fairPlayStreamFromReply(null)).toBeNull();
+  });
+
+  // Amazon answers 400 INVALID_MISSING_CUSTOMER_INFO without the plan's
+  // codes (#1629, live 2026-11-22). Its web player builds them from the
+  // account's tier (convertTierToEntitlementList in its own bundle): the
+  // plug-in mirrors that on config.json's tier, so it never claims a plan
+  // the account doesn't have.
+  test('amazonEntitlementList mirrors the web player: the account\'s own plan codes', () => {
+    const { amazonEntitlementList } = instantiateAmazonPlugin(axe).lib;
+    const unlimited = ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING'];
+    expect(amazonEntitlementList('UNLIMITED_HD')).toEqual(unlimited);
+    expect(amazonEntitlementList('UNLIMITED')).toEqual(unlimited);
+    expect(amazonEntitlementList('unlimited_individual')).toEqual(unlimited);
+    expect(amazonEntitlementList('PRIME')).toEqual(['SONIC_RUSH', 'ROBIN', 'NIGHTWING']);
+    expect(amazonEntitlementList('FREE')).toEqual(['NIGHTWING']);
+    expect(amazonEntitlementList('NONE')).toEqual([]);
+    expect(amazonEntitlementList(null)).toEqual([]);
+  });
+
+  test('the FairPlay manifest request carries the session tier\'s codes', async () => {
+    const { fetches } = drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply()) }] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    await resolver.getPlaybackManifest(drmTrack(), {});
+    // CONFIG_JSON's tier is UNLIMITED_HD.
+    expect(JSON.parse(fairPlayPosts(fetches)[0].body).customerInfo).toEqual({
+      marketplaceId: 'MKT', territoryId: 'US', entitlementList: ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING']
+    });
   });
 
   test('on iOS, getPlaybackManifest asks for FairPlay HLS and answers the hls-fairplay shape', async () => {

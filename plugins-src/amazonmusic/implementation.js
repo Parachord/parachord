@@ -1234,6 +1234,38 @@ module.exports = {
       return list.filter(test).slice(0, limit);
     }
 
+    // The bought copy's COID for a track (#1629). By the track's ASIN first;
+    // on Music Unlimited, resolution plays a catalog copy, often another
+    // release than the one bought, so then by the song: the same title
+    // (folded, whole: "Overthrown (Live)" is another recording) and an artist
+    // that contains the other, folded, either way round (a credit that names
+    // more artists). Several copies: the closest length, and none more than
+    // OWNED_LENGTH_SLACK_S off when both lengths are known (another
+    // recording, not this song). Only rows with a COID; null when none fits.
+    const OWNED_LENGTH_SLACK_S = 15;
+    function ownedCoidFor(tracks, { asin, title, artist, duration } = {}) {
+      const rows = (Array.isArray(tracks) ? tracks : []).filter((t) => t && t.coid);
+      const byAsin = asin ? rows.find((t) => t.asin === asin) : null;
+      if (byAsin) return byAsin.coid;
+      const wantTitle = ownedFold(title);
+      const wantArtist = ownedFold(artist);
+      if (!wantTitle || !wantArtist) return null;
+      const both = (a, b) => !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
+      const same = rows.filter((t) => ownedFold(t.title) === wantTitle && both(ownedFold(t.artist), wantArtist));
+      if (!same.length) return null;
+      const length = typeof duration === 'number' && duration > 0 ? duration : null;
+      if (length == null) return same[0].coid;
+      let best = null;
+      let bestGap = Infinity;
+      for (const t of same) {
+        const gap = typeof t.duration === 'number' && t.duration > 0 ? Math.abs(t.duration - length) : null;
+        if (gap == null) { if (!best) best = t; continue; }
+        if (gap <= OWNED_LENGTH_SLACK_S && gap < bestGap) { best = t; bestGap = gap; }
+      }
+      if (best && bestGap === Infinity && same.every((t) => typeof t.duration === 'number' && t.duration > 0)) return null;
+      return best ? best.coid : null;
+    }
+
     // ── The recommendations (#1356 M8) ───────────────────────────────────────
     // The home page's MUSIC tab and the see-more route: the request, response
     // and pagination shapes (live-captured 2026-11; see
@@ -1879,9 +1911,31 @@ module.exports = {
     // #1627): the request Amazon's web player sends from Safari
     // (parachord-mobile#780). Keyed by the catalog ASIN. The reply is HLS,
     // AAC only (256 AAC-LC, 128 / 48 HE-AAC), so FairPlay tops out at
-    // 256 kbps whatever the plan. `entitlementList` (the plan's codes) goes
-    // along only when the session has it; config.json doesn't carry it.
+    // 256 kbps whatever the plan. `entitlementList` is the plan's codes
+    // (amazonEntitlementList); an account with none gets no list, and Amazon
+    // refuses the manifest, as it does the web player's.
     const FAIRPLAY_MANIFEST_TARGET = 'getStreamingURLsWithFirstChunkV2';
+    // The plan's codes the FairPlay manifest request needs in
+    // customerInfo.entitlementList: without them Amazon answers 400
+    // INVALID_MISSING_CUSTOMER_INFO, and it serves only what the codes cover
+    // (live, #1629). Amazon's web player builds them from the account's tier
+    // (convertTierToEntitlementList in its bundle, 2026-11-22; its own enum:
+    // KATANA = Unlimited HD, HAWKFIRE = Unlimited, SONIC_RUSH = augmented
+    // Prime, ROBIN = Prime, NIGHTWING = Free). Mirrored on config.json's tier
+    // (UNLIMITED_HD and the like), so the plug-in never claims a plan the
+    // account doesn't have. Anything else: none, as the web player sends.
+    const AMAZON_ENTITLEMENTS = {
+      unlimited: ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING'],
+      prime: ['SONIC_RUSH', 'ROBIN', 'NIGHTWING'],
+      free: ['NIGHTWING']
+    };
+    function amazonEntitlementList(tier) {
+      if (isUnlimitedTier(tier)) return AMAZON_ENTITLEMENTS.unlimited.slice();
+      const t = typeof tier === 'string' ? tier.trim().toUpperCase() : '';
+      if (t === 'PRIME') return AMAZON_ENTITLEMENTS.prime.slice();
+      if (t === 'FREE') return AMAZON_ENTITLEMENTS.free.slice();
+      return [];
+    }
     function amazonFairPlayManifestBody({ asin, customerId, marketplaceId, territoryId, entitlementList, deviceId, userAgent, requestId } = {}) {
       if (!asin || !customerId || !deviceId) return null;
       const customerInfo = {
@@ -2621,6 +2675,7 @@ module.exports = {
       STREAMING_URLS_TARGET,
       amazonStreamingUrlsBody,
       streamingUrlFromReply,
+      ownedCoidFor,
       CSRF_HARVEST_MAX_AGE_MS, CONFIG_REUSE_MS,
       csrfHeadersFromCaptures,
       notReady,
@@ -2702,6 +2757,7 @@ module.exports = {
       amazonDmlsManifestBody,
       amazonDmlsLicenseBody,
       FAIRPLAY_MANIFEST_TARGET,
+      amazonEntitlementList,
       amazonFairPlayManifestBody,
       fairPlayStreamFromReply,
       amazonNativeSessionFromConfig,
@@ -3856,7 +3912,14 @@ module.exports = {
       console.warn('[Amazon] bought tracks unavailable for a purchase stream: ' + ((error && error.message) || error));
       throw lib.notReady('not-ready', "Couldn't read your Amazon purchases. Try again in a minute.");
     }
-    const coid = owned.coidByAsin && owned.coidByAsin.get(asin);
+    // By the ASIN, else by the song: on Unlimited the source is a catalog
+    // copy, often not the release that was bought (#1629).
+    const coid = lib.ownedCoidFor(owned.tracks, {
+      asin,
+      title: track && track.title,
+      artist: track && track.artist,
+      duration: track && track.duration
+    });
     if (!coid) return null;
     const ctx = await this.ensureSessionContext();
     const body = lib.amazonStreamingUrlsBody({
@@ -4010,6 +4073,7 @@ module.exports = {
       customerId: ctx.customerId,
       marketplaceId: ctx.marketplaceId,
       territoryId: ctx.territoryId,
+      entitlementList: lib.amazonEntitlementList(ctx.tier),
       deviceId: ctx.deviceId,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
       requestId: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)
