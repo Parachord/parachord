@@ -52,7 +52,10 @@ const PlaylistCoverImageBase = ({ url }) => {
     src: coverUrl,
     alt: '',
     className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-slow',
-    style: { opacity: 0 },
+    // Its own fill, the empty art box's grey: a cover with transparent
+    // corners (a rounded-square logo, KCRW Rewind's XSPF image) showed the
+    // mosaic through them. Invisible with the image until it has loaded.
+    style: { opacity: 0, backgroundColor: 'var(--placeholder-bg)' },
     ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
     onLoad: (e) => { e.target.style.opacity = '1'; },
     onError: () => setBroken(true),
