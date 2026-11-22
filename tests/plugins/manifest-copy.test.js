@@ -50,6 +50,13 @@ function textOffenders() {
       if (typeof v !== 'string') continue;
       for (const [re, why] of DEV_TEXT) if (re.test(v)) out.push(`${id}.${field}: ${why}`);
     }
+    // The "Playback quality" line's own words (#1608, settings.playbackQuality).
+    const quality = (m.settings && m.settings.playbackQuality) || {};
+    for (const field of ['summary', 'nativeApp']) {
+      const v = quality[field];
+      if (typeof v !== 'string') continue;
+      for (const [re, why] of DEV_TEXT) if (re.test(v)) out.push(`${id}.settings.playbackQuality.${field}: ${why}`);
+    }
   }
   return out;
 }

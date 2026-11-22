@@ -6,7 +6,7 @@
     "description": "Play Spotify through the Spotify app, controlled from Parachord.",
     "requirement": "Needs Spotify Premium, the Spotify app and your own free Spotify developer Client ID.",
     "icon": "♫",
-    "version": "1.2.9",
+    "version": "1.2.10",
     "color": "#1DB954",
     "homepage": "https://spotify.com",
     "email": "support@harmonix.app"
@@ -50,6 +50,7 @@
     ]
   },
   "settings": {
+    "playbackQuality": { "summary": "Set in the Spotify app (Settings › Audio quality)" },
     "requiresAuth": true,
     "authType": "oauth",
     "scopes": [

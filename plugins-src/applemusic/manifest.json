@@ -2,7 +2,7 @@
   "manifest": {
     "id": "applemusic",
     "name": "Apple Music",
-    "version": "1.5.7",
+    "version": "1.5.8",
     "author": "Parachord Team",
     "description": "Search and play Apple Music, and open music.apple.com links.",
     "requirement": "Needs an Apple Music subscription. Sign in with your Apple Account.",
@@ -52,6 +52,7 @@
     "albums": { "countries": ["us", "gb", "ca", "au", "de", "fr", "jp", "kr", "br", "mx", "es", "it", "nl", "se", "pl"] }
   },
   "settings": {
+    "playbackQuality": { "follows": true, "nativeApp": "Set in the Music app (Settings › Playback › Audio Quality)" },
     "requiresAuth": true,
     "authType": "musickit",
     "configurable": {

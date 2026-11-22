@@ -35890,8 +35890,27 @@ useEffect(() => {
 
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
+  // A plug-in dialog's "Playback quality" line opens the global setting
+  // (#1608): close the dialog, then Settings › General at that section.
+  const openPlaybackQualitySettings = () => {
+    setSelectedResolver(null);
+    setActiveView('settings');
+    setSettingsTab('general');
+    setTimeout(() => {
+      const section = document.getElementById('playback-quality-settings');
+      if (section) section.scrollIntoView({ block: 'start' });
+    }, 0);
+  };
+  // What the app plays a plug-in with, for its "Playback quality" line and
+  // the Playback Quality section (lib/playback-quality-line.js, #1608):
+  // hostPlayback[pluginId].nativeApp is the service's own app playing it
+  // (Apple Music through the macOS helper, which follows the Music app's
+  // quality setting rather than Parachord's), keyed like hostAccounts.
+  const hostPlayback = useMemo(() => ({
+    applemusic: { nativeApp: appleMusicNativeAvailable },
+  }), [appleMusicNativeAvailable]);
   const pluginSettingsDialogHandlers = useStableHandlers({
-    clearMetaServiceConfig, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveMetaServiceConfig, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
+    clearMetaServiceConfig, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openPlaybackQualitySettings, openSyncSetupModal, refreshPluginStatus, saveMetaServiceConfig, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
   });
 
   // The accounts the app itself signs in to, for the plug-in settings
@@ -36657,6 +36676,7 @@ useEffect(() => {
           homeSuggestionsAutoRefresh,
           homeSuggestionsAutoRefreshRef,
           installingResolvers,
+          hostPlayback,
           loadedResolvers,
           marketplaceCategory,
           marketplaceError,
@@ -36877,6 +36897,7 @@ useEffect(() => {
       currentTrackRef,
       dynamicModelOptions,
       hostAccounts,
+      hostPlayback,
       installingResolvers,
       isScanning,
       localFilesStats,
@@ -36890,6 +36911,9 @@ useEffect(() => {
       metaServiceConfigs,
       metaServices,
       playbackLimits,
+      playbackAbr,
+      playbackQuality,
+      playbackSpatial,
       pluginStatuses,
       playbackOffResolvers,
       recommendationsOffResolvers,

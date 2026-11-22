@@ -25,6 +25,11 @@
 //                    that need its sign-in, nested under the account and
 //                    its keys (Subsonic's "Report plays to your server",
 //                    #1546)
+//   PlaybackQualityRow  a music plug-in's "Playback quality" line: it
+//                    follows Settings › General › Playback Quality, or where
+//                    its quality is set (lib/playback-quality-line.js: by
+//                    capability, settings.playbackQuality and the host's
+//                    hostPlayback; #1608)
 //
 // The layout is the dialog's one order (CLAUDE.md, "Every plug-in's settings
 // are one layout"): on/off, the account, the keys it signs in with, what
@@ -322,6 +327,18 @@ function StartupRow({ plugin, startup }) {
       e(Switch, { checked: !!startup.on, onToggle: startup.toggle, 'aria-label': `Open ${plugin.name} in the background at startup` })));
 }
 
+// A music plug-in's "Playback quality" line (#1608): `line` is
+// playbackQualityLine's { follows, summary }. One that follows the global
+// setting has a button to it; one whose quality is set elsewhere says where.
+function PlaybackQualityRow({ line, onOpenSettings }) {
+  const e = React.createElement;
+  return e('div', { style: SECTION },
+    e(SettingRow, { label: 'Playback quality', hint: line.summary, style: { padding: 0 } },
+      line.follows && onOpenSettings
+        ? e(Button, { variant: 'text', size: 'sm', onClick: onOpenSettings, 'aria-label': 'Change Playback Quality in Settings' }, 'Change')
+        : null));
+}
+
 // The plug-in's own on/off options (settings.switches: { key: { label,
 // hint, default } }), in manifest order. Each one is a choice someone might
 // want off while the rest of the plug-in stays on, saved in the plug-in's
@@ -424,5 +441,5 @@ function WatchFolders({ watchFolders, isScanning, scanProgress, localFilesStats,
 }
 
 module.exports = {
-  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches,
+  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, PlaybackQualityRow,
   switchesOf, switchOn, settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT, shownKeyValues };

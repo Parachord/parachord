@@ -26,6 +26,7 @@ const { EmptyState, ErrorState } = require('./states');
 const { priorityMoves } = require('../lib/priority-order');
 const { pluginMatchesQuery } = require('../lib/plugin-search');
 const { pluginSwitchState } = require('../lib/plugin-switch');
+const { playbackQualityCopy } = require('../lib/playback-quality-line');
 const { DISCORD_PRESENCE_STATUS_LABELS, discordPresenceStatusTone } = require('../lib/discord-presence-status');
 
 // Raycast's brand colour and gradient (its extension's info card).
@@ -85,6 +86,7 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     homeSuggestionsAutoRefreshRef,
     installingResolvers,
     loadMarketplaceManifest,
+    hostPlayback,
     loadedResolvers,
     marketplaceCategory,
     marketplaceError,
@@ -150,6 +152,8 @@ const SettingsPage = React.memo(function SettingsPage(props) {
     themePref,
     uiZoom,
   } = props;
+  // Which plug-ins follow Playback Quality, in its section's words (#1608).
+  const qualityCopy = React.useMemo(() => playbackQualityCopy(loadedResolvers, hostPlayback || {}), [loadedResolvers, hostPlayback]);
   // The bound local server port (main-process/auth-port.js), 8888 until known.
   const authPort = authServerStatus?.port || 8888;
   return React.createElement('div', {
@@ -828,18 +832,23 @@ React.createElement(SettingRow, { label: 'Clear cache', hint: 'Removes cached ar
                       showToast('Cache cleared');
                     } }) }, React.createElement(Icons.Trash2, { className: 'w-4 h-4' }), 'Clear cache'))),
 
-                // Playback Quality Section (global for Widevine/stream resolvers)
+                // Playback Quality Section: one setting for every plug-in that
+                // follows it. Which ones do comes from the same rule as each
+                // plug-in dialog's "Playback quality" line
+                // (lib/playback-quality-line.js, #1608), over the plug-ins
+                // installed. A plug-in dialog's Change opens it here.
                 React.createElement(SettingsSection, {
                   key: 'playback-quality-section',
+                  id: 'playback-quality-settings',
                   title: 'Playback Quality',
-                  description: 'Amazon Music and Apple Music use these settings right now. Other services choose their own quality.'
+                  description: qualityCopy.description
                 },
                   React.createElement(SettingRow, { label: 'Quality', hint: 'Apple Music has two levels: Data saver plays its lower bitrate, every other level its best. When Apple Music plays through macOS, the Music app’s quality setting applies instead.' },
 React.createElement(Select, { value: playbackQuality, onChange: (v) => setPlaybackQuality(v), options: [{ value: 'max', label: 'Max (best available, lossless where playable)' }, { value: 'high', label: 'High (up to 500 kbps)' }, { value: 'standard', label: 'Standard (up to 200 kbps)' }, { value: 'saver', label: 'Data saver (up to 100 kbps)' }] })),
-                  React.createElement(SettingRow, { label: 'Adjust to your connection', hint: 'Amazon Music only. Lowers quality when your connection is slow, never above the level you chose.' },
+                  React.createElement(SettingRow, { label: 'Adjust to your connection', hint: `${qualityCopy.adjustPrefix} Lowers quality when your connection is slow, never above the level you chose.` },
                     React.createElement(Switch, { checked: playbackAbr === true, onToggle: () => setPlaybackAbr(playbackAbr !== true) })
                   ),
-                  React.createElement(SettingRow, { label: 'Prefer Dolby Atmos mixes', hint: 'Amazon Music only. Plays the 5.1 core of a track’s Atmos mix when there is one. This isn’t full Atmos: it’s mixed down on stereo output, and it plays instead of lossless FLAC when quality is Max.' },
+                  React.createElement(SettingRow, { label: 'Prefer Dolby Atmos mixes', hint: `${qualityCopy.atmosPrefix} Plays the 5.1 core of a track’s Atmos mix when there is one. This isn’t full Atmos: it’s mixed down on stereo output, and it plays instead of lossless FLAC when quality is Max.` },
                     React.createElement(Switch, { checked: playbackSpatial === true, onToggle: () => setPlaybackSpatial(playbackSpatial !== true) })
                   )
                 ),
