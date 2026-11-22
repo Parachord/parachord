@@ -120,15 +120,13 @@ function latestLoveAlbum(loves, active) {
   return null;
 }
 
-// "Refreshed 2h ago · since 2023". Refreshed only when the tracks really
-// changed (tracksChangedAt); a playlist never stamped shows just its year.
+// "Refreshed 2h ago": when the playlist's tracks last changed
+// (tracksChangedAt). A playlist never stamped gets no line, never a time from
+// lastModified (a background source save moves it). No "since <year>": one
+// line, as on mobile (#1632, parachord-mobile#798).
 function playlistSubtitle(p, now) {
   const changed = num(p && p.tracksChangedAt);
-  const created = num(p && p.createdAt);
-  const since = created === null ? null : `since ${new Date(created).getUTCFullYear()}`;
-  if (changed === null) return since;
-  const base = `Refreshed ${timeAgo(changed, now)}`;
-  return since ? `${base} · ${since}` : base;
+  return changed === null ? null : `Refreshed ${timeAgo(changed, now)}`;
 }
 
 // Up to four tiles in the order playlist, loves, album, mix. Each kind takes
