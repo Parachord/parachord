@@ -11,12 +11,20 @@ const playlistsSortOptions = [
   { value: 'alpha-desc', label: 'Z–A' },
 ];
 
-// The time "Recently modified" orders by: when the playlist's tracks last
-// changed (tracksChangedAt, playlist-freshness.js: an edit, a pull, a link's
-// update), else lastModified, else addedAt. Not lastModified first: it also
-// moves when a background save adds resolved sources to a playlist's tracks,
-// which put playlists nobody had touched in months at the top (2026-11-22).
-const modifiedTime = (p) => Number(p.tracksChangedAt) || Number(p.lastModified) || Number(p.addedAt) || 0;
+// When a playlist's tracks last changed: tracksChangedAt (playlist-
+// freshness.js stamps it on an edit, a pull or a link's update). A playlist
+// never stamped (its tracks haven't changed since stamping began; half a real
+// library, 2026-11-22) falls back to when it was created, then added. Never
+// lastModified: a background save adds resolved sources to a playlist's
+// tracks and moves it, which put playlists nobody had touched in months at
+// the top, here and on Home ("Refreshed 1m ago"). The one rule for the
+// Playlists page's and the Add to playlist panel's "Recently modified" and
+// Home's "freshest first" (home-model.js playlistFreshness).
+const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+function playlistChangedAt(p) {
+  if (!p) return 0;
+  return finite(p.tracksChangedAt) ?? finite(Number(p.createdAt) || null) ?? finite(Number(p.addedAt) || null) ?? 0;
+}
 
 // The Playlists page's and the Add to playlist panel's order for a sort
 // choice. A new array; the input is never mutated. An unknown choice keeps
@@ -34,7 +42,7 @@ function sortPlaylists(playlists, sort) {
         return (a.title || '').localeCompare(b.title || '');
       });
     case 'modified':
-      return sorted.sort((a, b) => modifiedTime(b) - modifiedTime(a));
+      return sorted.sort((a, b) => playlistChangedAt(b) - playlistChangedAt(a));
     case 'alpha-asc':
       return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     case 'alpha-desc':
@@ -44,4 +52,4 @@ function sortPlaylists(playlists, sort) {
   }
 }
 
-module.exports = { playlistsSortOptions, sortPlaylists };
+module.exports = { playlistsSortOptions, sortPlaylists, playlistChangedAt };

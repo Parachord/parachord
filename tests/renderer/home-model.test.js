@@ -6,7 +6,11 @@ const now = new Date(2026, 10, 12, 15, 0, 0).getTime();
 describe('freshness', () => {
   test('falls back tracksChangedAt, lastModified, createdAt, 0', () => {
     expect(m.playlistFreshness({ tracksChangedAt: 5, lastModified: 9, createdAt: 1 })).toBe(5);
-    expect(m.playlistFreshness({ lastModified: 9, createdAt: 1 })).toBe(9);
+    // Never lastModified: the background save of resolved sources moves it,
+    // which put untouched playlists first as "Refreshed 1m ago" (2026-11-22).
+    expect(m.playlistFreshness({ lastModified: 9, createdAt: 1 })).toBe(1);
+    expect(m.playlistFreshness({ lastModified: 9, addedAt: 3 })).toBe(3);
+    expect(m.playlistFreshness({ lastModified: 9 })).toBe(0);
     expect(m.playlistFreshness({ createdAt: 1 })).toBe(1);
     expect(m.playlistFreshness({})).toBe(0);
   });
@@ -16,7 +20,7 @@ describe('freshness', () => {
     expect(m.freshestPlaylists([renamed, edited]).map((p) => p.id)).toEqual(['e', 'r']);
   });
   test('limit defaults to 6', () => {
-    const ps = Array.from({ length: 9 }, (_, i) => ({ id: i, lastModified: i }));
+    const ps = Array.from({ length: 9 }, (_, i) => ({ id: i, tracksChangedAt: i + 1 }));
     expect(m.freshestPlaylists(ps)).toHaveLength(6);
     expect(m.freshestPlaylists(ps)[0].id).toBe(8);
   });
@@ -129,6 +133,16 @@ describe('playlistSubtitle', () => {
   });
   test('omits since without createdAt', () => {
     expect(m.playlistSubtitle({ tracksChangedAt: now - 3 * DAY }, now)).toBe('Refreshed 3d ago');
+  });
+  test('says Refreshed only when the tracks really changed: a source save moving lastModified is not one', () => {
+    const untouched = { createdAt: Date.UTC(2015, 0, 1), lastModified: now - 60000 };
+    expect(m.playlistSubtitle(untouched, now)).toBe('since 2015');
+    expect(m.playlistSubtitle({ lastModified: now - 60000 }, now)).toBeNull();
+  });
+  test('a playlist whose tracks changed yesterday outranks one a source save touched a minute ago', () => {
+    const changed = { id: 'changed', tracksChangedAt: now - DAY, createdAt: Date.UTC(2020, 0, 1) };
+    const touched = { id: 'touched', lastModified: now - 60000, createdAt: Date.UTC(2015, 0, 1) };
+    expect(m.freshestPlaylists([touched, changed]).map((p) => p.id)).toEqual(['changed', 'touched']);
   });
 });
 

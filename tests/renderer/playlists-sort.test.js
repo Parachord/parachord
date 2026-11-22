@@ -18,13 +18,24 @@ describe('sortPlaylists', () => {
     expect(ids(sortPlaylists(list, 'modified'))).toEqual(['edited', 'untouched-but-resolved']);
   });
 
-  test('modified: a playlist never stamped falls back to lastModified, then addedAt', () => {
+  test('modified: a playlist never stamped falls back to when it was created, then added, never lastModified', () => {
+    // Half a real library has never had a track change stamped; for those,
+    // lastModified is only the last background source save (2026-11-22).
     const list = [
-      { id: 'added-only', addedAt: 300 },
-      { id: 'modified-only', lastModified: 400 },
-      { id: 'stamped', tracksChangedAt: 200 },
+      { id: 'added-only', addedAt: 300, lastModified: 9_000 },
+      { id: 'created', createdAt: 250, addedAt: 900, lastModified: 9_000 },
+      { id: 'modified-only', lastModified: 9_000 },
+      { id: 'stamped', tracksChangedAt: 400 },
     ];
-    expect(ids(sortPlaylists(list, 'modified'))).toEqual(['modified-only', 'added-only', 'stamped']);
+    expect(ids(sortPlaylists(list, 'modified'))).toEqual(['stamped', 'added-only', 'created', 'modified-only']);
+  });
+
+  test('playlistChangedAt is the one rule, shared with Home', () => {
+    const { playlistChangedAt } = require('../../src/renderer/lib/playlists-sort');
+    const home = require('../../src/renderer/lib/home-model');
+    const p = { createdAt: 5, addedAt: 7, lastModified: 9 };
+    expect(playlistChangedAt(p)).toBe(5);
+    expect(home.playlistFreshness(p)).toBe(playlistChangedAt(p));
   });
 
   test('added, created (title breaks a tie), A–Z and Z–A', () => {
