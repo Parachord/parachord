@@ -641,7 +641,7 @@ const HomePage = React.memo(function HomePage(props) {
 
         show.playlists
           ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, cards: rowCards, ...playlistActions })
-          : playlistsLoading && skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards })),
+          : playlistsLoading && skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 })),
 
         show.albums
           ? React.createElement(AlbumsRow, {

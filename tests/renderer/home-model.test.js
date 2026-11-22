@@ -127,22 +127,15 @@ describe('jumpBackInTiles', () => {
 });
 
 describe('playlistSubtitle', () => {
-  test('relative time and year', () => {
-    expect(m.playlistSubtitle({ tracksChangedAt: now - 2 * 3600000, createdAt: Date.UTC(2023, 0, 1) }, now))
-      .toBe('Refreshed 2h ago · since 2023');
-  });
-  test('omits since without createdAt', () => {
+  // One line, "Refreshed <when the tracks last changed>"; no "since <year>"
+  // (dropped to match mobile, #1632 / parachord-mobile#798).
+  test('when the tracks last changed, and nothing else', () => {
+    expect(m.playlistSubtitle({ tracksChangedAt: now - 2 * 3600000, createdAt: Date.UTC(2023, 0, 1) }, now)).toBe('Refreshed 2h ago');
     expect(m.playlistSubtitle({ tracksChangedAt: now - 3 * DAY }, now)).toBe('Refreshed 3d ago');
   });
-  test('says Refreshed only when the tracks really changed: a source save moving lastModified is not one', () => {
-    const untouched = { createdAt: Date.UTC(2015, 0, 1), lastModified: now - 60000 };
-    expect(m.playlistSubtitle(untouched, now)).toBe('since 2015');
+  test('a playlist whose tracks never changed gets no line: a source save moving lastModified is not a change', () => {
+    expect(m.playlistSubtitle({ createdAt: Date.UTC(2015, 0, 1), lastModified: now - 60000 }, now)).toBeNull();
     expect(m.playlistSubtitle({ lastModified: now - 60000 }, now)).toBeNull();
-  });
-  test('a playlist whose tracks changed yesterday outranks one a source save touched a minute ago', () => {
-    const changed = { id: 'changed', tracksChangedAt: now - DAY, createdAt: Date.UTC(2020, 0, 1) };
-    const touched = { id: 'touched', lastModified: now - 60000, createdAt: Date.UTC(2015, 0, 1) };
-    expect(m.freshestPlaylists([touched, changed]).map((p) => p.id)).toEqual(['changed', 'touched']);
   });
 });
 
