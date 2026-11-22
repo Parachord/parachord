@@ -2,7 +2,7 @@
 
 **Release date:** not yet released
 
-> Amazon plays the songs you've bought on any account, Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists, top tracks, discographies, charts, your listening history and artist bios come from every plug-in that has them.
+> Amazon plays the songs you've bought on any account, Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists, top tracks, discographies, charts, your listening history and artist bios come from every plug-in that has them. Saving a playlist no longer freezes the app, a synced playlist can be refreshed on the spot, and a plug-in that needs you to sign in no longer looks turned on until you have.
 
 ---
 
@@ -11,6 +11,8 @@
 - **Bandcamp: only tracks you can play.** Some artists make their Bandcamp tracks buy-only, and Bandcamp's search doesn't say which. Parachord used to offer those as Bandcamp sources, then fail to play them. It now checks: a buy-only track never plays from Bandcamp, and Parachord doesn't swap in someone else's upload of the same song. Buy on Bandcamp still shows for it. This comes with the Bandcamp plug-in update, which installs itself.
 - **Amazon: play the songs you've bought, without Music Unlimited.** With Amazon Prime or a free Amazon Music account, Parachord used to play nothing from Amazon. It now plays the songs you've bought from Amazon, which are yours on any plan: they show the Amazon icon and play like any other source. Everything else from Amazon still needs Music Unlimited, and plays from your other services instead. The Amazon Music plug-in's settings say so. Parachord reads your purchases from your Amazon library, so a new purchase shows up within a few hours or after a restart. This comes with the Amazon Music plug-in update, which installs itself, and needs this version of Parachord.
 - **Subsonic: report plays to your server.** A new switch in the Subsonic plug-in's settings, "Report plays to your server" (under your server and account), sends what you play from your server back to it: it shows as Now Playing there while it plays, and counts as a play once you've listened past the usual scrobble point. Only tracks that play from your server are reported. It's off by default, since a server that also scrobbles to Last.fm or ListenBrainz could count the same play twice. It needs this version of Parachord and the Subsonic plug-in update, which installs itself. Thanks to kiarie00 for the idea (#1546).
+- **Amazon: songs you've bought start more reliably.** The first one you play after signing in starts as it should, and one that won't start the usual way plays another way instead of being skipped. This comes with the Amazon Music plug-in update, which installs itself.
+- **Apple Music: no more broken playback or Apple error dialogs on a quick double play.** When Apple Music plays through its web player and you start two songs in quick succession, they no longer trip over each other. If your Mac's own Apple Music player isn't ready (it can happen after a macOS update), Parachord says so and suggests opening the Music app once, which fixes it.
 
 ## Discovery
 
@@ -21,6 +23,44 @@
 - **History works with ListenBrainz alone.** Top Tracks, Top Albums and Top Artists used to need a Last.fm account; they now come from whichever service you're signed in to, Last.fm or ListenBrainz, with a Source menu to switch when you use both. Recently Played still combines both. This comes with the Last.fm and ListenBrainz plug-in updates and needs this version of Parachord.
 - **Artist bios: pick the source.** An artist's Biography tab now has a Source picker listing every plug-in with a bio for that artist (Wikipedia, Discogs and, new, Last.fm), so you can read another one's. Parachord remembers your pick and shows that source first for every artist that has a bio from it; until you pick, Wikipedia's comes first, as before. Last.fm's bios never showed before. The playbar's artist tooltip and Search's artist preview use the same bios. This comes with the Wikipedia, Discogs and Last.fm plug-in updates and needs this version of Parachord.
 - **Add a friend by name, where you are.** Typing a username in Add a friend now looks first on the services you're signed in to, so someone who uses only ListenBrainz no longer gets a Last.fm stranger with the same name. Profile links work as before. This comes with the Last.fm and ListenBrainz plug-in updates and needs this version of Parachord.
+
+## Playing music
+
+- **Play from shows your pick right away.** Choosing a source in the playbar's Play from menu now shows it while that source starts, instead of the old one until the music changes. If the source you picked can't play the song, what was playing carries on, and Parachord tells you, instead of stopping.
+- **A song you have only as a file finds its other sources.** Once it starts playing, Parachord looks it up on your services once, so its other sources show and it plays from them when the file isn't there.
+
+## Playlists and sync
+
+- **Refresh a synced playlist now.** A playlist that comes from a service, such as a Daily Brew rebuilt every morning or a playlist you follow, has a Refresh button at the top, so you don't wait for the next sync. It says whether anything changed, and when the service sends nothing back, it says so and leaves your playlist as it was.
+- **A synced playlist shows its latest tracks.** After a sync brought in a playlist's new tracks, opening it could still show an older list, and Export saved that older list. Both now show what the playlist really holds. Editing such a playlist no longer puts the older list back, on Parachord or on your services.
+- **Daily playlists update with the next sync.** Every sync now checks every playlist you sync for changes, so one that's rebuilt daily is picked up within one sync, even with a long list of playlists. A rebuilt playlist also keeps its created date.
+- **A playlist from a link isn't "changed by you" when the link changes.** An update to a hosted playlist no longer asks whether to keep your changes when you made none.
+- **Saved weekly playlists get their own names.** Saving a Weekly Jams or Weekly Exploration now names it by its kind and week, such as "Weekly Exploration · Nov 17, 2026", so two weeks never share a name, and one can't overwrite another on your services.
+- **Playlist covers look right.** A cover with see-through corners no longer shows the album mosaic behind it. Mosaics use a song's own cover even when it has no album name, and look up at most 12 albums per playlist.
+
+## Speed
+
+- **Saving a playlist no longer freezes the app.** Parachord kept every playlist in one large file and rewrote all of it for every change, which could freeze the app for up to a second at a time while songs were finding their sources or a sync ran. Each playlist now has a file of its own, so a save takes a few milliseconds, and a sync reads only the playlists it changes. The first start of this version moves your playlists over, in about a second; your old playlist file is kept as a backup. An older version of Parachord started after this one won't see your playlists.
+
+## Settings and plug-ins
+
+- **A plug-in that needs a sign-in doesn't look turned on until you sign in.** Its switches and its tile on the Plug-Ins page read as off, and its settings put your account first. Your choices are kept and come back when you sign in.
+- **Each music plug-in's settings say how its playback quality is set.** In Parachord's Playback Quality setting, or, for Spotify and for Apple Music through the Music app, in that app's own settings.
+
+## Smaller fixes
+
+- In History, an album's name opens the album, as the artist's name opens the artist. Thanks to @theli-ua.
+- Home's concert cards open the artist's On Tour tab, as the Concerts page does, and concerts near you no longer match a state's letters inside another city's name.
+- A history mix's "Playing from" opens the mix, not Home.
+- Asking Shuffleupagus for a mix without saying how many songs gives you 10.
+- In the chat, two cards on one line show as two cards, and a reply's links open only web pages or Parachord's own commands.
+- Counts read "1 play" and "1 track", never "1 plays" or "track(s)", and something from 360 days ago reads "12mo ago", not "0y ago".
+- An artist photo that failed to load is looked up again later, instead of being saved as "no photo".
+- Gemini: Parachord sends your API key in a request header, as Google recommends.
+
+## For plug-in authors
+
+- **`this.host`.** A plug-in reaches Parachord through `this.host`: its version, its platform, the plug-in's own settings, opening a link, and the host bridges its manifest asks for in `requires.hostBridges` or `optionalHostBridges`. The full contract is "The plug-in host contract" in the plug-ins guide.
 
 ---
 
