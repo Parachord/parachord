@@ -34,7 +34,7 @@
 
 const fsDefault = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const { createHash } = require('crypto');
 const { indexPlaylists, stampTrackChanges } = require('../playlist-freshness');
 
 const INDEX_FILE = 'index.json';
@@ -42,7 +42,7 @@ const INDEX_FILE = 'index.json';
 // A key's file: sha1 so any id (slashes, dots, reserved names, length) is a
 // safe file name on every platform.
 function fileNameFor(key) {
-  return `p-${crypto.createHash('sha1').update(String(key)).digest('hex')}.json`;
+  return `p-${createHash('sha1').update(String(key)).digest('hex')}.json`;
 }
 
 // The keys for a list, in order: the id, then `id\u0000n` for its nth repeat;
