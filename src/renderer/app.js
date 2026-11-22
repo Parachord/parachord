@@ -2099,6 +2099,8 @@ const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mir
 // <image> only when it's a public http(s) URL, and written back out on export.
 const { playlistImageUrl, playlistImageXml, withPlaylistImage } = require('./lib/xspf-image');
 const { storedXspfFor } = require('./lib/stored-xspf');
+const { sortPlaylists: sortPlaylistsBy } = require('./lib/playlists-sort');
+const { existingHostedRecord } = require('./lib/hosted-import-target');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
 const { StopSyncDialog } = require('./components/stop-sync-dialog');
@@ -5465,37 +5467,8 @@ const Parachord = () => {
     return items.filter(p => p.title.toLowerCase().includes(query));
   }, [playlistsSearch]);
 
-  const sortPlaylists = useCallback((items) => {
-    const sorted = [...items];
-    switch (playlistsSort) {
-      case 'added':
-        // Sort by addedAt descending (newest first), fallback to createdAt
-        return sorted.sort((a, b) => {
-          const aTime = Number(a.addedAt) || Number(a.createdAt) || 0;
-          const bTime = Number(b.addedAt) || Number(b.createdAt) || 0;
-          return bTime - aTime;
-        });
-      case 'created':
-        // Sort by createdAt descending (newest first), fallback to addedAt, then by title for stability
-        return sorted.sort((a, b) => {
-          const aTime = Number(a.createdAt) || Number(a.addedAt) || 0;
-          const bTime = Number(b.createdAt) || Number(b.addedAt) || 0;
-          if (aTime !== bTime) return bTime - aTime;
-          // Tie-breaker: sort by title alphabetically
-          return (a.title || '').localeCompare(b.title || '');
-        });
-      case 'modified':
-        // Sort by lastModified descending, fallback to addedAt
-        return sorted.sort((a, b) => {
-          const aTime = Number(a.lastModified) || Number(a.addedAt) || 0;
-          const bTime = Number(b.lastModified) || Number(b.addedAt) || 0;
-          return bTime - aTime;
-        });
-      case 'alpha-asc': return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-      case 'alpha-desc': return sorted.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-      default: return sorted;
-    }
-  }, [playlistsSort]);
+  // One sort for this page and the Add to playlist panel (lib/playlists-sort.js).
+  const sortPlaylists = useCallback((items) => sortPlaylistsBy(items, playlistsSort), [playlistsSort]);
 
   // Filter artist releases by search query
   const filterArtistReleases = useCallback((releases) => {
@@ -33327,65 +33300,59 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // even when one provider's push DOES have legitimate work, sibling
       // providers' playlist-diff phases now proceed in parallel rather
       // than getting starved.
-      let existingOnDisk = null;
+      let onDisk = null;
       try {
-        const onDisk = await window.electron.playlists.load();
-        existingOnDisk = onDisk.find(p => p.sourceUrl === url || p.id === id);
+        onDisk = await window.electron.playlists.load();
       } catch (e) {
         console.warn('Failed to load on-disk playlists for hosted-import dedup:', e);
       }
 
-      // Check if playlist already exists (use updater form to avoid stale closure)
-      let didUpdate = false;
-      let updatedPlaylist = null;
-      setPlaylists(prev => {
-        const existingIndex = prev.findIndex(p => p.sourceUrl === url || p.id === id);
-        // React state takes precedence when present (it's the freshest write
-        // path); fall back to the on-disk record when React state is stale.
-        // The branch reached either way preserves `syncedTo` / `syncedFrom`
-        // / `syncSources` via the `...existing` spread.
-        const existing = existingIndex >= 0 ? prev[existingIndex] : existingOnDisk;
-        if (existing) {
-          didUpdate = true;
-          // Keep the local tracks (edits included) unless the link's
-          // tracklist changed since the last import; a change replaces them
-          // and is flagged so the sync loop pushes it to the mirrors. An
-          // unchanged reload or poll leaves the edits, and their flag, alone
-          // (lib/hosted-refresh.js).
-          let previousLinkTracks = null;
-          try { previousLinkTracks = existing.xspf ? (parseXSPF(existing.xspf)?.tracks || null) : null; } catch { previousLinkTracks = null; }
-          const refreshed = refreshedTracks(existing, { previousLinkTracks, linkTracks: parsed.tracks || [] });
-          const contentChanged = refreshed.changed;
-          // Freshness: a refresh that brought different tracks is a change
-          // (tracksChangedAt, lastChangeAdded); a re-poll with the same
-          // tracks keeps the existing stamp.
-          updatedPlaylist = stampPlaylist(existing, {
-            ...existing,
-            xspf: content,
-            title: playlistTitle,
-            creator: playlistCreator,
-            ...(playlistCover ? { coverArt: playlistCover } : {}),
-            tracks: refreshed.tracks,
-            // The link's own tracklist, on every poll: the sync banner reads
-            // tracks that match it as the link's change, not yours
-            // (lib/playlist-sync-banner.js).
-            linkTracksFingerprint: tracksFingerprint(parsed.tracks || []),
-            lastUpdated: Date.now(),
-            ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
-          }, Date.now());
+      // Decide update or new HERE, before touching state
+      // (lib/hosted-import-target.js): the copy in state (playlistsRef, the
+      // latest committed list) first, then the one on disk. Deciding inside a
+      // setPlaylists updater and reading the answer right after misses
+      // whenever React defers the updater, as it does at launch: every hosted
+      // playlist was rebuilt from its link on every launch (2026-11-22).
+      // Either copy preserves `syncedTo` / `syncedFrom` / `syncSources`
+      // through the `...existing` spread.
+      const existing = existingHostedRecord({ stateList: playlistsRef.current, diskList: onDisk, url, id });
+      if (existing) {
+        // Keep the local tracks (edits included) unless the link's
+        // tracklist changed since the last import; a change replaces them
+        // and is flagged so the sync loop pushes it to the mirrors. An
+        // unchanged reload or poll leaves the edits, and their flag, alone
+        // (lib/hosted-refresh.js).
+        let previousLinkTracks = null;
+        try { previousLinkTracks = existing.xspf ? (parseXSPF(existing.xspf)?.tracks || null) : null; } catch { previousLinkTracks = null; }
+        const refreshed = refreshedTracks(existing, { previousLinkTracks, linkTracks: parsed.tracks || [] });
+        const contentChanged = refreshed.changed;
+        // Freshness: a refresh that brought different tracks is a change
+        // (tracksChangedAt, lastChangeAdded); a re-poll with the same
+        // tracks keeps the existing stamp.
+        const updatedPlaylist = stampPlaylist(existing, {
+          ...existing,
+          xspf: content,
+          title: playlistTitle,
+          creator: playlistCreator,
+          ...(playlistCover ? { coverArt: playlistCover } : {}),
+          tracks: refreshed.tracks,
+          // The link's own tracklist, on every poll: the sync banner reads
+          // tracks that match it as the link's change, not yours
+          // (lib/playlist-sync-banner.js).
+          linkTracksFingerprint: tracksFingerprint(parsed.tracks || []),
+          lastUpdated: Date.now(),
+          ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
+        }, Date.now());
+        setPlaylists(prev => {
+          const existingIndex = prev.findIndex(p => p.sourceUrl === url || p.id === id);
           if (existingIndex >= 0) {
             return prev.map((p, i) => i === existingIndex ? updatedPlaylist : p);
           }
-          // Existed on disk but not in React state — restore it. Without
-          // this, the "add new" branch below would create a duplicate
-          // playlist entry on next save, and the sync push loop would still
-          // see the fresh entry (no sync state) and re-push everything.
+          // Existed on disk but not in React state: restore it, so the
+          // next save doesn't add a second entry.
           return [updatedPlaylist, ...prev];
-        }
-        return prev;
-      });
+        });
 
-      if (didUpdate) {
         // Persist updated hosted playlist to disk so it survives sync reloads and can be synced to providers
         try {
           await window.electron.playlists.save(updatedPlaylist);
