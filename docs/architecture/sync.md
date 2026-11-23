@@ -442,16 +442,16 @@ A row is matched at most once. A row matched by tier 2 or 3 **keeps its own id**
 
 Optional opt-in cross-service love sync, both directions. Adding a track to the Parachord collection (`addTrackToCollection`, app.js) → optionally push as a love to LB and/or LFM. Importing loved tracks (`runLoveImport`, app.js; pure helpers in `src/renderer/lib/love-import.js`; plan: `docs/plans/2026-11-06-import-loved-tracks.md`) pulls a service's loves into the collection. Last.fm reads `user.getLovedTracks` (unsigned: API key + username, no session, no signature).
 
-**Three independent controls per service**, in each scrobbler's connected-state card:
-1. Toggle: "Push newly loved tracks to <service>" — gates live `addTrackToCollection` push.
-2. Button: "Backfill N loved tracks → <service>" — one-shot manual push of every collection track not yet pushed for that service.
-3. Button: "Import loved tracks" / "Import new loves" (parachord#1071) — one-shot pull of the account's loves into the collection, with per-page progress and a completion summary (added / already in collection / skipped / you removed).
+**Three independent controls per service**, one layout for every plug-in whose manifest declares `lovedTracks` (`ScrobblerSettingsCard`, `src/renderer/components/settings-cards.js`), shared `SettingRow`s under the plug-in's nested Scrobbling section, signed in or not:
+1. **Import loved tracks** (parachord#1071), a button ("Import", then "Import new"): one-shot pull of the account's loves into the collection, with its progress in the row's line and a completion summary toast (added / already in collection / skipped / you removed). **It needs only a username, never a sign-in**: both services publish a user's loves (Last.fm's `user.getLovedTracks` is unsigned, ListenBrainz's feedback endpoint is public). `runLoveImport` reads the scrobbling sign-in's username, else the plug-in account's (`metaServiceConfigs[id].username`), and passes it to `getLovedTracksPage({ …, username })`. Without either, the row says "Add your X username first" and the button is off. Until 2026-11-23 the controls showed only while scrobbling was signed in, and the dialog showed Scrobbling only while Enable was on, so Last.fm's import went missing for anyone not scrobbling to it; the Scrobbling section now shows whatever Enable says.
+2. **Push loves to <service>**, a switch: gates the live `addTrackToCollection` push. It needs the scrobbling sign-in, so signed out it reads off and locked, "Sign in to scrobble first" (#1614); the saved choice is kept.
+3. **Send N loved tracks to <service>**, a button, shown only signed in with something unsent: one-shot manual push of every collection track not yet pushed for that service (the "backfill" in code).
 
-All default off and are independent. (Last.fm ships first; the ListenBrainz button lands with its stacked slice.)
+All default off and are independent.
 
 **Persistence keys:**
 - `scrobbler_love_push_enabled: { lastfm?: boolean, listenbrainz?: boolean }` — toggle state.
-- `love_pushed_keys: { [trackId]: { lastfm?: ts, listenbrainz?: ts | { at: ts, mbid } } }` — idempotency cache. Written immediately after each successful push (so a crashed backfill resumes) and by the import: every row an import ADDS or MATCHES is marked for the service the loves came FROM, so neither the toggle, the backfill nor a re-import sends a love straight back to its origin — and the Backfill button never re-offers loves the service already has. A ListenBrainz push stores the recording MBID it resolved in `{ at, mbid }` (plain timestamps before this shipped, and both shapes are truthy for every "already pushed" check).
+- `love_pushed_keys: { [trackId]: { lastfm?: ts, listenbrainz?: ts | { at: ts, mbid } } }` — idempotency cache. Written immediately after each successful push (so a crashed backfill resumes) and by the import: every row an import ADDS or MATCHES is marked for the service the loves came FROM, so neither the toggle, the backfill nor a re-import sends a love straight back to its origin — and the Send row never re-offers loves the service already has. A ListenBrainz push stores the recording MBID it resolved in `{ at, mbid }` (plain timestamps before this shipped, and both shapes are truthy for every "already pushed" check).
 - `love_import_cursor: { lastfm?: seconds, listenbrainz?: seconds }` — newest loved-at seen per service. Both APIs answer newest-first; the walk stops at the first love older than the cursor (loves equal to it are kept — both services stamp per second).
 
 **Invariants:**
@@ -467,7 +467,7 @@ All default off and are independent. (Last.fm ships first; the ListenBrainz butt
 - **The import cursor advances only on a confirmed write.** `collectLoves` retries transient page failures with a short backoff, and a failed page gives up WITHOUT advancing (what was read still commits; the next run picks up the rest). The cursor advances when the walk completed, nothing transient failed, and `saveCollection` confirmed the write — a failed save must re-import, not skip those loves forever. The 500-page walk cap ends an import at ~100k loves for Last.fm (200/page) or ~50k for ListenBrainz (100/page) and says so in the summary toast.
 
 - **Libre.fm out of scope.** All three controls are hidden — LFM's `track.love` has no Libre.fm equivalent.
-- **Scrobbler plugin contract.** `loveTrack` on both scrobblers and the import fetcher (`lastfmScrobbler.getLovedTracksPage`) exist alongside `scrobble`/`updateNowPlaying`. They throw on hard errors (a failed request, a wrong username); callers must catch — a failed request is never read as "no loves". A genuinely empty account reports "No loved tracks found".
+- **Scrobbler plugin contract.** `loveTrack` on both scrobblers and the import fetchers (`getLovedTracksPage` on both, taking an optional `username`) exist alongside `scrobble`/`updateNowPlaying`. They throw on hard errors (a failed request, a wrong username); callers must catch — a failed request is never read as "no loves". A genuinely empty account reports "No loved tracks found".
 
 **Import then sync** ([#1397](https://github.com/Parachord/parachord/issues/1397)): an imported row with no album and the synced copy with its album end up as one row; see "How library sync matches an incoming track" above.
 
