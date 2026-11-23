@@ -31,6 +31,18 @@ test('an unread dot and a count badge in the page colour', () => {
   expect(html).toContain('background-color:var(--page-library-fill)');
 });
 
+// The "+N" badge must fit the row's 20px line (text-sm): it inherited that
+// line height and added 2px padding above and below, so it stood 24px tall,
+// the row grew from 32px to 36px while it showed, and the label and every
+// item below shifted down and back two seconds later (measured 2026-11-23).
+// A 16px line plus the 2px + 2px padding is 20px.
+test('the count badge is no taller than the row\'s line, so showing it moves nothing', () => {
+  const html = h({ page: 'library', label: 'Collection', icon: Icons.Library, count: 1 });
+  const style = (html.match(/<span[^>]*class="ml-auto sidebar-badge"[^>]*style="([^"]*)"/) || [])[1] || '';
+  expect(style).toContain('line-height:16px');
+  expect(style).toContain('padding:2px 6px');
+});
+
 test('NavSearch: the sidebar Search box, aria-current and a ring when open', () => {
   const { NavSearch } = require('../../src/renderer/components/nav-item');
   const open = renderToStaticMarkup(React.createElement(NavSearch, { active: true }));

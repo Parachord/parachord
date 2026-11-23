@@ -53,7 +53,10 @@ function NavItem({ page, label, icon: Icon, active = false, onClick, prominent =
       // Keyed on the count, so the badge animates when it changes.
       key: `count-${count}`,
       className: 'ml-auto sidebar-badge',
-      style: { fontSize: '11px', backgroundColor: colors.fill || 'var(--accent-fill)', color: 'var(--on-accent)', padding: '2px 6px', borderRadius: '10px' },
+      // A 16px line: with the 2px + 2px padding the badge is 20px, the row's
+      // own line (text-sm), so the row doesn't grow while it shows. Inheriting
+      // the 20px line made it 24px and shifted the label and the items below.
+      style: { fontSize: '11px', lineHeight: '16px', backgroundColor: colors.fill || 'var(--accent-fill)', color: 'var(--on-accent)', padding: '2px 6px', borderRadius: '10px' },
     }, `+${count}`));
 }
 
