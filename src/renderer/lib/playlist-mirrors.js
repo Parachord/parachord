@@ -17,4 +17,15 @@ function getPlaylistMirrorTargets(playlist) {
   return out;
 }
 
-module.exports = { PROVIDER_LABEL, getPlaylistMirrorTargets };
+// The services a playlist pushes to, for the playlist page's "where it syncs"
+// badges (#1640): its syncedTo providers, except the one it's pulled from,
+// whose "Source: X" line already says it (a source that's also pushed back to
+// is the source, not a mirror). A pulled playlist with mirrors used to show no
+// badge at all. Mobile's rule: PlaylistOrigin.pushMirrors.
+function pushMirrors(playlist) {
+  if (!playlist || !playlist.syncedTo) return [];
+  const source = playlist.syncedFrom && playlist.syncedFrom.resolver;
+  return Object.keys(playlist.syncedTo).filter((pid) => pid !== source && playlist.syncedTo[pid]);
+}
+
+module.exports = { PROVIDER_LABEL, getPlaylistMirrorTargets, pushMirrors };

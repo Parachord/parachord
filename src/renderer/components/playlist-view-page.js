@@ -22,6 +22,7 @@ const { weeklySavedName } = require('../lib/weekly-saved-name');
 const { StickyBar } = require('./filter-box');
 const { useReveal, ArtOverlay } = require('./card-art');
 const { Badge } = require('./badge');
+const { pushMirrors } = require('../lib/playlist-mirrors');
 const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
 const { Button } = require('./button');
@@ -967,14 +968,18 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
                     style: { color: 'var(--text-tertiary)' }
                   }, `Source: ${sourceLabel}`);
                 })(),
-                // Where it syncs: one Badge per service, named and coloured from
-                // its plugin (an id other than Spotify read "Apple Music"), then
-                // the local-only switch as a real button that says what it does.
-                selectedPlaylist?.syncedTo && !selectedPlaylist.syncedFrom && React.createElement('div', {
+                // Where it syncs: one Badge per push mirror (lib/playlist-mirrors.js
+                // pushMirrors: a pulled playlist's too, its source left out since
+                // "Source: X" says it; #1640), named and coloured from its plugin
+                // (an id other than Spotify read "Apple Music"), then the
+                // local-only switch as a real button that says what it does.
+                (() => {
+                const mirrors = pushMirrors(selectedPlaylist);
+                return mirrors.length > 0 && React.createElement('div', {
                   className: 'flex items-center flex-wrap mt-1',
                   style: { gap: '6px' }
                 },
-                  ...Object.keys(selectedPlaylist.syncedTo).map(pid => {
+                  ...mirrors.map(pid => {
                     const service = (allResolvers || []).find(r => r.id === pid);
                     const name = service?.name || pid;
                     return React.createElement(Badge, {
@@ -995,7 +1000,8 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
                       showToast(updatedPlaylist.localOnly ? 'Playlist set to local only' : 'Playlist will sync to services');
                     }
                   }, selectedPlaylist.localOnly ? 'Resume syncing' : 'Keep local only')
-                ),
+                );
+                })(),
                 // Edit mode: Title input
                 // The shared TextField (its focus ring and dark-mode colours).
                 playlistEditMode && editedPlaylistData && React.createElement(TextField, {
