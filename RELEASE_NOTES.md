@@ -1,6 +1,6 @@
-# Parachord (unreleased)
+# Parachord v0.9.14
 
-**Release date:** not yet released
+**Release date:** 2026-11-23
 
 > Amazon plays the songs you've bought on any account, Bandcamp only offers tracks you can play, Subsonic can report your plays to your server, and related artists, top tracks, discographies, charts, your listening history and artist bios come from every plug-in that has them. Saving a playlist no longer freezes the app, a synced playlist can be refreshed on the spot, and a plug-in that needs you to sign in no longer looks turned on until you have.
 
