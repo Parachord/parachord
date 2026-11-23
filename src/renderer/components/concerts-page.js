@@ -19,7 +19,7 @@ const { Button } = require('./button');
 const { ListRow } = require('./list-row');
 const { Slider, TextField } = require('./fields');
 const { EmptyState, ErrorState } = require('./states');
-const { sellerBadgeBg, sellerName, sellerShortName, sellerTextColor } = require('../lib/ticket-sellers');
+const { SellerBadges } = require('./seller-badges');
 const { concertMatchesSource, concertSourceKeys, venueMatchesLocationText } = require('../lib/concert-events');
 
 const CONCERTS_PAGE_HANDLERS = [
@@ -523,30 +523,8 @@ React.createElement('span', {
                                     if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); }
                                   }
                                 }, event.artist),
-                                // Source badges
-                                ...(() => {
-                                  const badgeLabel = sellerShortName;
-                                  const badgeFullName = sellerName;
-                                  const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
-                                  const hasAiSource = sources.some(s => s.source === 'ai');
-                                  const badges = sources.map((src, si) => {
-                                    const c = { bg: sellerBadgeBg(src.source), text: sellerTextColor(src.source) };
-                                    return React.createElement('span', {
-                                      key: `badge-${si}`,
-                                      className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
-                                      style: { backgroundColor: c.bg, color: c.text },
-                                      title: badgeFullName(src)
-                                    }, badgeLabel(src));
-                                  });
-                                  if (hasAiSource) {
-                                    badges.push(React.createElement('span', {
-                                      key: 'ai-disclaimer',
-                                      className: 'text-xs text-page-concerts italic flex-shrink-0',
-                                      title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
-                                    }, 'AI generated results may be hallucinations'));
-                                  }
-                                  return badges;
-                                })()
+                                // Where the tickets come from (components/seller-badges.js).
+                                ...SellerBadges({ sources: event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }] })
                               ),
                               React.createElement('div', {
                                 className: 'text-sm truncate text-ink-secondary'
