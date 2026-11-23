@@ -118,6 +118,16 @@ test('app.js leaves a switched-off provider out of Recommendations, and reloads 
   expect(app).toContain('metaServices, recommendationsOffResolvers]);');
 });
 
+test('the Listeners row honours the switch too: a switched-off plug-in\'s similar listeners leave the page (2026-11-23)', () => {
+  // ListenBrainz switched off still put its similar listeners in the
+  // Listeners row, and with them its chip in the filter bar, for good.
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const start = app.indexOf('const similarUsersProviders = () => {');
+  const body = app.slice(start, app.indexOf('};', start));
+  expect(start).toBeGreaterThan(-1);
+  expect(body).toContain('.filter(r => !recommendationsOffRef.current.includes(r.id))');
+});
+
 describe('"Use metadata from X" (#1505)', () => {
   test('shown for an enabled music plug-in; on by default', () => {
     expect(metadataSwitchState({ plugin: plugin('spotify'), active: true })).toEqual({ shown: true, checked: true, disabled: false, hint: 'Album covers and artist photos' });
