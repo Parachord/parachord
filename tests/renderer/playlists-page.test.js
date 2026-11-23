@@ -26,7 +26,9 @@ test('no emoji or palette-class pills on the Playlists page', () => {
 
 test("a playlist's sync services come from their plugin, and the local-only switch is a button", () => {
   expect(page).not.toMatch(/pid === 'spotify' \? 'Spotify' : 'Apple Music'/);
-  expect(page).toMatch(/const service = \(allResolvers \|\| \[\]\)\.find\(r => r\.id === pid\);/);
+  // The whole plug-in registry (meta services like ListenBrainz included),
+  // never only the playback plug-ins, which read "listenbrainz", uncoloured.
+  expect(page).toMatch(/const name = pluginName\(pid\);/);
   expect(page).toMatch(/selectedPlaylist\.localOnly \? 'Resume syncing' : 'Keep local only'/);
 });
 

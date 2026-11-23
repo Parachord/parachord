@@ -35,7 +35,7 @@ const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-li
 const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
-const { pluginName, importSourcePluginId } = require('../lib/plugin-names');
+const { pluginName, pluginColor, importSourcePluginId } = require('../lib/plugin-names');
 const { syncBannerState } = require('../lib/playlist-sync-banner');
 const { NoticeBanner } = require('./notice-banner');
 const { duplicateCount, withoutDuplicates, offersRemoval, duplicateCopy } = require('../lib/playlist-duplicates');
@@ -980,11 +980,12 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
                   style: { gap: '6px' }
                 },
                   ...mirrors.map(pid => {
-                    const service = (allResolvers || []).find(r => r.id === pid);
-                    const name = service?.name || pid;
+                    // Name and colour from the plug-in registry (meta services
+                    // like ListenBrainz included), never the raw id.
+                    const name = pluginName(pid);
                     return React.createElement(Badge, {
                       key: pid,
-                      color: selectedPlaylist.localOnly ? undefined : (service?.color || undefined),
+                      color: selectedPlaylist.localOnly ? undefined : pluginColor(pid),
                       tooltip: selectedPlaylist.localOnly ? `Linked to ${name}, but kept local only` : `Syncs to ${name}`
                     }, name);
                   }),

@@ -45,4 +45,15 @@ function importSourcePluginId(source) {
   return m ? m[1] : null;
 }
 
-module.exports = { setPluginLookup, pluginName, importSourcePluginId };
+// The plug-in's manifest `color`, from the same registry, or undefined when
+// it has none or isn't known (the caller then draws its neutral look). The
+// playlist page's sync badges looked only at the playback plug-ins, so a meta
+// service (ListenBrainz) read "listenbrainz", uncoloured.
+function pluginColor(id) {
+  if (!id) return undefined;
+  let plugin = null;
+  try { plugin = lookup(id); } catch { plugin = null; }
+  return plugin && typeof plugin.color === 'string' && plugin.color ? plugin.color : undefined;
+}
+
+module.exports = { setPluginLookup, pluginName, pluginColor, importSourcePluginId };
