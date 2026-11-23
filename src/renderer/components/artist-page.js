@@ -43,7 +43,9 @@ const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon } = require('./cards');
 const { ArtistCard, ArtistCardSkeleton } = require('./artist-card');
-const { trackSlug, slug } = require('../lib/track-slug');
+const { slug } = require('../lib/track-slug');
+// A compilation's tracks under their own artists (lib/album-track-artist.js).
+const { playableAlbumTrack } = require('../lib/album-track-artist');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
@@ -577,6 +579,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           React.createElement(ReleasePage, {
             release: currentRelease,
             onRetryLoad: retryReleaseLoad,
+            // A compilation's artist column opens that track's artist.
+            onOpenArtist: (name) => fetchArtistData(name),
             handleSearch: handleSearchInput,
             handlePlay: handlePlay,
             onTrackPlay: (track, tracksAfter) => {
@@ -623,15 +627,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               if (rel.tracks?.length > 0) {
                 const context = { type: 'album', id: rel.id, name: rel.title, artist: rel.artist?.name };
                 const tracks = rel.tracks.map(t => {
-                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                  return {
-                    ...t,
-                    id: trackId,
-                    artist: rel.artist?.name,
-                    album: rel.title,
-                    albumArt: rel.albumArt,
-                    sources: trackSources[trackId] || {}
-                  };
+                  const albumTrack = playableAlbumTrack(t, { albumArtist: rel.artist?.name, album: rel.title, albumArt: rel.albumArt });
+                  return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                 });
                 const [firstTrack, ...remainingTracks] = tracks;
                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
@@ -642,15 +639,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             onAlbumAddToQueue: (rel) => {
               if (rel.tracks?.length > 0) {
                 const tracks = rel.tracks.map(t => {
-                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                  return {
-                    ...t,
-                    id: trackId,
-                    artist: rel.artist?.name,
-                    album: rel.title,
-                    albumArt: rel.albumArt,
-                    sources: trackSources[trackId] || {}
-                  };
+                  const albumTrack = playableAlbumTrack(t, { albumArtist: rel.artist?.name, album: rel.title, albumArt: rel.albumArt });
+                  return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                 });
                 addToQueue(tracks, { type: 'album', name: rel.title, id: rel.id });
               }
@@ -658,15 +648,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             onAlbumAddToPlaylist: (rel) => {
               if (rel.tracks?.length > 0) {
                 const tracks = rel.tracks.map(t => {
-                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                  return {
-                    ...t,
-                    id: trackId,
-                    artist: rel.artist?.name,
-                    album: rel.title,
-                    albumArt: rel.albumArt,
-                    sources: trackSources[trackId] || {}
-                  };
+                  const albumTrack = playableAlbumTrack(t, { albumArtist: rel.artist?.name, album: rel.title, albumArt: rel.albumArt });
+                  return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                 });
                 setAddToPlaylistPanel({
                   open: true,
@@ -903,15 +886,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                         // Use already loaded tracks from current release
                         const tracks = currentRelease.tracks.map(t => {
-                          const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                          return {
-                            ...t,
-                            id: trackId,
-                            artist: currentArtist?.name,
-                            album: rel.title,
-                            albumArt: rel.albumArt,
-                            sources: trackSources[trackId] || {}
-                          };
+                          const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                          return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                         });
                         window.showItemMenu(releaseMenu(albumData, { tracks: tracks }));
                       } else {
@@ -930,15 +906,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                        return {
-                          ...t,
-                          id: trackId,
-                          artist: currentArtist?.name,
-                          album: rel.title,
-                          albumArt: rel.albumArt,
-                          sources: trackSources[trackId] || {}
-                        };
+                        const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                        return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                       });
                     }
                     if (tracks.length > 0) {
@@ -969,15 +938,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                        return {
-                          ...t,
-                          id: trackId,
-                          artist: currentArtist?.name,
-                          album: rel.title,
-                          albumArt: rel.albumArt,
-                          sources: trackSources[trackId] || {}
-                        };
+                        const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                        return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                       });
                     }
                     if (tracks.length > 0) {
@@ -998,15 +960,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                        return {
-                          ...t,
-                          id: trackId,
-                          artist: currentArtist?.name,
-                          album: rel.title,
-                          albumArt: rel.albumArt,
-                          sources: trackSources[trackId] || {}
-                        };
+                        const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                        return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                       });
                     }
                     if (tracks.length > 0) {

@@ -24,6 +24,8 @@ const { Play } = Icons;
 // binding (generateArtistPattern, now lib/artist-pattern.js, has its own).
 const hashString = require('../lib/hash-string');
 const { trackSlug, slug } = require('../lib/track-slug');
+// A compilation's tracks under their own artists (lib/album-track-artist.js).
+const { playableAlbumTrack, hasTrackArtists, isVariousArtists } = require('../lib/album-track-artist');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { normalizeAlbumTitle, albumVersionsKey } = require('../lib/album-catalog');
 // A MusicBrainz country code as a readable name, for the source card's
@@ -495,6 +497,8 @@ const ReleasePage = ({
   onAlbumAddToQueue,
   onAlbumAddToPlaylist,
   onAlbumContextMenu,
+  // Opens a track's artist from a compilation's artist column.
+  onOpenArtist,
   publishCollectionSmartLink,
   copyCollectionEmbedCode,
   // The album source dropdown (#1238): the editions of this album (the
@@ -511,6 +515,11 @@ const ReleasePage = ({
   // A fresh cover found after the cached one failed to load (header image onError).
   const [replacementArt, setReplacementArt] = React.useState(null);
   React.useEffect(() => { setReplacementArt(null); }, [release.albumArt]);
+  // A compilation's tracklist names each track's artist (2026-11-23). Before
+  // the tracks land, the skeleton takes the column when the album is credited
+  // to Various Artists, so the rows that replace it don't shift.
+  const showTrackArtists = hasTrackArtists(release.tracks);
+  const compilationLayout = isVariousArtists(release.artist);
   const headerArt = replacementArt || release.albumArt;
 
   // The cover's actions show on hover or keyboard focus (card-art useReveal).
@@ -843,25 +852,20 @@ const ReleasePage = ({
       // Show skeleton while tracks are loading
       !release.tracks ? React.createElement('div', { className: 'space-y-0' },
         [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>
-          React.createElement(TrackRowSkeleton, { key: `track-skeleton-${i}`, index: i, duration: true, showArtist: false })
+          // An album credited to Various Artists will have an artist column.
+          React.createElement(TrackRowSkeleton, { key: `track-skeleton-${i}`, index: i, duration: true, showArtist: compilationLayout })
         )
       ) :
       release.tracks.length > 0 ?
         React.createElement('div', { role: 'list', className: 'space-y-0' },
           release.tracks.map((track, index) => {
-            // Build track ID first, then use it to look up resolved sources
-            const trackId = trackSlug(release.artist.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
+            // The track as it plays, drags and resolves: a compilation's
+            // track under its own artist (lib/album-track-artist.js), and its
+            // id the one its resolved sources are kept under.
+            const albumTrack = playableAlbumTrack(track, { albumArtist: release.artist.name, album: release.title, albumArt: release.albumArt });
+            const trackId = albumTrack.id;
             const sources = trackSources[trackId] || {};
-
-            // Build track object for drag/drop and playback
-            const trackForDrag = {
-              ...track,
-              id: trackId,
-              artist: release.artist.name,
-              album: release.title,
-              albumArt: release.albumArt,
-              sources: sources
-            };
+            const trackForDrag = { ...albumTrack, sources };
 
             // Check if this track is currently playing from this album
             const isCurrentTrack = currentTrack?.id === trackId;
@@ -877,7 +881,10 @@ const ReleasePage = ({
               isNowPlaying,
               sources: { trackSources, playbackResolvers: activeResolvers, resolverOrder: resolvers.map(r => r.id) },
               allResolvers: resolvers,
-              showArtist: false,
+              // A compilation's tracks each name their artist; an album by
+              // one artist doesn't repeat it on every row.
+              showArtist: showTrackArtists,
+              onOpenArtist: showTrackArtists && onOpenArtist ? onOpenArtist : undefined,
               duration: true,
               // No flash of "unavailable" before the lookup finishes.
               dimResolving: false,
@@ -902,8 +909,8 @@ const ReleasePage = ({
               onPlay: (resolverId) => {
                 const toPlay = resolverId ? { ...trackForDrag, preferredResolver: resolverId } : trackForDrag;
                 const tracksAfter = release.tracks.slice(index + 1).map((t) => {
-                  const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
-                  return { ...t, id: tId, artist: release.artist.name, album: release.title, albumArt: release.albumArt, sources: trackSources[tId] || {} };
+                  const next = playableAlbumTrack(t, { albumArtist: release.artist.name, album: release.title, albumArt: release.albumArt });
+                  return { ...next, sources: trackSources[next.id] || {} };
                 });
                 if (onTrackPlay) onTrackPlay(toPlay, tracksAfter);
                 else handlePlay(toPlay);

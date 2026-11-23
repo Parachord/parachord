@@ -555,7 +555,8 @@ describe('every track list and card grid loads with the shared placeholders', ()
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `history-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'when', width: '80px', align: 'right' \}\] \}/);
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `top-track-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'plays', width: '80px', align: 'right' \}\] \}/);
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true \}/); // the pending playlist view
-    expect(read('components/cards.js')).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true, showArtist: false \}/); // an album's tracklist
+    // An album's tracklist: an artist column only on a compilation, as its rows have.
+    expect(read('components/cards.js')).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true, showArtist: compilationLayout \}/);
   });
   test('card grids: CardSkeleton, in the real grid and count', () => {
     expect(app).toMatch(/CardSkeleton, \{ key: `album-skeleton-\$\{i\}`, index: i, lines: 2 \}/); // History's top albums

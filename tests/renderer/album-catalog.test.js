@@ -124,6 +124,16 @@ describe('catalogAlbumToRelease', () => {
     expect(release._catalogSource).toEqual({ resolverId: 'applemusic', name: 'Apple Music', url: null });
   });
 
+  test('a compilation\'s tracks keep their own artists; an album by one artist\'s don\'t repeat it', () => {
+    const comp = catalogAlbumToRelease({
+      name: 'Trainspotting', artist: 'Various Artists',
+      tracks: [{ title: 'Lust for Life', artist: 'Iggy Pop', trackNumber: 1 }, { title: 'Atomic', artist: 'Sleeper', trackNumber: 2 }],
+    }, { resolverId: 'spotify' });
+    expect(comp.tracks.map(t => t.trackArtist)).toEqual(['Iggy Pop', 'Sleeper']);
+    const one = catalogAlbumToRelease({ ...album, tracks: album.tracks.map(t => ({ ...t, artist: 'Wild Pink' })) }, { resolverId: 'applemusic' });
+    expect(one.tracks.every(t => t.trackArtist == null)).toBe(true);
+  });
+
   test('carries the album url the source dropdown marks the current edition by', () => {
     const withUrl = catalogAlbumToRelease({ ...album, url: 'https://music.apple.com/us/album/dulling-the-horns/1' }, { resolverId: 'applemusic', resolverName: 'Apple Music' });
     expect(withUrl._catalogSource.url).toBe('https://music.apple.com/us/album/dulling-the-horns/1');
