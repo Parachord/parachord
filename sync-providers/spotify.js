@@ -15,6 +15,7 @@ const { createSpotifyBreaker } = require('../sync-engine/spotify-breaker');
 // The main process's rate-limit pause, shared with the playback poller in
 // main.js: a 429 either one gets stops both until Retry-After has passed.
 const { sharedPause } = require('./spotify-pause');
+const { failureIsAnswer } = require('./lookup-outcome');
 const _spotifyBreaker = createSpotifyBreaker();
 let _spotifyBreakerSave = null;
 function _setBreakerStore(io) {
@@ -110,7 +111,9 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
     if (response.status === 403) {
       throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions.');
     }
-    throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+    // The status rides the error, so a caller can tell a refused query (an
+    // answer) from a request that went unanswered (lookup-outcome.js).
+    throw Object.assign(new Error(`Spotify API error: ${response.status} ${response.statusText}`), { status: response.status });
   }
 
   _breakerSuccess(); // §2b: a good response closes the cooldown + resets escalation
@@ -188,7 +191,9 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
     if (response.status === 403) {
       throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions for library sync.');
     }
-    throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+    // The status rides the error, so a caller can tell a refused query (an
+    // answer) from a request that went unanswered (lookup-outcome.js).
+    throw Object.assign(new Error(`Spotify API error: ${response.status} ${response.statusText}`), { status: response.status });
   }
 
   _breakerSuccess(); // §2b: good response closes the cooldown
@@ -907,6 +912,10 @@ const SpotifySyncProvider = {
   async resolveTracks(tracks, token) {
     const resolved = [];
     const unresolved = [];
+    // Lookups that went unanswered (a rate limit or cooldown, the network, a
+    // 5xx, the sign-in): never a miss, or a push would remove the track from
+    // the mirror (#1637, sync-engine/push-hold.js).
+    const unreachable = [];
 
     for (const track of tracks) {
       // Skip tracks that already have a Spotify URI or ID
@@ -949,11 +958,11 @@ const SpotifySyncProvider = {
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
         console.error(`Failed to resolve track "${track.title}" by "${track.artist}":`, error.message);
-        unresolved.push({ artist: track.artist, title: track.title });
+        (failureIsAnswer(error && error.status) ? unresolved : unreachable).push({ artist: track.artist, title: track.title });
       }
     }
 
-    return { resolved, unresolved };
+    return { resolved, unresolved, unreachable };
   },
 
   // Create a new playlist on Spotify

@@ -122,14 +122,20 @@ async function getUserName(token) {
 // persistent negative cache OR the per-cycle budget is spent, and records each
 // live attempt so an un-findable track isn't re-queried every sync. Absent (no
 // arg) → direct lookup every time (legacy behavior, e.g. ad-hoc callers).
-async function resolveTrackMbid(track, hydration) {
-  if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
-  if (!track?.artist || !track?.title) return null;
+// A track's recording MBID, and whether the lookup went unanswered:
+// { mbid, unanswered }. Unanswered is the mapper (and its fallback) not
+// reachable, or a lookup this sync's budget couldn't fit; resolveTracks
+// reports those as `unreachable` so a push holds instead of dropping the track
+// (#1637, sync-engine/push-hold.js).
+async function lookupTrackMbid(track, hydration) {
+  if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return { mbid: track.mbid, unanswered: false };
+  if (!track?.artist || !track?.title) return { mbid: null, unanswered: false };
   if (hydration) {
     const decision = hydration.resolve(track);
-    // skip = use the cached id (resolved) or give up this cycle (cooldown / over
-    // budget); a fresh / cooldown-expired track returns skip:false to look up live.
-    if (decision && decision.skip) return decision.mbid || null;
+    // skip = use the cached id (resolved) or give up this cycle (a miss in its
+    // cooldown, or `pending`: over this cycle's budget); a fresh /
+    // cooldown-expired track returns skip:false to look up live.
+    if (decision && decision.skip) return { mbid: decision.mbid || null, unanswered: !decision.mbid && !!decision.pending };
   }
   // Mapper first, labs acr-lookup when the mapper can't be reached (mbid-lookup.js).
   const { status, result } = await resolveRecordingMbid(track.artist, track.title, track.album);
@@ -137,10 +143,14 @@ async function resolveTrackMbid(track, hydration) {
   // into the 7→30 day cooldown during the 2026-09 mapper outage, so the whole
   // playlist stopped hydrating for a month. Leave the cache alone and retry
   // next cycle.
-  if (status === 'unreachable') return null;
+  if (status === 'unreachable') return { mbid: null, unanswered: true };
   const resolved = status === 'hit' && result.confidence >= 0.7 ? result.recording_mbid : null;
   if (hydration) hydration.record(track, resolved);
-  return resolved;
+  return { mbid: resolved, unanswered: false };
+}
+
+async function resolveTrackMbid(track, hydration) {
+  return (await lookupTrackMbid(track, hydration)).mbid;
 }
 
 // ── Stubs for now; filled in by Tasks 7–11 ──
@@ -615,13 +625,14 @@ async function resolveTracks(tracks, token, opts = {}) {
   const hydration = opts && opts.hydration;
   const resolved = [];
   const unresolved = [];
+  const unreachable = [];
   for (const t of tracks || []) {
-    const mbid = await resolveTrackMbid(t, hydration);
+    const { mbid, unanswered } = await lookupTrackMbid(t, hydration);
     if (mbid) resolved.push({ ...t, mbid });
-    else unresolved.push({ artist: t.artist, title: t.title, album: t.album });
+    else (unanswered ? unreachable : unresolved).push({ artist: t.artist, title: t.title, album: t.album });
   }
   if (hydration && hydration.flush) hydration.flush();
-  return { resolved, unresolved };
+  return { resolved, unresolved, unreachable };
 }
 
 module.exports = {
