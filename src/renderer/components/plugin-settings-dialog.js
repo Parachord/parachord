@@ -146,9 +146,12 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
   const signedIn = pluginAccounts ? pluginAccounts[selectedResolver.id] : undefined;
   const switchState = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers, signedIn });
   // Scrobbling, for a plug-in that does more than scrobble (Last.fm,
-  // ListenBrainz), while it's on: nested under its account (the account
-  // comes first, then what needs the sign-in).
-  const scrobblingNested = switchState.checked && !!caps.scrobbling && !!caps.recommendations;
+  // ListenBrainz): nested under its account (the account comes first, then
+  // what needs the sign-in). Whether Enable is on or not: scrobbling is its
+  // own sign-in and its own switch, and the loved-tracks import under it
+  // needs only a username, so hiding it behind Enable hid the import
+  // (Last.fm with recommendations off, 2026-11-23).
+  const scrobblingNested = !!caps.scrobbling && !!caps.recommendations;
 
   // Scrobbling (capabilities.scrobbling). Nested under "Enable X" for a
   // plug-in that does more than scrobble (Last.fm, ListenBrainz): the one
@@ -184,6 +187,9 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
       backfillProgress: loveBackfillProgress[id],
       unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.[id]).length,
       onRunLoveImport: () => runLoveImport(id),
+      // Whose loves to import: the scrobbling sign-in's username, else the
+      // account's (both services publish loves by username, no sign-in).
+      loveImportUsername: scrobblerConfigs[id]?.username || metaServiceConfigs[id]?.username || null,
       loveImportRunning: !!loveImportRunning[id],
       loveImportProgress: loveImportProgress[id],
       hasImportedLoves: !!loveImportCursorRef.current?.[id],

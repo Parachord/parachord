@@ -72,6 +72,14 @@ describe('LastFmScrobbler.getLovedTracksPage', () => {
     installWindow({ config: connected, response: { success: false, status: 500, error: 'HTTP 500' } });
     await expect(scrobbler.getLovedTracksPage()).rejects.toThrow('Last.fm request failed');
   });
+
+  test('reads loves for a username it is given, signed out of scrobbling (the account\'s username)', async () => {
+    const scrobbler = new LastFmScrobbler();
+    scrobbler.setApiCredentials('APIKEY', 'SECRET');
+    const calls = installWindow({ config: { enabled: false }, response: ok() });
+    await scrobbler.getLovedTracksPage({ page: 1, count: 200, username: 'account-user' });
+    expect(new URL(calls[0]).searchParams.get('user')).toBe('account-user');
+  });
 });
 
 describe('ListenBrainzScrobbler.getLovedTracksPage', () => {
@@ -122,6 +130,14 @@ describe('ListenBrainzScrobbler.getLovedTracksPage', () => {
     });
     const lb = new ListenBrainzScrobbler();
     await expect(lb.getLovedTracksPage()).rejects.toThrow('Not connected');
+    delete global.window;
+  });
+
+  test('reads loves for a username it is given, signed out of scrobbling (the account\'s username)', async () => {
+    const calls = installLbWindow({ config: { enabled: false }, response: { success: true, text: '{}' } });
+    const lb = new ListenBrainzScrobbler();
+    await lb.getLovedTracksPage({ offset: 0, count: 100, username: 'account-user' });
+    expect(new URL(calls[0][0]).pathname).toBe('/1/feedback/user/account-user/get-feedback');
     delete global.window;
   });
 });

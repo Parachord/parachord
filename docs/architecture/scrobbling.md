@@ -59,7 +59,7 @@ A content resolver can report plays to its own service through the same contract
 
 ### Signed in vs scrobbling on
 
-Each scrobbler has two tests: `isEnabled()` (signed in **and** "Scrobble to X" switched on: what scrobbling reads) and `isSignedIn()` (a session or token, whatever the switch says). Loved-track syncing (the live push, `runLoveBackfill`, `runLoveImport` and its cross-service offer) reads `isSignedIn()`, so the scrobbling switch pauses scrobbling only; until 2026-11-17 it stopped loved tracks too. Sign out (the Scrobbling section) ends both. The username row's Remove forgets only Last.fm's or ListenBrainz's username: "Enable", the API keys and the scrobbling session stay (it used to delete the whole settings record, switching Enable off).
+Each scrobbler has two tests: `isEnabled()` (signed in **and** "Scrobble to X" switched on: what scrobbling reads) and `isSignedIn()` (a session or token, whatever the switch says). Pushing loves (the live push, `runLoveBackfill`, and the import's cross-service offer) reads `isSignedIn()`, so the scrobbling switch pauses scrobbling only; until 2026-11-17 it stopped loved tracks too. The import itself reads no sign-in at all, only a username (the scrobbling sign-in's, else the account's): both services publish a user's loves ("Loved Tracks" in [sync.md](sync.md), 2026-11-23). Sign out (the Scrobbling section) ends both. The username row's Remove forgets only Last.fm's or ListenBrainz's username: "Enable", the API keys and the scrobbling session stay (it used to delete the whole settings record, switching Enable off).
 
 ### Last.fm's API key: which one, and when Last.fm turns it down
 

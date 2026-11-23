@@ -240,6 +240,25 @@ describe('one layout (the #1498 contact-sheet review)', () => {
     expect(html.indexOf('>Advanced<')).toBeGreaterThan(scrobbling);
   });
 
+  test('Scrobbling and its loved tracks show while Enable is off, and Import reads the account\'s username', () => {
+    // Last.fm with recommendations off and scrobbling signed out: the loved
+    // tracks import needs only a username, so it must still be reachable.
+    global.window.scrobblers = [{ id: 'newservice', name: 'New Service', startAuth: noop }];
+    const plugin = base({
+      type: 'meta-service', capabilities: { scrobbling: true, recommendations: true, lovedTracks: true },
+      configurable: { username: { label: 'New Service username' } },
+      settings: { account: { type: 'username' } },
+    });
+    const html = render(plugin, {
+      hostAccounts: { newservice: { connect: noop, remove: noop } },
+      metaServiceConfigs: { newservice: { enabled: false, username: 'jh' } },
+      runLoveImport: noop,
+    });
+    expect(html).toContain('data-section="scrobbling"');
+    expect(html).toContain('Import loved tracks');
+    expect(html).not.toContain('Add your New Service username first');
+  });
+
   test('a sign-in note is the account row\'s own line, never a coloured paragraph', () => {
     const plugin = base({ settings: { account: { type: 'sign-in', signInHint: 'Sign in here' } } });
     const html = render(plugin, { hostAccounts: { newservice: { signedIn: false, signIn: noop, signOut: noop, status: 'Sign in in a window to play here', note: { tone: 'info', text: 'A loose note' } } } });

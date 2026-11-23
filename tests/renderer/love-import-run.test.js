@@ -367,6 +367,17 @@ describe('wiring (source markers)', () => {
     expect(app).toContain('otherConnected = await otherScrobbler.isSignedIn();'); // signed in, not scrobbling-on
   });
 
+  test('the import needs only a username: the scrobbling sign-in\'s, else the account\'s (2026-11-23)', () => {
+    const start = app.indexOf('const runLoveImport = useCallback(');
+    const body = app.slice(start, app.indexOf('const fetchPage =', start) + 400);
+    expect(body).toContain('const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;');
+    expect(body).toContain('Add your ${label} username first');
+    // Not gated on the scrobbling sign-in: both services publish loves by username.
+    expect(body).not.toContain('connected = await scrobbler.isSignedIn();');
+    expect(body).toContain('getLovedTracksPage({ page, count, username })');
+    expect(body).toContain('getLovedTracksPage({ offset, count, username })');
+  });
+
   test('a failed tombstone read stops the run', () => {
     expect(app).toContain("Couldn't read your removed-tracks list, so nothing was imported");
   });

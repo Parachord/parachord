@@ -35,7 +35,10 @@ describe('isSignedIn ignores the scrobbling switch; isEnabled does not', () => {
 describe('app.js', () => {
   const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
   test('every loved-tracks path asks isSignedIn, never isEnabled', () => {
-    expect((app.match(/isSignedIn\(\)/g) || []).length).toBeGreaterThanOrEqual(5);
+    // Every path that writes loves (the live push for each service, the
+    // backfill, the import's cross-service check). The import's own read
+    // needs no sign-in, only a username (2026-11-23).
+    expect((app.match(/isSignedIn\(\)/g) || []).length).toBeGreaterThanOrEqual(4);
     expect(app).not.toMatch(/Scrobbler\.isEnabled\(\)|scrobbler\.isEnabled\(\)|otherScrobbler\.isEnabled\(\)/);
   });
   test('Remove forgets the username only: Enable and the API keys stay', () => {

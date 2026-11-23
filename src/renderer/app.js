@@ -14556,9 +14556,12 @@ ${trackListXml}
     setLoveImportRunning(prev => ({ ...prev, [service]: true }));
     setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
     try {
-      let connected = false;
-      try { connected = await scrobbler.isSignedIn(); } catch (e) { connected = false; }
-      if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
+      // Whose loves: the scrobbling sign-in's username, else the plug-in
+      // account's. Both services publish a user's loves by username, so the
+      // import needs no sign-in (it showed only while scrobbling was signed
+      // in, and Last.fm's import went missing with it, 2026-11-23).
+      const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;
+      if (!username) { showToast(`Add your ${label} username first`, 'error'); return; }
 
       // Cross-service propagation, confirmed up front (issue #1071 rule 2).
       // Connected, not just toggled — the dialog must not promise pushes a
@@ -14575,7 +14578,7 @@ ${trackListXml}
             showConfirmDialog({
               type: 'info',
               title: 'Import loved tracks',
-              message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push newly loved tracks to ${otherLabel}" is on. This can't be undone from Parachord.`,
+              message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push loves to ${otherLabel}" is on. This can't be undone from Parachord.`,
               confirmLabel: 'Import',
               onConfirm: () => resolve(true),
               onCancel: () => resolve(false),
@@ -14592,8 +14595,8 @@ ${trackListXml}
       // 1. Fetch: only loves newer than the cursor (collectLoves owns the
       //    paging, the per-page retries and the stop rules).
       const fetchPage = service === 'lastfm'
-        ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count })
-        : async ({ offset, count }) => window.listenbrainzScrobbler.getLovedTracksPage({ offset, count });
+        ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count, username })
+        : async ({ offset, count }) => window.listenbrainzScrobbler.getLovedTracksPage({ offset, count, username });
       const { loves, skipped, complete, error, capped } = await LoveImport.collectLoves({
         fetchPage,
         parse: service === 'lastfm' ? LoveImport.parseLastfmLovedPage : LoveImport.parseListenbrainzFeedbackPage,
@@ -14602,7 +14605,7 @@ ${trackListXml}
         onProgress: (done, total) => setProgress(done, total),
       });
       if (error && loves.length === 0 && skipped === 0) {
-        if (error === 'Not connected') showToast(`Reconnect ${label} to import your loved tracks`, 'error');
+        if (error === 'Not connected') showToast(`Add your ${label} username first`, 'error');
         else showToast(`Couldn't import from ${label}: ${error}`, 'error');
         return;
       }
@@ -14805,7 +14808,7 @@ ${trackListXml}
         // Without a restart the rows are already in memory, so a re-run
         // matches them and the confirmed cross-service push never fires —
         // say how to push them anyway.
-        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or push the imported loves with Backfill on the ${otherLabel} card` : ''}`;
+        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or send the imported loves from ${otherLabel}'s settings` : ''}`;
       }
       if (!complete && error) {
         showToast(`Imported ${added} from ${label}, then stopped: ${error}. Run it again to pick up the rest.`, 'error', null, { duration: 8000 });
@@ -14820,7 +14823,7 @@ ${trackListXml}
         // The restricted backfill is a no-op while that service's own backfill
         // is running — say so instead of silently skipping the confirmed push.
         if (loveBackfillRunningRef.current[otherService]) {
-          showToast(`A ${otherLabel} backfill is still running. Once it finishes, run Backfill on the ${otherLabel} card to push the ${confirmedIds.length} imported loves.`, 'info');
+          showToast(`A ${otherLabel} backfill is still running. Once it finishes, send the ${countOf(confirmedIds.length, 'imported love')} from ${otherLabel}'s settings.`, 'info');
         } else {
           runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch((err) => {
             console.warn(`[love-import ${service}] cross-service push failed:`, err?.message || err);
