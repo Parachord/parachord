@@ -1382,6 +1382,8 @@ const {
   VirtualizedQueueList, VirtualizedTrackList, TrackRow, sourceColumnWidth,
 } = require('./components/track-lists');
 const { countOf } = require('./lib/plural');
+// A track's own artist on an album (a compilation's tracks): lib/album-track-artist.js.
+const { ownTrackArtist, playableAlbumTrack } = require('./lib/album-track-artist');
 const { summarizeToolResults } = require('./lib/tool-summary');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
@@ -15584,16 +15586,15 @@ ${trackListXml}
       const artistName = currentArtist?.name || 'Unknown Artist';
       const visibleTracks = [];
       visibleReleaseTrackIds.current.forEach(trackId => {
-        const track = currentRelease.tracks.find(t => {
-          const computedId = trackSlug(artistName || 'unknown', t.title || 'untitled', currentRelease.title || 'noalbum');
-          return computedId === trackId;
-        });
-        if (track) {
+        const albumTrack = currentRelease.tracks
+          .map(t => playableAlbumTrack(t, { albumArtist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt }))
+          .find(t => t.id === trackId);
+        if (albumTrack) {
           visibleTracks.push({
             key: trackId,
             data: {
-              track: { ...track, id: trackId, artist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt },
-              artistName
+              track: albumTrack,
+              artistName: albumTrack.artist || artistName
             }
           });
         }
@@ -15635,7 +15636,8 @@ ${trackListXml}
       console.log('🔄 Local library changed, re-resolving release tracks...');
       const artistName = currentArtist?.name || 'Unknown Artist';
       currentRelease.tracks.forEach(track => {
-        resolveTrack(track, artistName, { forceRefresh: true });
+        const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt });
+        resolveTrack(albumTrack, albumTrack.artist || artistName, { forceRefresh: true });
       });
     }
 
@@ -21058,6 +21060,7 @@ ${trackListXml}
                 recording: track.recording,
                 mbid: track.recording?.id || null,
                 artistMbids: track.recording?.['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
+                trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
                 mediumIndex: mediumIndex + 1,
                 mediumTitle: medium.title
               });
@@ -21145,8 +21148,8 @@ ${trackListXml}
       const artistName = artist?.name || artist || 'Unknown Artist';
       console.log(`🎵 [release] Triggering resolution for ${tracks.length} album tracks (artist=${artistName}, release=${releaseData.title})`);
       tracks.forEach(track => {
-        const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', releaseData.title || 'noalbum');
-        resolveAlbumTrack({ ...track, id: trackId }, artistName);
+        const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: releaseData.title });
+        resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
       });
 
       // Fetch album art in background (don't block track display)
@@ -21336,16 +21339,14 @@ ${trackListXml}
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = trackSlug(artist?.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
               tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                recordingId: track.recording?.id,
-                artist: artist?.name,
-                album: release.title,
-                albumArt: release.albumArt,
+                ...playableAlbumTrack({
+                  position: track.position,
+                  title: track.title || track.recording?.title || 'Unknown Track',
+                  length: track.length,
+                  recordingId: track.recording?.id,
+                  trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+                }, { albumArtist: artist?.name, album: release.title, albumArt: release.albumArt }),
                 sources: {}
               });
             });
@@ -21414,17 +21415,14 @@ ${trackListXml}
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = trackSlug(artistName, track.title || 'untitled', album.title || 'noalbum');
-              const albumArt = album.albumArt || null;
               tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                recordingId: track.recording?.id,
-                artist: artistName,
-                album: album.title,
-                albumArt: albumArt,
+                ...playableAlbumTrack({
+                  position: track.position,
+                  title: track.title || track.recording?.title || 'Unknown Track',
+                  length: track.length,
+                  recordingId: track.recording?.id,
+                  trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+                }, { albumArtist: artistName, album: album.title, albumArt: album.albumArt || null }),
                 sources: {}
               });
             });
@@ -21637,8 +21635,8 @@ ${trackListXml}
     setCurrentRelease(prev => (canApplyNow(prev) ? release : prev));
     if (applied) setLoadingRelease(false);
     release.tracks.forEach(track => {
-      const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', release.title || 'noalbum');
-      resolveAlbumTrack({ ...track, id: trackId }, artistName);
+      const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: release.title });
+      resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
     });
     return true;
   };
@@ -21925,6 +21923,7 @@ ${trackListXml}
                   recording: track.recording,
                   mbid: track.recording?.id || null,
                   artistMbids: track.recording?.['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
+                  trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
                   mediumIndex: mediumIndex + 1,
                   mediumTitle: medium.title
                 });
@@ -21962,8 +21961,8 @@ ${trackListXml}
         }
         console.log(`✅ [release] Switched to ${releaseData.title} (${tracks.length} tracks)`);
         tracks.forEach(track => {
-          const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', releaseInfo.title || 'noalbum');
-          resolveAlbumTrack({ ...track, id: trackId }, artistName);
+          const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: releaseInfo.title });
+          resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
         });
       } catch (e) {
         console.warn('Album release switch failed:', e?.message || e);
@@ -22009,8 +22008,8 @@ ${trackListXml}
           }
         }
         newRelease.tracks.forEach(track => {
-          const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', newRelease.title || 'noalbum');
-          resolveAlbumTrack({ ...track, id: trackId }, artistName);
+          const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: newRelease.title });
+          resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
         });
       } catch (e) {
         console.warn('Album catalog edition switch failed:', e?.message || e);
@@ -23787,16 +23786,17 @@ ${trackListXml}
           visibleReleaseTrackIds.current.forEach(trackId => {
             // Release tracks from API don't have id - we need to find by matching the computed ID
             // The trackId is computed as: artist-title-album (lowercase, alphanumeric only)
-            const track = releaseTracks.find(t => {
-              const computedId = trackSlug(artistName || 'unknown', t.title || 'untitled', releaseTitle || 'noalbum');
-              return computedId === trackId;
-            });
-            if (track) {
+            // A compilation's track is keyed under its own artist
+            // (lib/album-track-artist.js), as the row is.
+            const albumTrack = releaseTracks
+              .map(t => playableAlbumTrack(t, { albumArtist: artistName, album: releaseTitle, albumArt: releaseAlbumArt }))
+              .find(t => t.id === trackId);
+            if (albumTrack) {
               visibleTracks.push({
                 key: trackId,
                 data: {
-                  track: { ...track, id: trackId, artist: artistName, album: releaseTitle, albumArt: releaseAlbumArt },
-                  artistName
+                  track: albumTrack,
+                  artistName: albumTrack.artist || artistName
                 }
               });
             }
@@ -26228,7 +26228,8 @@ ${tracks}
           tracks.push({
             id: track.recording?.id || track.id,
             title: track.title,
-            artist: album.artist,
+            // A compilation's track under its own artist (lib/album-track-artist.js).
+            artist: ownTrackArtist(track, releaseData['artist-credit']) || album.artist,
             duration: track.length ? Math.round(track.length / 1000) : null,
             albumArt: album.albumArt
           });
@@ -30790,17 +30791,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           releaseData.media.forEach((medium) => {
             if (medium.tracks) {
               medium.tracks.forEach(track => {
-                const trackId = trackSlug(artistName, track.title || 'untitled', albumName);
                 tracks.push({
-                  id: trackId,
-                  position: track.position,
-                  title: track.title || track.recording?.title || 'Unknown Track',
-                  length: track.length,
-                  duration: track.length ? Math.round(track.length / 1000) : 0,
-                  recordingId: track.recording?.id,
-                  artist: artistName,
-                  album: albumName,
-                  albumArt: albumArt,
+                  ...playableAlbumTrack({
+                    position: track.position,
+                    title: track.title || track.recording?.title || 'Unknown Track',
+                    length: track.length,
+                    duration: track.length ? Math.round(track.length / 1000) : 0,
+                    recordingId: track.recording?.id,
+                    trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+                  }, { albumArtist: artistName, album: albumName, albumArt }),
                   sources: {}
                 });
               });

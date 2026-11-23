@@ -138,8 +138,8 @@ describe('the catalogs race MusicBrainz', () => {
     const helper = fnBody('const resolveAlbumTrack = (track, artistName) => {');
     expect(helper).toMatch(/if \(inFlight\.has\(track\.id\)\) return inFlight\.get\(track\.id\);/);
     expect(helper).toMatch(/\.finally\(\(\) => inFlight\.delete\(track\.id\)\)/);
-    expect(fnBody('const showCatalogRelease = ({ found, requested, artist, canApply }) => {')).toMatch(/resolveAlbumTrack\(\{ \.\.\.track, id: trackId \}, artistName\)/);
-    expect(fnBody('const fetchReleaseData = async (release, artist) => {')).toMatch(/resolveAlbumTrack\(\{ \.\.\.track, id: trackId \}, artistName\)/);
+    expect(fnBody('const showCatalogRelease = ({ found, requested, artist, canApply }) => {')).toMatch(/resolveAlbumTrack\(\{ \.\.\.track, id: albumTrack\.id \}, albumTrack\.artist \|\| artistName\)/);
+    expect(fnBody('const fetchReleaseData = async (release, artist) => {')).toMatch(/resolveAlbumTrack\(\{ \.\.\.track, id: albumTrack\.id \}, albumTrack\.artist \|\| artistName\)/);
   });
 
   test('fetchReleaseData does not blank a catalog list already on screen, and the fastest list stays', () => {
