@@ -479,13 +479,15 @@ const VirtualizedQueueList = React.memo(({
               }
             }, 'aria-label': 'Try again', 'data-tooltip': 'Try again' }, React.createElement(Icons.RefreshCw, { size: 14 }))
         : isLoading ?
+          // The drawer is dark in both themes: its placeholders use the dark
+          // shimmer, as the playbar's do (the page shimmer read almost white).
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
-              className: 'rounded shimmer-light animate-shimmer',
+              className: 'rounded shimmer-dark animate-shimmer',
               style: { width: '20px', height: '20px' }
             }),
             React.createElement('div', {
-              className: 'rounded shimmer-light animate-shimmer',
+              className: 'rounded shimmer-dark animate-shimmer',
               style: { width: '20px', height: '20px', animationDelay: '0.1s' }
             })
           )
@@ -503,12 +505,12 @@ const VirtualizedQueueList = React.memo(({
         :
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
-              className: 'rounded shimmer-light animate-shimmer',
+              className: 'rounded shimmer-dark animate-shimmer',
               style: { width: '20px', height: '20px' },
               title: 'Resolving track…'
             }),
             React.createElement('div', {
-              className: 'rounded shimmer-light animate-shimmer',
+              className: 'rounded shimmer-dark animate-shimmer',
               style: { width: '20px', height: '20px', animationDelay: '0.1s' }
             })
           )
