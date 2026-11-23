@@ -40,6 +40,7 @@
 - **Sync no longer removes tracks it couldn't look up.** Sending a playlist to another service first looks each song up there. When a lookup failed, because the service was rate-limiting Parachord, the network dropped or ListenBrainz's lookup service was down, Parachord treated the song as missing on that service and left it out, and the playlist there lost it. Now it waits and tries again on the next sync. Only a song the service really doesn't have is left out.
 - **Remove a playlist's duplicate tracks in one go.** When a playlist holds the same song more than once, its page says how many duplicates there are and offers Remove duplicates. The first copy of each song stays where it is, and your other services get the cleaned list on the next sync. A live version, a remix or a different recording of the same name doesn't count as a duplicate.
 - **Saved weekly playlists get their own names.** Saving a Weekly Jams or Weekly Exploration now names it by its kind and week, such as "Weekly Exploration · Nov 17, 2026", so two weeks never share a name, and one can't overwrite another on your services.
+- **A synced playlist shows everywhere it syncs to.** A playlist that comes from one service and that Parachord also keeps on others, such as a Spotify playlist mirrored to Apple Music and ListenBrainz, now shows a badge for each of those services on its page, in each service's colour. It used to show only where it came from.
 - **Playlist covers look right.** A cover with see-through corners no longer shows the album mosaic behind it. Mosaics use a song's own cover even when it has no album name, and look up at most 12 albums per playlist.
 
 ## Speed
@@ -49,11 +50,13 @@
 ## Settings and plug-ins
 
 - **A plug-in that needs a sign-in doesn't look turned on until you sign in.** Its switches and its tile on the Plug-Ins page read as off, and its settings put your account first. Your choices are kept and come back when you sign in.
+- **Import your Last.fm loves again.** The loved-tracks import had gone missing from Last.fm's settings unless you were signed in to scrobble to Last.fm. Importing needs only your username, so it's back in Last.fm's and ListenBrainz's settings whether you scrobble there or not. Both now show loved tracks the same way: Import loved tracks, a Push loves switch (which does need the scrobbling sign-in), and Send for the loves you saved before turning that on.
 - **Each music plug-in's settings say how its playback quality is set.** In Parachord's Playback Quality setting, or, for Spotify and for Apple Music through the Music app, in that app's own settings.
 
 ## Smaller fixes
 
 - In History, an album's name opens the album, as the artist's name opens the artist. Thanks to @theli-ua.
+- A sidebar item's "+1" badge no longer nudges its row and everything below it down for a moment.
 - Home's concert cards open the artist's On Tour tab, as the Concerts page does, and concerts near you no longer match a state's letters inside another city's name.
 - A history mix's "Playing from" opens the mix, not Home.
 - Asking Shuffleupagus for a mix without saying how many songs gives you 10.
