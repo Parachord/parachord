@@ -81,3 +81,22 @@ test('the sites read the registry, not a written-out name', () => {
   expect(page).not.toMatch(/source === '[a-z]+-(?:sync|import)'/);
   expect(page).toContain('sourceLabel = pluginName(sourcePlugin);');
 });
+
+// A service's colour comes from the same lookup (the playlist page's sync
+// badges read "listenbrainz", uncoloured, when they looked only at the
+// playback plug-ins; ListenBrainz is a meta service).
+test('pluginColor reads the plug-in\'s manifest colour, and nothing for an unknown id', () => {
+  N.setPluginLookup((id) => (id === 'listenbrainz' ? { id, name: 'ListenBrainz', color: '#eb743b' } : null));
+  expect(N.pluginColor('listenbrainz')).toBe('#eb743b');
+  expect(N.pluginColor('nope')).toBeUndefined();
+  expect(N.pluginColor(null)).toBeUndefined();
+});
+
+test('the playlist page\'s sync badges are named and coloured through the registry', () => {
+  const page = read('src/renderer/components/playlist-view-page.js');
+  const start = page.indexOf('...mirrors.map(pid => {');
+  const body = page.slice(start, start + 600);
+  expect(body).toMatch(/const name = pluginName\(pid\);/);
+  expect(body).toMatch(/pluginColor\(pid\)/);
+  expect(body).not.toMatch(/allResolvers/);
+});
