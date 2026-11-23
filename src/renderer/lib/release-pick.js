@@ -19,7 +19,8 @@
 //   4. Then the earliest release date; undated releases sort last.
 //      Otherwise MusicBrainz order. A tie between counts goes to the count
 //      with the earliest release.
-// With no digital-only release, the same rule runs over all of them.
+// With no digital-only release, or none that lists its tracks (an album
+// still filling in), the same rule runs over all of them.
 //
 // This is a default, not a choice: the album page's source dropdown (#1238)
 // lets the user pick another edition — the MusicBrainz releases of the group
@@ -66,8 +67,11 @@ function pickRelease(releases) {
   if (list.length === 0) return null;
   if (list.length === 1) return list[0];
 
+  // Digital releases first, unless none of them lists its tracks yet: an
+  // album days old can hold empty digital placeholders while a CD or vinyl
+  // release already has the track list (rule 3, 2026-11-23).
   const digital = list.filter(isDigitalOnly);
-  const pool = digital.length ? digital : list;
+  const pool = digital.some((r) => releaseTrackCount(r) > 0) ? digital : list;
 
   // Group by track count (0 means MusicBrainz didn't say), keeping MB order.
   const groups = new Map();
@@ -95,7 +99,27 @@ function pickRelease(releases) {
 // The rule's version. A release group's pick is remembered for 30 days (the
 // alias in the release-details cache, release-lookup.js), so a change to the
 // rule bumps this and a pick made under an older rule is made again. 2: the
-// Worldwide/US preference (#1312).
-const PICK_RULE = 2;
+// Worldwide/US preference (#1312). 3: digital placeholders with no tracks
+// don't hide a CD or vinyl release that has them (2026-11-23).
+const PICK_RULE = 3;
 
-module.exports = { pickRelease, releaseTrackCount, PICK_RULE };
+// A MusicBrainz release search (by title and artist: the Charts and Critic's
+// Picks album pages, a chart card's Play) answers with releases, and callers
+// take the first. MusicBrainz scores every edition of the album alike, so the
+// first can be an empty placeholder (Grand Theft Auto VI: The Album, days
+// after release: 0 tracks, and the page showed none). Search hits carry each
+// release's media formats and track counts, which is all pickRelease reads,
+// so the top hit's album is picked from the hits with no further request,
+// and the pick goes first. Another album never takes its place.
+function orderReleaseSearchHits(releases) {
+  const list = Array.isArray(releases) ? releases.filter((r) => r && typeof r === 'object') : [];
+  if (list.length < 2) return list;
+  const groupOf = (r) => (r['release-group'] && r['release-group'].id) || null;
+  const group = groupOf(list[0]);
+  if (!group) return list;
+  const pick = pickRelease(list.filter((r) => groupOf(r) === group));
+  if (!pick || pick === list[0]) return list;
+  return [pick, ...list.filter((r) => r !== pick)];
+}
+
+module.exports = { pickRelease, releaseTrackCount, orderReleaseSearchHits, PICK_RULE };

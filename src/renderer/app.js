@@ -588,7 +588,7 @@ const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRele
 const { resolversToAskAgain, nextUnanswered } = require('./lib/unanswered-resolvers');
 // A plug-in's cached miss holds only for the version that gave it (#1535).
 const { isMiss, newMiss, isStaleMiss } = require('./lib/cached-miss');
-const { pickRelease } = require('./lib/release-pick');
+const { pickRelease, orderReleaseSearchHits } = require('./lib/release-pick');
 const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource, venueMatchesLocationText } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
@@ -26202,18 +26202,12 @@ ${tracks}
       // Background lane of the MusicBrainz limiter: a prefetch must never make
       // a click's lookup wait behind it (two requests per hovered card did).
       const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
-      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await bgFetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      // The shared search: the album's pick first, never an empty placeholder
+      // (orderReleaseSearchHits), and the first-artist retry for "A & B".
+      const releases = await searchMusicBrainzRelease(album.title, album.artist, { background: true });
+      if (releases.length === 0) return null;
 
-      if (!mbResponse.ok) return null;
-
-      const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return null;
-
-      const releaseId = mbData.releases[0].id;
+      const releaseId = releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
@@ -30726,7 +30720,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const doSearch = async (artistQuery) => {
       const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artistQuery}"`);
       const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        // 25 hits, not 1: the top hit's album is picked from them
+        // (orderReleaseSearchHits), so an empty placeholder MusicBrainz scores
+        // first never stands for the album. Still one request.
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=25`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }, mbBackground: !!opts.background }
       );
 
@@ -30735,7 +30732,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       const mbData = await mbResponse.json();
-      return mbData.releases || [];
+      return orderReleaseSearchHits(mbData.releases || []);
     };
 
     // Try with full artist name first
@@ -30940,19 +30937,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       // Background lane of the MusicBrainz limiter (see prefetchChartsTracks).
       const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
-      // Search MusicBrainz for the release
-      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await bgFetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      // The shared search: the album's pick first, never an empty placeholder
+      // (orderReleaseSearchHits), and the first-artist retry for "A & B".
+      const releases = await searchMusicBrainzRelease(album.title, album.artist, { background: true });
+      if (releases.length === 0) return null;
 
-      if (!mbResponse.ok) return null;
-
-      const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return null;
-
-      const releaseId = mbData.releases[0].id;
+      const releaseId = releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
