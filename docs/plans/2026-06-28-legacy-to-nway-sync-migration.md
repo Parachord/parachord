@@ -72,6 +72,10 @@ On that account, 31 playlists had Spotify (or Apple Music) as the source on desk
 8. **Which providers sync is one rule.** A provider is synced only while the user has it switched on. Desktop gets this from the registry's `isSyncActive(id)` (M1/M5); mobile from `syncingProviders` (#817). No engine path decides it separately.
 9. **An append-only provider gets only the missing tracks** (Apple Music library playlists). Both platforms do this now.
 
+**Repairing a playlist whose source is wrong, on mobile.** Mobile's playlist id names its source (`spotify-<id>`, `listenbrainz-<mbid>`, read by `impliedPlaylistProvider`), so correcting a source means moving the playlist to a new id. Desktop's ids (`p-…`) don't name a source and need no move. The 31 flipped playlists were repaired on 2026-11-23 by hand, and the move had to cover every place that keys on the id: the playlist row (with the source's `spotifyId` and a cleared snapshot so the next pull refreshes it), `playlist_tracks`, `sync_playlist_link`, `sync_sources` (item type `playlist`), `sync_playlist_baseline`, `sync_playlist_nway`, `sync_playlist_source` (rewritten to the real source, with a link row for it), and two settings: the per-playlist channel override (`sync_playlist_channels_<id>`, which must name the source, since it's an allowlist for pull as well as push) and Apple Music's pull list. Rule 4 on mobile needs this as shared code (one re-key function in `shared/commonMain`), run for every existing playlist whose provenance says it's a mirror, inside one transaction. Until it exists, a source can only be corrected by hand.
+
+**Rows a removed playlist left behind.** Mobile's `playlist_tracks` declares a cascade that never ran (SQLite's foreign keys are off, and can't be turned on while playlist saves are `INSERT OR REPLACE`), so every removed playlist left its tracks under an id nothing owned: 3,863 rows for 89 playlists on one phone. The first repair attempt failed on them: the new id already held old tracks at the same positions. Fixed in parachord-mobile#827 (the delete removes the tracks; both apps drop orphaned rows when the database opens). For this plan: the backup exports only playlists that exist and their tracks, a restore or re-key clears the target id's rows first, and no step relies on a database cascade on mobile.
+
 Rules 4, 5 and 7 are new work on both platforms. Until they land, the safe operating advice for a mixed fleet is: **turn on a service's sync on only one client per source.** If desktop pulls a playlist from Spotify, mobile should get it through Spotify too, not through ListenBrainz's copy.
 
 ## Backup and restore
@@ -186,6 +190,7 @@ The sync-providers plan brings these in as plug-in providers: Subsonic and then 
 
 ## Data + rollback
 
+- **Mobile's database has no working cascades.** Every step that removes or moves a playlist deletes its dependent rows in code (see "Rows a removed playlist left behind").
 - **No destructive local migration.** N-way reads the same `local_playlists` fields; `sync_playlist_links` is shared and respected by both engines.
 - **Baseline adoption on first `new` run.** The reconcile adopts the current remote as the baseline anchor, so switching doesn't flag spurious updates.
 - **Rollback:** switch back to `legacy` (clean after M7), or restore from the backup (works today).
