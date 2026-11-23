@@ -27588,7 +27588,11 @@ Return ONLY the JSON array, no other text.`;
     return orderCatalogResolvers(
       loader.getSimilarUsersResolvers()
         .filter(r => isFriendService(r.id))
-        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id))
+        // "Use recommendations from X" off (#1505) leaves its listeners out
+        // too: they're recommendations, and without this they kept the
+        // plug-in's chip on the page's filter bar (2026-11-23).
+        .filter(r => !recommendationsOffRef.current.includes(r.id)),
       { activeIds, order }
     );
   };
