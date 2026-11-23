@@ -1,3 +1,22 @@
+# Parachord (unreleased)
+
+**Release date:** not yet released
+
+> Compilation albums play: their tracks find sources under each track's own artist, and the tracklist names them. A brand-new album no longer opens with no tracks, and turning off a plug-in's recommendations takes all of them off the Recommendations page at once.
+
+---
+
+## Albums
+
+- **Compilations play, and say who's on each track.** A Various Artists album, a soundtrack or a DJ mix looked up every track as "Various Artists", which matched nothing, so its tracks couldn't find a source. Each track now plays under its own artist, and the tracklist has an artist column, each name opening that artist. An album by one artist looks as before.
+- **A new album opens with its tracks.** Days after release, MusicBrainz can list empty placeholder editions of an album, and an album opened from Pop of the Tops or Critical Darlings could land on one and show no tracks (Grand Theft Auto VI: The Album did). It now opens the edition that has the track list.
+
+## Discovery
+
+- **Turning off a plug-in's recommendations takes all of them off the page.** With "Use recommendations from ListenBrainz" off, its similar listeners stayed in the Listeners row, and ListenBrainz stayed in the page's filter bar. Both now go as soon as you turn it off.
+
+---
+
 # Parachord v0.9.14
 
 **Release date:** 2026-11-23
