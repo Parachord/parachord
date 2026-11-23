@@ -628,7 +628,7 @@
         "stream": true,
         "browse": false,
         "urlLookup": false,
-        "mobile": false,
+        "mobile": true,
         "html5Stream": true
       },
       "requiresAuth": true,
