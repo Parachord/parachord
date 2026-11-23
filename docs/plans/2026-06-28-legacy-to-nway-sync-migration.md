@@ -83,6 +83,7 @@ Every step in this migration hands writes from one engine to another, and Novemb
 - the collection's rows with their `syncSources`;
 - `sync_playlist_links`, `sync_playlist_state` baselines, track tombstones and love marks;
 - **a snapshot of every linked remote playlist**, read at backup time: provider, external id, name, snapshot id, and each track's native id with artist and title. This is the part that would have made November's repair routine. Each remote's read is complete or the backup says it's missing; a partial list is never saved as if whole.
+- **a snapshot of every remote library Parachord can write to** (tracks, albums and artists where the provider declares `write`: Spotify, Apple Music, Amazon Music's library). A pull-only library (Subsonic, Plex) needs no remote snapshot, since Parachord never writes to the server; its rows are in the collection above, with their scope.
 - the app version, platform and `sync_engine_mode` at backup time.
 
 **When the app makes one:**
@@ -147,9 +148,33 @@ Phases are the user-visible steps; milestones (M) are from the sync-providers pl
   - Old builds still on `legacy` keep writing shared remotes indefinitely (no telemetry, no account), which is why rules 4 to 9 must also hold in N-way and not only in the legacy code that's deleted.
 
 **Plug-in providers, in this order relative to the phases:**
-- **M1 to M5 (contract, registry, bridge, Subsonic/Plex library, loves) can ship during Phase 2.** They don't change which engine writes playlists. M1's no-op golden test and state audit script stand in for a backup during that move, since no data shape changes.
+- **M1 to M5 (contract, registry, bridge, Subsonic/Plex library, loves) can ship during Phase 2** (see "Plug-in services" for what each needs). They don't change which engine writes playlists. M1's no-op golden test and state audit script stand in for a backup during that move, since no data shape changes.
 - **M11 (plug-in playlist providers) waits for Phase 3**, so plug-in playlists never touch legacy.
 - **M15 (built-in providers move into their `.axe`) waits for M3's bridge to carry Subsonic and Plex for a release.** Each move runs the M1 conformance suite and golden test, and the release that ships it makes an automatic backup.
+
+## Plug-in services (Subsonic, Plex, Amazon Music)
+
+The sync-providers plan brings these in as plug-in providers: Subsonic and then Plex libraries (M4), their playlists (M11), and Amazon Music's library and playlists (M14). What the migration needs from each:
+
+- **Subsonic and Plex libraries (M4): pull-only, so the risk is local.**
+  - Parachord never writes to the server (the contract gives them no write method), so they can't damage a remote. What they can do is remove rows from the collection.
+  - **A scope change is a deliberate removal.** Deselecting one Plex library removes its rows outside the mass-removal safeguard (the sync-providers plan, D3). The sharp-shrink hold (rule 7) takes the same exception. The app makes a backup before applying a scope change, so a library deselected by mistake can be restored.
+  - **A server that can't be reached is "paused", not empty.** A home server off the network (a phone away from home Wi-Fi) throws, and nothing is removed (the contract's failure rule; desktop #1358's throw-on-failure in `subsonic.axe` is the precedent).
+  - They can ship during Phase 2: they don't change which engine writes playlists.
+- **Subsonic and Plex playlists (M11):** N-way only, after the default flip, so they never meet the legacy loops. Rules 4 to 9 apply as to any provider.
+- **Amazon Music (M14): read and written, behind a web session.**
+  - **Placement.** After M3's bridge has carried Subsonic and Plex for a release (the same gate as M15). If it lands before the default flip, its playlists stay off the legacy loops, as M11's do: Amazon playlist sync is N-way only.
+  - **Followed playlists are read-only sources.** Amazon's followed playlists (mostly editorial or auto-generated) can't be edited, only unfollowed. They import with `syncedFrom` and are never a push target or a mirror on any client (rule 4). A client that finds one by name links it and never writes it (rule 5).
+  - **Created playlists** sync both ways like any provider's.
+  - **A purchases-only plan.** On a plan that plays only owned tracks, a playlist or library can hold tracks the account can't play. Playability is not membership: a track that can't play stays in the list. Only the provider's own listing decides presence, so a plan change doesn't read as removals to `missingStreak` or the shrink hold. The plan transition already purges and re-resolves *sources* (`limitTransition`); it must never remove *rows*.
+  - **The library** (tracks, albums, artists) is written, so the backup snapshots it.
+  - **Purchased tracks:** one list, shared with playback's owned-only plans (desktop #1494).
+  - **Before M14 ships:** the M1 conformance suite and golden test run against Amazon's provider with recorded responses.
+- **Mobile.**
+  - Subsonic is mobile-capable, so its library sync needs a Kotlin `SyncProvider` over `JsRuntime`. Whether the headless WebView (Android) or JavaScriptCore (iOS) can run it from the background worker (`LibrarySyncWorker`, iOS `BGProcessingTask`) is unanswered.
+  - Until it is, Subsonic's library sync on mobile runs only while the app is open, and says so in its settings. This doesn't gate the default flip, which is about playlists.
+  - Plex is `mobile: false`.
+  - Amazon on mobile follows desktop's M14 with the same rules, on the web-session bridge both apps already supply.
 
 ## Cross-platform coordination model
 
