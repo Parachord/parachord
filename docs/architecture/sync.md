@@ -318,6 +318,8 @@ Consequences:
 
 ### Multi-Provider Mirror Propagation
 
+**The playlist page shows where a playlist syncs to:** one `Badge` per push mirror (`pushMirrors`, `src/renderer/lib/playlist-mirrors.js`): every `syncedTo` service except the one it's pulled from, whose "Source: X" line already says it. A pulled playlist's mirrors used to show nothing (#1640; mobile's `PlaylistOrigin.pushMirrors`).
+
 A playlist can be mirrored to multiple providers simultaneously (e.g. synced *from* Spotify and *to* both Spotify and Apple Music). When one mirror changes upstream, the update has to propagate through the local copy to the other mirrors. Four places cooperate to make this work — losing any one of them silently breaks propagation for that playlist:
 
 **1. `handlePull` must set `locallyModified: true` when other mirrors exist** (app.js ~L44509). A pull replaces local tracks with the remote's. If the playlist also has `syncedTo` entries for *other* providers, those copies are now out of date relative to what we just pulled. The pull writes `locallyModified: hasOtherMirrors` (not a hardcoded `false`) so the next push loop picks it up. Without this, an Android-edit → Spotify → desktop pull would stop at the desktop and never reach Apple Music.
