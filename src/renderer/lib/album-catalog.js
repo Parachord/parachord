@@ -286,13 +286,22 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   // artist to check against (then the title alone decides). The gate is the
   // artist as written, not its folded form: a symbol-only name ("!!!", "†††")
   // folds to nothing but is still a name, and must not open anyone's album.
+  const bareTitle = (s) => stripMarks(s).replace(/&/g, 'and').replace(/[^\p{L}\p{N}]+/gu, '');
+  const wanted = bareTitle(title);
   const hasArtist = String(artist || '').trim().length > 0;
   const byArtist = hasArtist
     ? scored.filter((entry) => creditMatches(artist, releaseGroupCredit(entry.r)))
     : scored;
   if (byArtist.length > 0) {
     const matched = byArtist.filter((entry) => entry.score > 0);
-    return best(matched.length > 0 ? matched : byArtist);
+    if (matched.length > 0) return best(matched);
+    // With a title, another album by the same artist is not it unless its
+    // title is at least close ("…: the subtitle"): a search for an album
+    // MusicBrainz doesn't have must not open the artist's previous record. No
+    // title at all (the album-card actions' search): the artist alone decides.
+    if (!wanted) return best(byArtist);
+    const close = byArtist.filter((entry) => entry.closeness > 0);
+    return close.length > 0 ? best(close) : null;
   }
   // A credit that does not match at all (a romanised name against its native
   // script, a name the artist now records under: "Hikaru Utada" / 宇多田ヒカル,
@@ -302,8 +311,6 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   // result (MusicBrainz doesn't have the album: "Another Day Once Called
   // Tomorrow" returned "Tomorrow's Another Day" by other artists) answers
   // null — never another artist's album.
-  const bareTitle = (s) => stripMarks(s).replace(/&/g, 'and').replace(/[^\p{L}\p{N}]+/gu, '');
-  const wanted = bareTitle(title);
   if (!wanted) return null;
   const exactTitle = scored.filter((entry) => bareTitle(entry.r.title) === wanted);
   return exactTitle.length === 1 ? exactTitle[0].r : null;

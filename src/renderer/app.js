@@ -12286,7 +12286,7 @@ const Parachord = () => {
                 const showNotFound = (error) => {
                   const notFound = error instanceof Error ? error : new Error('Album not found');
                   if (!notFound.userMessage) {
-                    notFound.userMessage = `Couldn't find "${albumTitle}" on MusicBrainz or your services.`;
+                    notFound.userMessage = `Couldn’t find "${albumTitle}" on MusicBrainz or your services.`;
                   }
                   showReleaseLoadError(linkPlaceholderId, notFound, {
                     run: () => handleCollectionAlbumClickRef.current?.({ title: albumTitle, artist: artistName })
@@ -12326,7 +12326,7 @@ const Parachord = () => {
                 if (!opened) {
                   const notFound = error instanceof Error ? error : new Error('Album not found');
                   if (!notFound.userMessage) {
-                    notFound.userMessage = `Couldn't load "${albumTitle}". Check your connection and try again.`;
+                    notFound.userMessage = `Couldn’t load "${albumTitle}". Check your connection and try again.`;
                   }
                   showReleaseLoadError(linkPlaceholderId, notFound, {
                     run: () => handleCollectionAlbumClickRef.current?.({ title: albumTitle, artist: artistName })
@@ -21005,7 +21005,7 @@ ${trackListXml}
       if (!isMusicBrainzId(release.id) && pickEdition?.kind !== 'mb') {
         if (await tryCatalogs()) return;
         const notFound = new Error('Album not found in any catalog');
-        notFound.userMessage = "Couldn't find this album's tracks on MusicBrainz or your services.";
+        notFound.userMessage = "Couldn’t find this album’s tracks on MusicBrainz or your services.";
         showReleaseLoadError(release.id, notFound, { kind: 'release', release, artist });
         return;
       }
@@ -22347,7 +22347,7 @@ ${trackListXml}
     const showNotFound = (error) => {
       const notFound = error instanceof Error ? error : new Error('Album not found');
       if (!notFound.userMessage) {
-        notFound.userMessage = "Couldn't find this album on MusicBrainz or your services.";
+        notFound.userMessage = "Couldn’t find this album on MusicBrainz or your services.";
       }
       showReleaseLoadError(collectionPlaceholderId, notFound, {
         run: () => handleCollectionAlbumClickRef.current?.(album)

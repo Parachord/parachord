@@ -168,7 +168,7 @@ describe('pickReleaseGroupForAlbum', () => {
   });
 
   test('nothing by that artist: null, never another artist\'s album; empty input gives null', () => {
-    expect(pickReleaseGroupForAlbum([group('a', 'X', ['A']), group('b', 'Y', ['B'])], { artist: 'B', title: 'Z' }).id).toBe('b');
+    expect(pickReleaseGroupForAlbum([group('a', 'Z', ['A']), group('b', 'Z', ['B'])], { artist: 'B', title: 'Z' }).id).toBe('b');
     // A brand-new album MusicBrainz doesn't have answers same-words albums by
     // other artists ("Another Day Once Called Tomorrow" returned the top 5 of
     // "Tomorrow's Another Day"): the answer is null, and the opener tries the
@@ -222,15 +222,25 @@ describe('pickReleaseGroupForAlbum', () => {
   test('a title the results spell out counts whatever its length', () => {
     // A prefix counts only at a word boundary, not from an arbitrary length:
     // "Rumours" is still the album MusicBrainz calls "Rumours: Live from the
-    // Forum 1977", while "Go" is not the artist's "Goodbye".
+    // Forum 1977".
     const spelledOut = [group('tusk', 'Tusk', ['Fleetwood Mac']), group('rumours', 'Rumours: Live from the Forum 1977', ['Fleetwood Mac'], { secondary: ['Live'] })];
     expect(pickReleaseGroupForAlbum(spelledOut, { artist: 'Fleetwood Mac', title: 'Rumours' }).id).toBe('rumours');
-    const shortPrefix = [group('b', 'B', ['A']), group('bye', 'Goodbye', ['A'])];
-    expect(pickReleaseGroupForAlbum(shortPrefix, { artist: 'A', title: 'Go' }).id).toBe('b');
-    const thirdWord = [group('b', 'B', ['A']), group('home', 'Homecoming', ['A'])];
-    expect(pickReleaseGroupForAlbum(thirdWord, { artist: 'A', title: 'Home' }).id).toBe('b');
-    const compound = [group('b', 'B', ['A']), group('gogo', 'Go-Go', ['A'])];
-    expect(pickReleaseGroupForAlbum(compound, { artist: 'A', title: 'Go' }).id).toBe('b');
+  });
+
+  test('with a title, another album by the same artist is not it', () => {
+    // The artist matches, the album asked for isn't there, and the artist's
+    // other records are nothing like its title: the catalogs get their turn
+    // instead of the previous record opening under the requested album's name
+    // (jherskowitz's review, 2026-11-21).
+    const results = [group('older', 'Older Record', ['Defenders Of The Faith', 'Therion']), group('other', "Tomorrow's Another Day", ['Someone Else'])];
+    expect(pickReleaseGroupForAlbum(results, { artist: 'Defenders Of The Faith, Therion', title: 'Another Day Once Called Tomorrow' })).toBeNull();
+    // A short title that only shares letters ("Go" / "Goodbye", "Home" /
+    // "Homecoming", "Go" / "Go-Go") is not close either.
+    expect(pickReleaseGroupForAlbum([group('bye', 'Goodbye', ['A'])], { artist: 'A', title: 'Go' })).toBeNull();
+    expect(pickReleaseGroupForAlbum([group('home', 'Homecoming', ['A'])], { artist: 'A', title: 'Home' })).toBeNull();
+    expect(pickReleaseGroupForAlbum([group('gogo', 'Go-Go', ['A'])], { artist: 'A', title: 'Go' })).toBeNull();
+    // No title given (the album-card actions): the artist alone still decides.
+    expect(pickReleaseGroupForAlbum(results, { artist: 'Defenders Of The Faith, Therion' }).id).toBe('older');
   });
 
   test('the credit reads as one string, join phrases included', () => {
