@@ -56,6 +56,20 @@ describe('track entries', () => {
     expect(entriesFromMusicBrainzRelease(null)).toEqual([]);
   });
 
+  test('a compilation\'s entries keep each track\'s own artist, from MusicBrainz and from a catalog', () => {
+    const credit = (name, id) => [{ name, artist: { id } }];
+    const compilation = { 'artist-credit': credit('Various Artists', 'va'), media: [{ tracks: [
+      { position: 1, title: 'Lust for Life', 'artist-credit': credit('Iggy Pop', 'iggy'), recording: { id: 'r1' } },
+    ] }] };
+    expect(entriesFromMusicBrainzRelease(compilation)[0].trackArtist).toBe('Iggy Pop');
+    const album = { 'artist-credit': credit('Radiohead', 'rh'), media: [{ tracks: [
+      { position: 1, title: 'Airbag', 'artist-credit': credit('Radiohead', 'rh'), recording: { id: 'r2' } },
+    ] }] };
+    expect(entriesFromMusicBrainzRelease(album)[0]).not.toHaveProperty('trackArtist');
+    expect(entriesFromCatalogRelease({ tracks: [{ position: 1, title: 'Atomic', trackArtist: 'Sleeper' }] })[0].trackArtist).toBe('Sleeper');
+    expect(entriesFromCatalogRelease({ tracks: [{ position: 1, title: 'Roads', trackArtist: null }] })[0]).not.toHaveProperty('trackArtist');
+  });
+
   test('from a catalog release, no recording ids', () => {
     expect(entriesFromCatalogRelease({ tracks: [{ position: 2, title: 'Roads', length: 305000, mediumIndex: 1 }] }))
       .toEqual([{ position: 2, title: 'Roads', length: 305000, recordingId: null }]);
@@ -94,7 +108,9 @@ describe('app.js wiring', () => {
   });
 
   test('track ids come from the names the caller asked for, whichever side answered', () => {
-    expect(loader).toMatch(/id: trackSlug\(artist \|\| 'unknown', e\.title \|\| 'untitled', title \|\| 'noalbum'\)/);
+    // playableAlbumTrack keys them by artist, title and album; a compilation's
+    // track by its own artist (tests/renderer/album-track-artist.test.js).
+    expect(loader).toMatch(/\.\.\.playableAlbumTrack\(\{[\s\S]{0,300}\}, \{ albumArtist: artist, album: title, albumArt: albumArt \|\| null \}\)/);
   });
 
   test('every album-card action goes through it', () => {
