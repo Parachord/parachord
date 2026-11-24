@@ -75,7 +75,7 @@ test('no track list marks the playing row with a light-only palette class', () =
 test('the queue drawer text uses the on-dark colours and the drawer is opaque enough', () => {
   const lists = fs.readFileSync(path.join(ROOT, 'src/renderer/components/track-lists.js'), 'utf8');
   expect(lists).not.toMatch(/rgba\(156, 163, 175/);
-  expect(lists).toContain("fontSize: '12px', color: 'var(--on-dark-secondary)' },");
+  expect(lists).toMatch(/fontSize: '12px', color: 'var\(--on-dark-secondary\)' \}/);
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   expect(html).toContain('--surface-dark-gradient-to: rgba(17, 24, 39, 0.85);');
 });

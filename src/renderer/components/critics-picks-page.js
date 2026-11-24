@@ -20,6 +20,7 @@ const { EmptyState, ErrorState } = require('./states');
 const { releaseMenu } = require('../lib/item-menus');
 const { CardButton } = require('./card-button');
 const { transition } = require('../lib/motion');
+const { hasArtistPage } = require('../lib/artist-page-name');
 
 // The sort menu's choices (a constant: as a prop built in app.js it was a
 // new array each render).
@@ -330,23 +331,24 @@ addCriticsPicksToQueue(album);
                       transition: transition('color', 'fast')
                     }
                   }, album.title),
-                  React.createElement('button', { type: 'button',
+                  // Plain text for "Various Artists", which has no page.
+                  React.createElement(hasArtistPage(album.artist) ? 'button' : 'div', Object.assign({
                     style: {
                       fontSize: '13px',
                       color: 'var(--text-secondary)',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      marginTop: '2px',
-                      cursor: 'pointer',
-                      transition: transition('color', 'fast')
-                    },
-                    className: 'block max-w-full text-left hover:text-accent',
+                      marginTop: '2px'
+                    }
+                  }, hasArtistPage(album.artist) ? {
+                    type: 'button',
+                    className: 'block max-w-full text-left hover:text-accent cursor-pointer transition-colors duration-fast',
                     onClick: (e) => {
                       e.stopPropagation();
                       fetchArtistData(album.artist);
                     }
-                  }, album.artist),
+                  } : { className: 'block max-w-full text-left' }), album.artist),
                   // The release date, from MusicBrainz (the feed's date is
                   // when the pick was published). Its line is kept while the
                   // lookup runs, so the card doesn't move when it lands.

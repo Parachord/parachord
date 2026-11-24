@@ -30,6 +30,7 @@ const { Slider } = require('./fields');
 const { transition } = require('../lib/motion');
 const { DropZoneOverlay } = require('./drop-zone-overlay');
 const { bioPlainText } = require('../lib/bio-markup');
+const { hasArtistPage } = require('../lib/artist-page-name');
 
 const { List, Music, Pause, Play, SkipBack, SkipForward } = Icons;
 
@@ -376,6 +377,8 @@ const Playbar = React.memo(function Playbar(props) {
                     ? bioText.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (bioText.length > 200 ? '…' : '')
                     : null;
 
+                  // "Various Artists" has no page: plain text.
+                  if (!hasArtistPage(currentTrack.artist)) return React.createElement('span', { className: 'truncate' }, currentTrack.artist);
                   const artistButton = React.createElement('button', {
                     onClick: () => fetchArtistData(currentTrack.artist),
                     className: `truncate hover:text-white hover:underline transition-colors cursor-pointer no-drag${playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending }) ? ' now-playing-pending' : ''}`,
