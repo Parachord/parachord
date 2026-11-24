@@ -51,6 +51,7 @@ const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
 const { parseBioMarkup } = require('../lib/bio-markup');
 const { countOf } = require('../lib/plural');
+const { hasArtistPage } = require('../lib/artist-page-name');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const ARTIST_PAGE_HANDLERS = [
@@ -442,8 +443,13 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           )
         }),
         
-        // Release page - artist header (shows artist image/name/tabs at top)
-        currentRelease && React.createElement('div', {
+        // Release page - artist header (shows artist image/name/tabs at top).
+        // A compilation's is the name alone: "Various Artists" has no page, so
+        // no photo, link or tabs (lib/artist-page-name.js).
+        currentRelease && (() => {
+        const albumArtist = currentRelease.artist?.name || currentArtist?.name;
+        const artistHasPage = hasArtistPage(currentRelease.artist || currentArtist);
+        return React.createElement('div', {
           className: 'relative',
           style: {
             height: '80px',
@@ -452,7 +458,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           }
         },
           // Background image with gradient overlay
-          artistImage && React.createElement('div', {
+          artistHasPage && artistImage && React.createElement('div', {
             className: 'absolute inset-0',
             style: {
               backgroundImage: `url(${artistImage})`,
@@ -465,7 +471,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           React.createElement('div', {
             className: 'absolute inset-0',
             style: {
-              background: artistImage
+              background: artistHasPage && artistImage
                 ? 'var(--photo-shade-bar)'
                 : 'var(--photo-shade-empty)'
             }
@@ -477,7 +483,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             // Left side: Artist name
             // A button (keyboard-reachable), not a clickable heading: the
               // expanded hero holds the page's h1.
-              React.createElement('button', { type: 'button',
+              artistHasPage ? React.createElement('button', { type: 'button',
               className: 'text-left text-2xl font-light mr-6 text-white cursor-pointer hover:text-white/80 transition-colors no-drag flex-shrink-0',
               style: {
                 textShadow: 'var(--hero-text-shadow-bar)',
@@ -495,9 +501,18 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 }
               },
               'data-tooltip': 'Back to artist'
-            }, currentRelease.artist?.name || currentArtist?.name),
+            }, albumArtist)
+            : React.createElement('div', {
+              className: 'text-left text-2xl font-light mr-6 text-white flex-shrink-0',
+              style: {
+                textShadow: 'var(--hero-text-shadow-bar)',
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                lineHeight: '1.2'
+              }
+            }, albumArtist),
             // Center: Navigation tabs
-            React.createElement('div', {
+            artistHasPage && React.createElement('div', {
               className: 'flex items-center gap-1',
               style: { textShadow: 'var(--hero-text-shadow-line)' }
             },
@@ -530,7 +545,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                   }, renderLabel: (tab) => tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1), label: 'Artist' })
             )
           )
-        ),
+        );
+        })(),
 
         // Release page content - new layout with album details header
         // Show immediately with partial data (tracks may still be loading)
@@ -553,7 +569,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             React.createElement('div', {
               className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
             },
-              React.createElement('button', {
+              // A link back to the artist; plain text when there is no page.
+              hasArtistPage(currentRelease?.artist || currentArtist) ? React.createElement('button', {
                 onClick: () => {
                   // Clear the release view to go back to artist
                   setCurrentRelease(null);
@@ -565,7 +582,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 },
                 style: { color: 'var(--text-tertiary)', transition: transition('color', 'fast') },
                 className: 'hover:text-ink-secondary transition-colors uppercase hover:!text-[var(--text-secondary)]',
-              }, currentArtist?.name || currentRelease?.artist?.name || 'Artist'),
+              }, currentArtist?.name || currentRelease?.artist?.name || 'Artist')
+                : React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, currentRelease?.artist?.name || currentArtist?.name || 'Artist'),
               React.createElement('span', { style: { color: 'var(--border-default)' } }, '/'),
               // The album's heading (#1386), drawn as the breadcrumb's last part.
               React.createElement('h2', { style: { color: 'var(--text-secondary)', margin: 0, font: 'inherit', display: 'inline' }, className: 'uppercase' },

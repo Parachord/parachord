@@ -1382,6 +1382,8 @@ const {
   VirtualizedQueueList, VirtualizedTrackList, TrackRow, sourceColumnWidth,
 } = require('./components/track-lists');
 const { countOf } = require('./lib/plural');
+// "Various Artists" isn't an artist and has no page (lib/artist-page-name.js).
+const { hasArtistPage } = require('./lib/artist-page-name');
 // A track's own artist on an album (a compilation's tracks): lib/album-track-artist.js.
 const { ownTrackArtist, playableAlbumTrack } = require('./lib/album-track-artist');
 const { summarizeToolResults } = require('./lib/tool-summary');
@@ -6645,14 +6647,14 @@ const Parachord = () => {
     // Reset and proactively load artist concerts for the On Tour tab
     setArtistConcerts([]);
     setArtistConcertsLoaded(false);
-    if (currentArtist?.name) {
+    if (hasArtistPage(currentArtist)) {
       loadArtistConcerts(currentArtist.name);
     }
   }, [currentArtist]);
 
   // Fetch tab data when restored to biography or related artists tab
   useEffect(() => {
-    if (!currentArtist) return;
+    if (!currentArtist || !hasArtistPage(currentArtist)) return;
 
     if (artistPageTab === 'biography') {
       // Fetch bio if not already loaded
@@ -12233,7 +12235,7 @@ const Parachord = () => {
               if (tab && ['music', 'biography', 'related', 'on-tour'].includes(tab)) {
                 pendingProtocolTabRef.current = tab;
               }
-              setActiveView('artist');
+              if (hasArtistPage(artistName)) setActiveView('artist');
               fetchArtistData(artistName);
             }
             break;
@@ -15086,6 +15088,7 @@ ${trackListXml}
 
   // Add artist to collection
   const addArtistToCollection = useCallback((artist) => {
+    if (!hasArtistPage(artist)) return;
     const artistId = generateArtistId(artist.name);
 
     setCollectionData(prev => {
@@ -17721,7 +17724,7 @@ ${trackListXml}
                     switch (command) {
                       case 'artist':
                         if (segments[0]) {
-                          setActiveView('artist');
+                          if (hasArtistPage(segments[0])) setActiveView('artist');
                           fetchArtistData(segments[0]);
                         }
                         break;
@@ -18339,7 +18342,7 @@ ${trackListXml}
       if (cachedResults) {
         // Show cached results immediately
         setSearchResults(prev => ({
-          artists: cachedResults.artists || prev.artists,
+          artists: (cachedResults.artists || prev.artists).filter(a => hasArtistPage(a)),
           albums: cachedResults.albums || prev.albums,
           tracks: [...(prev.tracks.filter(t => t.isLocal) || []), ...(cachedResults.tracks || [])],
           playlists: prev.playlists
@@ -18629,7 +18632,7 @@ ${trackListXml}
       const derived = catalogArtistsFromResults({
         query, trackLists: trackLists(), albumLists: albumLists(), mbArtists: mb.artists || []
       });
-      const rows = stable('artists', reRankResults([...(mb.artists || []), ...derived], query, 'name'), artistIdentityKeys);
+      const rows = stable('artists', reRankResults([...(mb.artists || []), ...derived].filter(a => hasArtistPage(a)), query, 'name'), artistIdentityKeys);
       setSearchResults(prev => ({ ...prev, artists: rows }));
       if (mbOk.artists) cacheCategory('artists', rows);
     };
@@ -19397,7 +19400,7 @@ ${trackListXml}
         const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases', 'concerts'];
         if (validViews.includes(savedLastView.view)) {
           // For artist view, we need to restore the artist data
-          if (savedLastView.view === 'artist' && savedLastView.artistName) {
+          if (savedLastView.view === 'artist' && savedLastView.artistName && (savedLastView.releaseId || hasArtistPage(savedLastView.artistName))) {
             // Set the view first, then fetch artist data
             setActiveView('artist');
             setViewHistory(['library', 'artist']);
@@ -19425,6 +19428,10 @@ ${trackListXml}
               waitForBigCaches().then(() => fetchArtistData(savedLastView.artistName));
             }, 100);
             console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}${savedLastView.releaseTitle ? ` -> ${savedLastView.releaseTitle}` : ''}`);
+          } else if (savedLastView.view === 'artist') {
+            // A saved "Various Artists" page (from before it had none), or one
+            // with no name: there is nothing to reopen.
+            setActiveView('home');
           } else if (savedLastView.view === 'history') {
             // Restore history view with tab
             setActiveView('history');
@@ -20398,6 +20405,18 @@ ${trackListXml}
   const ARTIST_SLOW_FALLBACK_MS = 3000;
   const fetchArtistData = async (artistName, options = {}) => {
     console.log('Fetching artist data for:', artistName);
+    // "Various Artists" has no page (lib/artist-page-name.js). Nothing links
+    // here for it; a menu, a deep link or an old record still can. A restored
+    // compilation is the exception: its album opens once the page has an
+    // artist (the pendingReleaseLoad effect).
+    if (!hasArtistPage({ name: artistName, mbid: options.mbid })) {
+      if (pendingReleaseLoad.current) {
+        setCurrentArtist({ id: null, name: artistName });
+      } else if (artistName) {
+        showToast(`${artistName} isn’t an artist, so it has no page`);
+      }
+      return;
+    }
     const knownMbid = isMusicBrainzId(options.mbid) ? options.mbid : null;
 
     // Increment fetch ID to invalidate any in-flight requests for previous artists
@@ -20413,7 +20432,8 @@ ${trackListXml}
 
     // Only add to artist history if we're already on the artist view
     // This prevents search results from building up history
-    if (activeView === 'artist' && currentArtist && currentArtist.name !== artistName) {
+    // (nor a compilation's "Various Artists", which has no page to go back to)
+    if (activeView === 'artist' && hasArtistPage(currentArtist) && currentArtist.name !== artistName) {
       setArtistHistory(prev => [...prev, currentArtist.name]);
     } else if (activeView !== 'artist') {
       // Clear artist history when coming from a different view (like search)
@@ -22160,6 +22180,18 @@ ${trackListXml}
         } catch (catalogError) {
           console.warn('Album catalog fallback failed:', catalogError);
         }
+      }
+      if (!hasArtistPage(track.artist)) {
+        // No artist page to fall back to: the album's page says why.
+        const notFound = new Error(message);
+        notFound.userMessage = 'Couldn’t find this album’s tracks on MusicBrainz or your services.';
+        showReleaseLoadError(placeholderId, notFound, {
+          kind: 'release',
+          release: { id: placeholderId, title: albumName, releaseType: 'album', albumArt: track.albumArt },
+          artist: { id: null, name: track.artist }
+        });
+        if (!placeholderShown) showToast(message);
+        return;
       }
       showToast(message);
       if (placeholderShown) {
@@ -26122,6 +26154,14 @@ ${tracks}
 
         if (releases.length === 0) {
           if (await openFromCatalogs()) return;
+          // A compilation has no artist page to fall back to: its page says
+          // why, with a retry.
+          if (!hasArtistPage(album.artist)) {
+            const notFound = new Error('Album not found in MusicBrainz or any catalog');
+            notFound.userMessage = 'Couldn’t find this album’s tracks on MusicBrainz or your services.';
+            showReleaseLoadError(placeholderId, notFound, { kind: 'chartsAlbum', album });
+            return;
+          }
           // Fallback: just navigate to artist page
           console.log('Release not found in MusicBrainz or the catalogs, navigating to artist page');
           setCurrentRelease(null);
@@ -31509,7 +31549,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   const getArtistImage = async (artistName, { mbid = null } = {}) => {
-    if (!artistName) return null;
+    if (!hasArtistPage(artistName)) return null;
 
     const normalizedName = artistName.trim().toLowerCase();
     const cached = artistImageCache.current[normalizedName];
@@ -32795,7 +32835,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // close it and navigate back in one step.
     // Only do this when no discography is loaded — if artistReleases exist, the user
     // was browsing the artist's discography and BACK should just close the release.
-    if (activeView === 'artist' && currentRelease && artistHistory.length === 0 && artistReleases.length === 0 && viewHistory.length > 1) {
+    // A compilation's "artist" has no page to go back to (lib/artist-page-name.js).
+    if (activeView === 'artist' && currentRelease && viewHistory.length > 1
+      && ((artistHistory.length === 0 && artistReleases.length === 0) || !hasArtistPage(currentRelease.artist || currentArtist))) {
       setCurrentRelease(null);
       // Also navigate back to previous view (e.g., HOME or Collection)
       const newHistory = [...viewHistory];

@@ -23,6 +23,7 @@ const { X } = Icons;
 // lib/visible-sources.js.
 const { sourceRowState } = require('../lib/visible-sources');
 const { trackDurationLabel } = require('../lib/track-duration');
+const { hasArtistPage } = require('../lib/artist-page-name');
 
 // The track row every page list uses (History, a friend's history,
 // Recommendations, Charts, the playlist page, Collection, Search and an
@@ -166,7 +167,7 @@ function TrackRow({
       className: 'truncate',
       style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: isNowPlaying ? 500 : 400, color: isNowPlaying ? 'var(--accent-primary)' : (playable || state === 'idle' || (state === 'resolving' && !dimResolving)) ? 'var(--text-primary)' : 'var(--text-tertiary)' },
     }, track.title),
-    !showArtist ? null : onOpenArtist
+    !showArtist ? null : onOpenArtist && hasArtistPage(track.artist)
       ? e('button', {
           type: 'button',
           className: 'text-left truncate hover:text-accent hover:underline cursor-pointer transition-colors',
@@ -450,20 +451,19 @@ const VirtualizedQueueList = React.memo(({
         isError ? 'Could not load track' :
         track.title
       ),
-      // Artist name
-      React.createElement('button', { type: 'button',
-        className: 'text-left truncate hover:text-white hover:underline cursor-pointer transition-colors',
+      // Artist name (plain text when there is no page: "Various Artists")
+      (() => {
+        const label = isLoading ? `from ${track.sourceDomain || 'unknown'}`
+          : isError ? (track.errorMessage || 'Unknown error') : track.artist;
         // On the always-dark drawer: the fixed on-dark colour (#1386 contrast).
-        style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--on-dark-secondary)' },
-        onClick: (e) => {
-          e.stopPropagation();
-          if (!isLoading && !isError && track.artist) fetchArtistData(track.artist);
-        }
-      },
-        isLoading ? `from ${track.sourceDomain || 'unknown'}` :
-        isError ? (track.errorMessage || 'Unknown error') :
-        track.artist
-      ),
+        const style = { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--on-dark-secondary)' };
+        if (isLoading || isError || !hasArtistPage(track.artist)) return React.createElement('span', { className: 'truncate', style }, label);
+        return React.createElement('button', { type: 'button',
+          className: 'text-left truncate hover:text-white hover:underline cursor-pointer transition-colors',
+          style,
+          onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
+        }, label);
+      })(),
       // Resolver icons, right up against the duration after them (as in the
       // page lists)
       React.createElement('div', {

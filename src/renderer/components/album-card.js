@@ -25,7 +25,8 @@
 //   reason        ReasonBadge props: why it's here (bottom right)
 //   cornerBadge   a node at the art's top left (History's "#1")
 //   subtitle      a third line ("12 plays", a date): text or a node
-//   onOpenArtist  (album): the artist line is a link to the artist
+//   onOpenArtist  (album): the artist line is a link to the artist (plain
+//                 text for "Various Artists", which has no page)
 //   tooltip       a note for the whole card
 //   dragData      an object (or a function returning one, read at drag time)
 //                 dragged as text/plain JSON ({ type: 'album', ... })
@@ -41,6 +42,7 @@ const { CardButton } = require('./card-button');
 const { ReasonBadge } = require('./reason-badge');
 const { useReveal, ArtOverlay, ArtBox, releaseBadge } = require('./card-art');
 const { HOME_CARD_BOX, HOME_CARD_ART_RADIUS, HOME_CARD_TEXT_GAP } = require('./home-skeletons');
+const { hasArtistPage } = require('../lib/artist-page-name');
 
 const e = React.createElement;
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
@@ -134,7 +136,7 @@ function AlbumCard({
       }),
       reason && e(ReasonBadge, reason)),
     e('div', { style: Object.assign({ fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS) }, title),
-    album.artist && (onOpenArtist
+    album.artist && (onOpenArtist && hasArtistPage(album.artist)
       // A link above the card's stretched button (.card-link).
       ? e('button', {
           type: 'button', className: 'card-link block max-w-full text-left hover:text-accent',

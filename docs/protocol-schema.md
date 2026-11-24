@@ -361,7 +361,7 @@ parachord://artist/{name}/{tab?}
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `name` | Yes | Artist name |
+| `name` | Yes | Artist name. "Various Artists" isn't an artist and has no page: the app says so and stays where it is |
 | `tab` | No | Tab to open: `music`, `biography`, `related`, `on-tour` (concert dates; an artist with no upcoming concerts opens on `music`, since On Tour only shows for one with concerts) |
 
 **Examples:**

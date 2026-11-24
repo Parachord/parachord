@@ -50,7 +50,7 @@ test.each([
 // missed the cache, refetched the discography from MusicBrainz and painted
 // it one release type at a time (2026-11, Dire Straits).
 test('the restored artist page waits for the caches before fetching', () => {
-  const restore = between("if (savedLastView.view === 'artist' && savedLastView.artistName) {", "} else if (savedLastView.view === 'history') {");
+  const restore = between("if (savedLastView.view === 'artist' && savedLastView.artistName && (savedLastView.releaseId || hasArtistPage(savedLastView.artistName))) {", "} else if (savedLastView.view === 'history') {");
   expect(restore).toMatch(/waitForBigCaches\(\)\.then\(\(\) => fetchArtistData\(savedLastView\.artistName\)\)/);
   expect(restore).not.toMatch(/setTimeout\(\(\) => fetchArtistData\(/);
 });
