@@ -353,7 +353,7 @@ describe('Home skeletons match the Home rows', () => {
     expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
   });
 
-  test('album card skeletons have two subtitle lines (the artist and the year), as playlist card skeletons do', () => {
+  test('album card skeletons have two subtitle lines (the artist and the year); playlist card skeletons one ("Refreshed …")', () => {
     const React = require('react');
     const { renderToStaticMarkup } = require('react-dom/server');
     const bars = (props) => (renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, Object.assign({ count: 1 }, props))).match(/h-3[ "]/g) || []).length;
@@ -361,7 +361,7 @@ describe('Home skeletons match the Home rows', () => {
     expect(bars({ lines: 1 })).toBe(1);
     const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
     expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { count: rowCards, lines: 2 }))");
-    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards }))");
+    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton, { count: rowCards, lines: 1 }))");
   });
 
   test('card rows and their skeletons share one gap', () => {
@@ -555,7 +555,8 @@ describe('every track list and card grid loads with the shared placeholders', ()
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `history-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'when', width: '80px', align: 'right' \}\] \}/);
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `top-track-skeleton-\$\{i\}`, index: i, duration: true, cells: \[\{ key: 'album' \}, \{ key: 'plays', width: '80px', align: 'right' \}\] \}/);
     expect(app).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true \}/); // the pending playlist view
-    expect(read('components/cards.js')).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true, showArtist: false \}/); // an album's tracklist
+    // An album's tracklist: an artist column only on a compilation, as its rows have.
+    expect(read('components/cards.js')).toMatch(/TrackRowSkeleton, \{ key: `track-skeleton-\$\{i\}`, index: i, duration: true, showArtist: compilationLayout \}/);
   });
   test('card grids: CardSkeleton, in the real grid and count', () => {
     expect(app).toMatch(/CardSkeleton, \{ key: `album-skeleton-\$\{i\}`, index: i, lines: 2 \}/); // History's top albums

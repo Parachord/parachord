@@ -3,7 +3,7 @@
 // For George Michael's "The Faith Tour" that was a 9-track CD, while the
 // digital release, the one streaming services carry, has all 18.
 
-const { pickRelease, releaseTrackCount } = require('../../src/renderer/lib/release-pick');
+const { pickRelease, releaseTrackCount, orderReleaseSearchHits, PICK_RULE } = require('../../src/renderer/lib/release-pick');
 const { createReleaseLookup } = require('../../src/renderer/lib/release-lookup');
 
 const rel = (id, formats, date) => ({
@@ -120,6 +120,52 @@ describe('pickRelease', () => {
   });
 });
 
+describe('an album still filling in on MusicBrainz (Grand Theft Auto VI: The Album, 2026-11-23)', () => {
+  // The group held 19 official releases days after release: most were
+  // placeholders with two media of 0 tracks each.
+  test('digital releases all empty, a CD with the tracks: the CD, never an empty placeholder', () => {
+    const picked = pickRelease([
+      rel('digital-stub-a', [['Digital Media', 0], ['Digital Media', 0]], '2026-11-19'),
+      rel('digital-stub-b', [['Digital Media', 0]], '2026-11-19'),
+      rel('cd', [['CD', 18], ['CD', 16]], '2026-11-20'),
+    ]);
+    expect(picked.id).toBe('cd');
+  });
+
+  test('the rule changed, so picks remembered under the old one are made again', () => {
+    expect(PICK_RULE).toBe(3);
+  });
+});
+
+describe('orderReleaseSearchHits (a search by title and artist: Charts, Critic\'s Picks)', () => {
+  const hit = (id, group, formats, country = null, date = '2026-11-20') => ({ id, country, date, 'release-group': { id: group }, media: formats.map(([format, count]) => ({ format, 'track-count': count })) });
+
+  test('the top hit is an empty placeholder: its album\'s best edition goes first instead', () => {
+    const ordered = orderReleaseSearchHits([
+      hit('stub', 'gta', [['CD', 0], ['CD', 0]]),
+      hit('vinyl', 'gta', [['12" Vinyl', 18], ['12" Vinyl', 16]]),
+      hit('digital', 'gta', [['Digital Media', 34]], 'XW'),
+      hit('other-album', 'other', [['Digital Media', 12]]),
+    ]);
+    expect(ordered.map(r => r.id)).toEqual(['digital', 'stub', 'vinyl', 'other-album']);
+  });
+
+  test('never swaps in another album, even when the top hit\'s album has no tracks at all', () => {
+    const ordered = orderReleaseSearchHits([
+      hit('stub', 'gta', [['CD', 0]]),
+      hit('other-album', 'other', [['Digital Media', 12]]),
+    ]);
+    expect(ordered[0].id).toBe('stub');
+  });
+
+  test('a hit without a group, one hit, or none: unchanged', () => {
+    const lone = [{ id: 'a' }, { id: 'b', 'release-group': { id: 'x' } }];
+    expect(orderReleaseSearchHits(lone)).toEqual(lone);
+    expect(orderReleaseSearchHits([])).toEqual([]);
+    expect(orderReleaseSearchHits(undefined)).toEqual([]);
+  });
+});
+
 describe('fetchReleaseGroupDetails', () => {
   const cdFirst = {
     releases: [
@@ -144,4 +190,14 @@ describe('fetchReleaseGroupDetails', () => {
     expect((await res.json()).media[0].tracks).toHaveLength(18);
     expect(cache['rg-1']).toEqual(expect.objectContaining({ alias: 'digital' }));
   });
+});
+
+test('every title-and-artist release search goes through the shared one: 25 hits, the album\'s pick first (app.js)', () => {
+  const app = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const start = app.indexOf('const searchMusicBrainzRelease = async');
+  const body = app.slice(start, app.indexOf('// Try with full artist name first', start));
+  expect(body).toContain('fmt=json&limit=25');
+  expect(body).toContain('return orderReleaseSearchHits(mbData.releases || []);');
+  // No other copy takes a single search hit (Charts' and Critic's Picks' prefetches had their own).
+  expect((app.match(/ws\/2\/release\/\?query=/g) || []).length).toBe(1);
 });

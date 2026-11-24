@@ -8,18 +8,17 @@
 
 const { normalizeAlbumTitle, normalizeArtistName } = require('./album-catalog');
 const { timeAgo } = require('./time-ago');
+const { playlistChangedAt } = require('./playlists-sort');
 
 const DAY_MS = 86400000;
 const BADGE_WINDOW_MS = 7 * DAY_MS;
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
-// When a playlist's tracks last changed. A playlist saved before
-// tracksChangedAt existed falls back to lastModified, then createdAt.
-function playlistFreshness(p) {
-  if (!p) return 0;
-  return num(p.tracksChangedAt) ?? num(p.lastModified) ?? num(p.createdAt) ?? 0;
-}
+// When a playlist's tracks last changed; one never stamped falls back to
+// when it was created, never lastModified (lib/playlists-sort.js
+// playlistChangedAt, the rule the Playlists page's sort shares).
+const playlistFreshness = playlistChangedAt;
 
 function freshestPlaylists(playlists, limit = 6) {
   return (playlists || [])
@@ -121,12 +120,13 @@ function latestLoveAlbum(loves, active) {
   return null;
 }
 
+// "Refreshed 2h ago": when the playlist's tracks last changed
+// (tracksChangedAt). A playlist never stamped gets no line, never a time from
+// lastModified (a background source save moves it). No "since <year>": one
+// line, as on mobile (#1632, parachord-mobile#798).
 function playlistSubtitle(p, now) {
-  const at = playlistFreshness(p);
-  const base = `Refreshed ${timeAgo(at, now)}`;
-  const created = num(p && p.createdAt);
-  if (created === null) return base;
-  return `${base} · since ${new Date(created).getUTCFullYear()}`;
+  const changed = num(p && p.tracksChangedAt);
+  return changed === null ? null : `Refreshed ${timeAgo(changed, now)}`;
 }
 
 // Up to four tiles in the order playlist, loves, album, mix. Each kind takes

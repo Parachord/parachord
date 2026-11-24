@@ -276,19 +276,44 @@ describe('the split store stamps every local_playlists write', () => {
       path: '/fake/config.json',
     };
   };
-  const makeStore = (seed, clock = { now: NOW }) => {
+  // local_playlists is a file per playlist (main-process/playlist-store.js,
+  // #801), in a temp dir; a seed is the single file an earlier build wrote,
+  // which the store moves there unchanged (no stamps) at construction.
+  const os = require('os');
+  const dirs = [];
+  afterAll(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
+  const makeStore = (seed, clock = { now: NOW }, extra = {}) => {
     const main = fakeConf();
     const files = new Map();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'freshness-'));
+    dirs.push(root);
+    if (seed) files.set('local_playlists', fakeConf()), files.get('local_playlists').set('local_playlists', seed);
     const store = createSplitStore({
       main,
       openKeyStore: (key) => { if (!files.has(key)) files.set(key, fakeConf()); return files.get(key); },
       listKeyStores: () => [...files.keys()],
+      playlistsDir: path.join(root, 'playlists'),
+      retireKeyStore: (key) => files.delete(key),
       log: () => {},
       now: () => clock.now,
+      ...extra,
     });
-    if (seed) files.set('local_playlists', fakeConf()), files.get('local_playlists').set('local_playlists', seed);
-    return { store, files, clock };
+    return { store, files, clock, root };
   };
+
+  test('the seed moves over as it was: no stamp on migration', () => {
+    const { store } = makeStore([playlist()]);
+    expect(store.get('local_playlists')[0]).toMatchObject({ tracksChangedAt: T0, lastChangeAdded: 3 });
+  });
+
+  test('savePlaylist (the playlists-save path) stamps against the stored record', () => {
+    const p = playlist();
+    const { store } = makeStore([p]);
+    store.savePlaylist({ ...p, tracks: [...p.tracks, track('D', 'Four')] });
+    expect(store.getPlaylist(p.id)).toMatchObject({ tracksChangedAt: NOW, lastChangeAdded: 1 });
+    store.savePlaylist({ ...store.getPlaylist(p.id), title: 'Renamed' });
+    expect(store.getPlaylist(p.id)).toMatchObject({ title: 'Renamed', tracksChangedAt: NOW, lastChangeAdded: 1 });
+  });
 
   test('a sync-pull-shaped write stamps the playlist whose tracks changed', () => {
     const p = playlist();
@@ -343,50 +368,44 @@ describe('the split store stamps every local_playlists write', () => {
     expect(store.get('local_playlists')[0]).toMatchObject({ tracksChangedAt: NOW, lastChangeAdded: 2 });
   });
 
-  test('a stamp that throws writes the list as given and leaves the index empty', () => {
-    const p = playlist();
-    const { store, files } = makeStore([p]);
-    const file = files.get('local_playlists');
-    const realGet = file.get;
-    let reads = 0;
-    file.get = (...args) => {
-      reads++;
-      if (reads === 1) throw new Error('unreadable');
-      return realGet(...args);
-    };
-    const edited = { ...p, tracks: [...p.tracks, track('D', 'Four')] };
-    store.set('local_playlists', [edited]);
-    // Written unchanged: the edit's tracks, the old stamp.
-    expect(realGet('local_playlists')).toEqual([edited]);
-    // No index was kept, so the next write reads the file again.
-    store.set('local_playlists', [{ ...edited, tracks: edited.tracks.slice(0, 1) }]);
-    expect(reads).toBe(2);
-    expect(realGet('local_playlists')[0]).toMatchObject({ tracksChangedAt: NOW, lastChangeAdded: 0 });
+  test('a stamp that throws writes the list as given', () => {
+    jest.isolateModules(() => {
+      jest.doMock('../../playlist-freshness', () => ({
+        ...jest.requireActual('../../playlist-freshness'),
+        stampTrackChanges: () => { throw new Error('unreadable'); },
+      }));
+      const { createSplitStore: isolated } = require('../../main-process/split-store');
+      const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'freshness-'));
+      dirs.push(root);
+      const files = new Map();
+      const store = isolated({
+        main: fakeConf(),
+        openKeyStore: (key) => { if (!files.has(key)) files.set(key, fakeConf()); return files.get(key); },
+        listKeyStores: () => [...files.keys()],
+        playlistsDir: path.join(root, 'playlists'),
+        retireKeyStore: (key) => files.delete(key),
+        log: () => {},
+        now: () => NOW,
+      });
+      const edited = { ...playlist(), tracks: [...playlist().tracks, track('D', 'Four')] };
+      store.set('local_playlists', [edited]);
+      expect(store.get('local_playlists')).toEqual([edited]);
+    });
   });
 
-  test('a write that fails drops the index, so the next write re-reads the file', () => {
+  test('a write that fails leaves the stored list as it was, and the next write compares against it', () => {
     const p = playlist();
-    const { store, files } = makeStore([p]);
-    const file = files.get('local_playlists');
-    const realGet = file.get;
-    const realSet = file.set;
-    let reads = 0;
-    file.get = (...args) => { reads++; return realGet(...args); };
-    let failNext = true;
-    file.set = (...args) => {
+    let failNext = false;
+    const failingFs = { ...fs, writeFileSync: (...args) => {
       if (failNext) { failNext = false; throw new Error('disk full'); }
-      return realSet(...args);
-    };
-
+      return fs.writeFileSync(...args);
+    } };
+    const { store } = makeStore([p], { now: NOW }, { fs: failingFs });
+    failNext = true;
     expect(() => store.set('local_playlists', [{ ...p, tracks: [...p.tracks, track('D', 'Four')] }])).toThrow('disk full');
-    expect(reads).toBe(1);
-    // The failed list never reached disk; the next write compares against the file.
+    expect(store.get('local_playlists')[0]).toMatchObject({ tracksChangedAt: T0, lastChangeAdded: 3, tracks: p.tracks });
     store.set('local_playlists', [{ ...p, title: 'Renamed' }]);
-    expect(reads).toBe(2);
-    expect(realGet('local_playlists')[0]).toMatchObject({ title: 'Renamed', tracksChangedAt: T0, lastChangeAdded: 3 });
-    // And a successful write keeps an index again.
-    store.set('local_playlists', [{ ...p, title: 'Again' }]);
-    expect(reads).toBe(2);
+    expect(store.get('local_playlists')[0]).toMatchObject({ title: 'Renamed', tracksChangedAt: T0, lastChangeAdded: 3 });
   });
 
   test('other keys are never stamped', () => {

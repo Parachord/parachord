@@ -29,6 +29,8 @@ test('Concerts and On Tour keep no per-theme seller tables', () => {
   for (const f of ['src/renderer/components/concerts-page.js', 'src/renderer/components/artist-page.js']) {
     const src = fs.readFileSync(path.join(__dirname, '../..', f), 'utf8');
     expect(src).not.toMatch(/isD(?:ark|kFlyout) \? '#/);
-    expect(src).toMatch(/sellerTextColor\(src\.source\)/);
+    // Their seller pills come from the shared SellerBadges (on Badge), never a hand-built span.
+    expect(src).toContain('...SellerBadges({ sources: event.ticketSources');
+    expect(src).not.toMatch(/sellerShortName/);
   }
 });

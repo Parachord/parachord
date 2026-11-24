@@ -427,8 +427,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       // full syncs (wizard "Sync Now", cleanup-duplicates) still process every
       // playlist that needs work.
       //
-      // One read of local_playlists for the whole pass: it's a large file that
-      // the store parses on every get, so the per-playlist re-read the loop
+      // One read of local_playlists for the whole pass: every get parses the
+      // whole list (main-process/playlist-store.js), so the per-playlist re-read the loop
       // does for its batch would cost a parse per selected playlist here. The
       // fresh copy picks up a renderer write made while the list was fetched,
       // as that re-read does.
@@ -547,16 +547,17 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // this playlist BEFORE deciding short-circuit vs. full branch.
               // Without this, the short-circuit below would use the L6090
               // snapshot and clobber a concurrent renderer edit (e.g. user
-              // removed a track) at end-of-loop store.set. electron-store
-              // caches the parsed array, so this read is near-free.
+              // removed a track) at end-of-loop store.set. One record, not
+              // the whole list (store.getPlaylist, main-process/playlist-store.js,
+              // #801): a whole-list read parses every playlist, and this runs
+              // for every playlist the cycle processes.
               //
               // The full branch keeps its own inner re-read (post-
               // fetchPlaylistTracks) to cover the narrower window of a
               // concurrent edit during the track-fetch IPC. Both reads are
-              // defensive; both are cheap.
+              // defensive; both read one record.
               {
-                const freshPlaylists = store.get('local_playlists') || [];
-                const freshPlaylist = freshPlaylists.find(p => p.id === localPlaylist.id);
+                const freshPlaylist = store.getPlaylist(localPlaylist.id);
                 if (freshPlaylist) {
                   currentPlaylists[idx] = freshPlaylist;
                 }
@@ -723,8 +724,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Re-read the playlist from store in case the user pulled changes
               // while this sync was running (handlePull saves hasUpdates:false +
               // updated snapshotId to disk, but we loaded currentPlaylists earlier).
-              const freshPlaylists = store.get('local_playlists') || [];
-              const freshPlaylist = freshPlaylists.find(p => p.id === localPlaylist.id);
+              // One record (store.getPlaylist, #801).
+              const freshPlaylist = store.getPlaylist(localPlaylist.id);
               if (freshPlaylist) {
                 // The stored copy has no seed yet if this is its first sync.
                 currentPlaylists[idx] = seedTracksFingerprint(freshPlaylist, providerId);

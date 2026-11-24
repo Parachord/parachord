@@ -90,6 +90,6 @@ describe('app.js wiring', () => {
 
   test('generateXSPF writes the cover, and export adds it to a stored document', () => {
     expect(fn('generateXSPF')).toMatch(/playlistImageXml\(playlist\.coverArt, window\.isPublicHttpUrl\)/);
-    expect(fn('handleExportPlaylist')).toMatch(/withPlaylistImage\(playlist\.xspf \|\| generateXSPF\(/);
+    expect(fn('handleExportPlaylist')).toMatch(/withPlaylistImage\(storedXspfFor\(playlist, parseXSPF\) \|\| generateXSPF\(/);
   });
 });

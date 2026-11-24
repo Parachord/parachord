@@ -74,7 +74,7 @@ test('field labels read in sentence case', () => {
 
 test('the dialog has one on/off control: the switch, and a footer that only closes', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/plugin-settings-dialog.js'), 'utf8');
-  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers })');
+  expect(src).toContain('pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers, signedIn })');
   expect(src).not.toMatch(/showEnable|'Enable Ollama'/);
   // "Enable X" is the one switch's label (#1505); a second one would be a copy.
   expect((src.match(/`Enable \$\{selectedResolver\.name\}`/g) || []).length).toBe(1);
@@ -118,9 +118,19 @@ test('app.js leaves a switched-off provider out of Recommendations, and reloads 
   expect(app).toContain('metaServices, recommendationsOffResolvers]);');
 });
 
+test('the Listeners row honours the switch too: a switched-off plug-in\'s similar listeners leave the page (2026-11-23)', () => {
+  // ListenBrainz switched off still put its similar listeners in the
+  // Listeners row, and with them its chip in the filter bar, for good.
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const start = app.indexOf('const similarUsersProviders = () => {');
+  const body = app.slice(start, app.indexOf('};', start));
+  expect(start).toBeGreaterThan(-1);
+  expect(body).toContain('.filter(r => !recommendationsOffRef.current.includes(r.id))');
+});
+
 describe('"Use metadata from X" (#1505)', () => {
   test('shown for an enabled music plug-in; on by default', () => {
-    expect(metadataSwitchState({ plugin: plugin('spotify'), active: true })).toEqual({ shown: true, checked: true, hint: 'Album covers and artist photos' });
+    expect(metadataSwitchState({ plugin: plugin('spotify'), active: true })).toEqual({ shown: true, checked: true, disabled: false, hint: 'Album covers and artist photos' });
     expect(metadataSwitchState({ plugin: plugin('spotify'), active: true, metadataOff: true }).checked).toBe(false);
     expect(metadataSwitchState({ plugin: plugin('wikipedia'), active: true }).shown).toBe(false);
     expect(metadataSwitchState({ plugin: plugin('spotify'), active: false }).shown).toBe(false);
@@ -129,6 +139,83 @@ describe('"Use metadata from X" (#1505)', () => {
     const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
     expect(app).toContain("const activeIds = (activeResolversRef.current || []).filter(id => !(requireAlbumArt && metadataOffRef.current.includes(id)));");
     expect(app).toContain("const activeIds = (activeResolversRef.current || []).filter(id => !metadataOffRef.current.includes(id));");
+  });
+});
+
+// #1614: a plug-in that reports its own sign-in (capabilities.status) gives
+// nothing while signed out, so its Play from, Use metadata from and Use
+// recommendations from show off and locked until it's signed in. The saved
+// choices don't change (the switch can't be toggled), so they come back as
+// they were. Only an explicit signedIn: false locks: no verdict (not read
+// yet, or the read failed) never blocks, as the limit map reads it.
+describe('the nested switches wait for the plug-in\'s sign-in (#1614)', () => {
+  const amazon = plugin('amazonmusic');
+  const signedOut = { checked: false, disabled: true, hint: 'Sign in to Amazon Music first' };
+
+  test('signed out: all three off and locked, saying so', () => {
+    expect(playbackSwitchState({ plugin: amazon, active: true, signedIn: false })).toEqual({ shown: true, ...signedOut });
+    expect(metadataSwitchState({ plugin: amazon, active: true, signedIn: false })).toEqual({ shown: true, ...signedOut });
+    expect(recommendationsSwitchState({ plugin: amazon, active: true, signedIn: false })).toEqual({ shown: true, ...signedOut });
+  });
+
+  test('a choice switched off stays saved: signed out reads the same, signed in shows it again', () => {
+    expect(playbackSwitchState({ plugin: amazon, active: true, playbackOff: true, signedIn: false })).toMatchObject(signedOut);
+    expect(playbackSwitchState({ plugin: amazon, active: true, playbackOff: true, signedIn: true })).toMatchObject({ checked: false, disabled: false });
+    expect(metadataSwitchState({ plugin: amazon, active: true, metadataOff: true, signedIn: true })).toMatchObject({ checked: false, disabled: false });
+    expect(recommendationsSwitchState({ plugin: amazon, active: true, recommendationsOff: true, signedIn: true })).toMatchObject({ checked: false, disabled: false });
+  });
+
+  test('signed in, or no verdict, works as before', () => {
+    for (const signedIn of [true, null, undefined]) {
+      expect(playbackSwitchState({ plugin: amazon, active: true, signedIn })).toMatchObject({ checked: true, disabled: false });
+      expect(metadataSwitchState({ plugin: amazon, active: true, signedIn })).toMatchObject({ checked: true, disabled: false });
+      expect(recommendationsSwitchState({ plugin: amazon, active: true, signedIn })).toMatchObject({ checked: true, disabled: false });
+    }
+  });
+
+  test('a plan limit still decides Play from, with its own message', () => {
+    const limit = { blocked: true, message: 'Your plan can\u2019t play from Amazon Music.' };
+    expect(playbackSwitchState({ plugin: amazon, active: true, limit, signedIn: false }))
+      .toMatchObject({ checked: false, disabled: true, hint: limit.message });
+  });
+
+  test('a plug-in that\'s off shows none of them, signed in or not', () => {
+    expect(playbackSwitchState({ plugin: amazon, active: false, signedIn: false }).shown).toBe(false);
+    expect(metadataSwitchState({ plugin: amazon, active: false, signedIn: false }).shown).toBe(false);
+    expect(recommendationsSwitchState({ plugin: amazon, active: false, signedIn: false }).shown).toBe(false);
+  });
+
+  test('the dialog passes what the app knows about the sign-in (its own and the plug-in\'s status) to Enable and all three', () => {
+    const dialog = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/plugin-settings-dialog.js'), 'utf8');
+    expect(dialog).toContain('const signedIn = pluginAccounts ? pluginAccounts[selectedResolver.id] : undefined;');
+    expect(dialog).toContain('const switchState = pluginSwitchState({ plugin: selectedResolver, config: metaServiceConfigs[selectedResolver.id], activeResolvers, signedIn });');
+    expect(dialog).toMatch(/metadataSwitchState\(\{[^}]*signedIn \}\)/);
+    expect(dialog).toMatch(/recommendationsSwitchState\(\{[^}]*signedIn \}\)/);
+    expect(dialog).toMatch(/playbackSwitchState\(\{[^}]*signedIn \}\)/);
+    expect(dialog).toContain('checked: meta.checked, disabled: meta.disabled,');
+    expect(dialog).toContain('checked: recs.checked, disabled: recs.disabled,');
+  });
+});
+
+// The rule behind #1614: a plug-in that needs a sign-in never shows as
+// enabled until it's signed in. Display only: it stays in the active list
+// and keeps doing what works signed out (Apple Music's search and covers).
+describe('Enable reads off while the plug-in is signed out', () => {
+  const amazon = plugin('amazonmusic');
+  test('signed out: Enable is off and locked, saying to sign in, even while it is in the active list', () => {
+    expect(pluginSwitchState({ plugin: amazon, activeResolvers: ['amazonmusic'], signedIn: false }))
+      .toEqual({ checked: false, disabled: true, hint: 'Sign in to Amazon Music first' });
+    expect(pluginSwitchState({ plugin: plugin('spotify'), activeResolvers: [], signedIn: false }))
+      .toEqual({ checked: false, disabled: true, hint: 'Sign in to Spotify first' });
+  });
+  test('signed in, or no verdict, it reads the active list as before', () => {
+    for (const signedIn of [true, null, undefined]) {
+      expect(pluginSwitchState({ plugin: amazon, activeResolvers: ['amazonmusic'], signedIn })).toMatchObject({ checked: true, disabled: false });
+      expect(pluginSwitchState({ plugin: amazon, activeResolvers: [], signedIn })).toMatchObject({ checked: false, disabled: false });
+    }
+  });
+  test('a plug-in that works without a sign-in (no verdict from the app) is never locked', () => {
+    expect(pluginSwitchState({ plugin: plugin('lastfm'), config: { enabled: true }, activeResolvers: [] })).toMatchObject({ disabled: false });
   });
 });
 

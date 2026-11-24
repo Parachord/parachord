@@ -691,12 +691,14 @@ class ListenBrainzScrobbler extends BaseScrobbler {
   // walks offset pages newest-first (feedback is ORDER BY created DESC) until
   // the import cursor's stop marker. A user the server doesn't know answers
   // 404.
-  async getLovedTracksPage({ offset = 0, count = 100 } = {}) {
-    const config = await this.getConfig();
-    if (!config.username) {
+  // `username` reads someone's loves without the scrobbling sign-in (the
+  // plug-in account's username); without it, the sign-in's.
+  async getLovedTracksPage({ offset = 0, count = 100, username } = {}) {
+    const user = username || (await this.getConfig()).username;
+    if (!user) {
       throw new Error('Not connected');
     }
-    const url = `${this.apiBase}/feedback/user/${encodeURIComponent(config.username)}/get-feedback`
+    const url = `${this.apiBase}/feedback/user/${encodeURIComponent(user)}/get-feedback`
       + `?score=1&count=${count}&offset=${offset}&metadata=true`;
     const response = await window.electron.proxyFetch(url);
     if (!response.success) {
@@ -1031,15 +1033,17 @@ class LastFmScrobbler extends BaseScrobbler {
   // (src/renderer/lib/love-import.js) and walks pages newest-first until the
   // import cursor's stop marker. Past the last page Last.fm returns an empty
   // list rather than an error.
-  async getLovedTracksPage({ page = 1, count = 200 } = {}) {
-    const config = await this.getConfig();
-    if (!config.username || !this.credentials(false).apiKey) {
+  // `username` reads someone's loves without the scrobbling sign-in (the
+  // plug-in account's username); without it, the sign-in's.
+  async getLovedTracksPage({ page = 1, count = 200, username } = {}) {
+    const user = username || (await this.getConfig()).username;
+    if (!user || !this.credentials(false).apiKey) {
       throw new Error('Not connected');
     }
     const data = await this.withKey(false, async (pair) => {
       const params = new URLSearchParams({
         method: 'user.getLovedTracks',
-        user: config.username,
+        user,
         api_key: pair.apiKey,
         format: 'json',
         page: String(page),

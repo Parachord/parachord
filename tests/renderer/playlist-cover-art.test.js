@@ -61,6 +61,17 @@ describe('PlaylistCoverImage (the shared cover layer)', () => {
     expect(src).toContain('const coverUrl = (typeof url === \'string\' && url.trim()) ? url : null;');
   });
 
+  test('a cover with transparent corners shows the art box\'s own fill, never the mosaic under it', () => {
+    // KCRW Rewind's XSPF image is a rounded square with transparent corners:
+    // over the 2×2 mosaic, the tracks' covers showed through them. The cover
+    // layer brings its own background, the empty art box's grey, so once it
+    // fades in it hides the mosaic completely. It stays invisible (and so
+    // does its fill) until the image has loaded.
+    const html = renderToStaticMarkup(React.createElement(PlaylistCoverImage, { url: 'https://img.example/rounded.png' }));
+    expect(html).toMatch(/background-color:var\(--placeholder-bg\)/);
+    expect(html).toMatch(/opacity:0/);
+  });
+
   test('is React.memo\'d like every kit component', () => {
     expect(read('src/renderer/components/playlist-cover.js')).toContain('React.memo(PlaylistCoverImageBase)');
   });

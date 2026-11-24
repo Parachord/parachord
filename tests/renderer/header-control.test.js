@@ -34,9 +34,10 @@ test('the page headers and the queue drawer use it', () => {
   expect((require('../helpers/renderer-source').appWithPages().match(/React\.createElement\(HeaderControl, \{/g) || []).length).toBeGreaterThanOrEqual(6);
   // 7: the link-update buttons (Check now + Stop updating, or Keep updated)
   // became one Auto-update menu trigger, a HeaderControl too (2026-11-17);
-  // the loading state's is counted since #1451.
+  // the loading state's is counted since #1451. 8: a synced import's Refresh
+  // (sync-engine/auto-pull.js refreshFromSource), 2026-11-22.
   const pvp = read('src/renderer/components/playlist-view-page.js');
-  expect((pvp.match(/React\.createElement\(HeaderControl, (?:\{|Object\.assign\()/g) || []).length).toBe(7);
+  expect((pvp.match(/React\.createElement\(HeaderControl, (?:\{|Object\.assign\()/g) || []).length).toBe(8);
   expect(pvp).toMatch(/label: 'Auto-update',/);
   expect(pvp).toMatch(/toggle: \{ checked: on, onChange: setOn/);
   expect(pvp).not.toMatch(/'Stop updating'|'Check now'/);

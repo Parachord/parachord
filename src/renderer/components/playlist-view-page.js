@@ -18,9 +18,11 @@
 // from props under their old names.
 
 const Icons = require('./icons');
+const { weeklySavedName } = require('../lib/weekly-saved-name');
 const { StickyBar } = require('./filter-box');
 const { useReveal, ArtOverlay } = require('./card-art');
 const { Badge } = require('./badge');
+const { pushMirrors } = require('../lib/playlist-mirrors');
 const { lbMbidOf } = require('../lib/playlist-share');
 const { HeaderControl } = require('./header-control');
 const { Button } = require('./button');
@@ -33,9 +35,12 @@ const { VirtualizedTrackList, TrackRow, TrackRowSkeleton } = require('./track-li
 const { playlistPlaybackContext } = require('../lib/playlist-context');
 const { trackSlug } = require('../lib/track-slug');
 const { countOf } = require('../lib/plural');
-const { pluginName, importSourcePluginId } = require('../lib/plugin-names');
+const { pluginName, pluginColor, importSourcePluginId } = require('../lib/plugin-names');
 const { syncBannerState } = require('../lib/playlist-sync-banner');
-const { tracksFingerprint } = require('../../../sync-engine/auto-pull');
+const { NoticeBanner } = require('./notice-banner');
+const { duplicateCount, withoutDuplicates, offersRemoval, duplicateCopy } = require('../lib/playlist-duplicates');
+const { tracksFingerprint, refreshFromSource } = require('../../../sync-engine/auto-pull');
+const { pushHold } = require('../../../sync-engine/push-hold');
 
 // Column widths that follow the content area (#1389). At the 1000px minimum
 // window the content is 744px: a fixed 240px art column and 140px of source
@@ -66,6 +71,7 @@ const PLAYLIST_VIEW_PAGE_HANDLERS = [
   'savePlaylistToStore',
   'setPlaylistUpdateMode',
   'setQueueWithContext',
+  'showConfirmDialog',
 ];
 
 const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
@@ -125,9 +131,13 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     setSelectedPlaylistsForAdd,
     setSyncDeleteDialog,
     setTrackLoading,
+    showConfirmDialog,
     showToast,
     trackSources,
   } = props;
+  // How many later copies of a song the playlist holds (#1635). Once per
+  // track list: a long playlist's identity pass is not free on every render.
+  const duplicateTotal = React.useMemo(() => duplicateCount(playlistTracks), [playlistTracks]);
   // The playlist's own cover, when its provider gave it one (a recommended
   // playlist's image — the same one the Recommendations page's card showed —
   // or a provider import's coverArt on a saved record). Shown instead of the
@@ -296,7 +306,9 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   const newPlaylist = {
                     ...selectedPlaylist,
                     id: `playlist-${Date.now()}`,
-                    title: selectedPlaylist.weekLabel ? `Weekly Jam - ${selectedPlaylist.weekLabel}` : selectedPlaylist.title,
+                    // Its kind and its week's date, never the relative week
+                    // label, so each week's copy has its own name (#1599).
+                    title: selectedPlaylist.weekLabel ? weeklySavedName(selectedPlaylist) : selectedPlaylist.title,
                     creator: selectedPlaylist.creator || 'ListenBrainz',
                     tracks: playlistTracks,
                     addedAt: Date.now(),
@@ -304,6 +316,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     source: selectedPlaylist.source || 'listenbrainz'
                   };
                   delete newPlaylist.isEphemeral;
+                  delete newPlaylist.weekLabel;
                   setPlaylists(prev => [...prev, newPlaylist]);
                   await savePlaylistToStore(newPlaylist);
                   showToast('Playlist saved to library', 'success');
@@ -347,6 +360,65 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     refreshing ? 'Updating…' : (on ? 'Auto-update · On' : 'Auto-update · Off'),
                     React.createElement(Icons.ChevronDown, { className: 'w-4 h-4', style: { marginLeft: '4px' } })),
                 });
+              })(),
+              // Refresh a playlist imported from a service now, without
+              // waiting for the next full sync (a playlist another app
+              // rebuilds, such as a SmarterPlaylists Daily Brew, or a followed one). The background sync's own rules
+              // (sync-engine/auto-pull.js refreshFromSource): the service's
+              // tracks come in unless you edited it here and it changed there
+              // too, which is a conflict the banner below asks about. A
+              // playlist imported from a link has its own Refresh now under
+              // Auto-update; a hosted XSPF's link is its upstream.
+              (() => {
+                const playlist = selectedPlaylist;
+                if (!playlist || playlist.isEphemeral || playlistEditMode || playlist.sourceUrl) return null;
+                const from = playlist.syncedFrom;
+                if (!from || !from.resolver || !from.externalId) return null;
+                const id = playlist.id;
+                const refreshing = refreshingPlaylist === id;
+                const serviceName = pluginName(from.resolver);
+                const refresh = async () => {
+                  if (refreshingPlaylist === id) return;
+                  setRefreshingPlaylist(id);
+                  try {
+                    const fetched = await window.electron.sync.fetchPlaylistTracks(from.resolver, from.externalId);
+                    if (!fetched || !fetched.success || !Array.isArray(fetched.tracks)) {
+                      console.error('Refresh: fetching the playlist failed:', fetched && fetched.error);
+                      showToast(fetched && fetched.errorCode === 'missing_scopes'
+                        ? `Parachord needs more access to ${serviceName}. Sign out and in again in Settings › Plug-Ins.`
+                        : `Couldn’t refresh from ${serviceName}. Try again.`, 'error');
+                      return;
+                    }
+                    const result = refreshFromSource(playlist, fetched, { now: Date.now() });
+                    // What came back, for the diagnostic log: a "nothing new"
+                    // that isn't is either the service's own answer or ours.
+                    console.log(`🔄 Refresh "${playlist.title}" from ${from.resolver}: ${fetched.tracks.length} fetched, ${(playlist.tracks || []).length} here, same tracks: ${tracksFingerprint(fetched.tracks) === tracksFingerprint(playlist.tracks || [])}, unchanged since last sync: ${tracksFingerprint(fetched.tracks) === from.tracksFingerprint}, snapshot ${fetched.snapshotId && fetched.snapshotId === from.snapshotId ? 'same' : 'new'} → ${result.outcome}`);
+                    if (result.playlist) {
+                      const next = result.playlist;
+                      setPlaylists(prev => prev.map(p => p.id === id ? next : p));
+                      setSelectedPlaylist(prev => (prev && prev.id === id ? next : prev));
+                      if (result.outcome === 'pulled') setPlaylistTracks(next.tracks);
+                      await savePlaylistToStore(next);
+                    }
+                    showToast(result.outcome === 'pulled'
+                      ? `Updated from ${serviceName}: ${countOf(result.playlist.tracks.length, 'track')}`
+                      : result.outcome === 'conflict'
+                      ? `This playlist changed on ${serviceName} and here. Choose which to keep above.`
+                      : result.outcome === 'empty'
+                      ? `${serviceName} sent no tracks for this playlist, so it’s left as it is.`
+                      : `Already up to date with ${serviceName}`);
+                  } catch (err) {
+                    console.error('Refresh from service failed:', err);
+                    showToast(`Couldn’t refresh from ${serviceName}. Try again.`, 'error');
+                  } finally {
+                    setRefreshingPlaylist(null);
+                  }
+                };
+                return React.createElement(HeaderControl, {
+                  onClick: refresh,
+                  busy: refreshing,
+                  'data-tooltip': `Get the latest from ${serviceName} now`,
+                }, 'Refresh');
               })(),
               // Edit / Cancel+Done buttons (only for non-ephemeral playlists)
               !selectedPlaylist?.isEphemeral && (playlistEditMode ? React.createElement(React.Fragment, null,
@@ -481,15 +553,6 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             const syncState = banner.state; // 'push' | 'conflict'
             const localIsNewer = banner.localIsNewer;
 
-            // Colors based on state
-            // The status tokens (both themes), tinted.
-            const tint = (token, pct) => `color-mix(in srgb, var(${token}) ${pct}%, transparent)`;
-            const colors = {
-              push: { bg: tint('--success', 12), border: tint('--success', 25), text: 'text-ink-success', iconBg: tint('--success', 20) },
-              conflict: { bg: tint('--warning', 12), border: tint('--warning', 25), text: 'text-ink-warning', iconBg: tint('--warning', 20) }
-            };
-            const c = colors[syncState];
-
             // Push handler
             const handlePush = async () => {
               const externalId = playlist.syncedFrom?.externalId;
@@ -501,7 +564,22 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   name: playlist.title,
                   description: playlist.description
                 };
-                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks, metadata);
+                // Matched on the service first, like the sync's own push: the
+                // push replaces the playlist there with what matched, so it
+                // waits while any lookup went unanswered (#1637,
+                // sync-engine/push-hold.js). Sending the raw list dropped every
+                // track without a Spotify id.
+                let resolveResult;
+                try {
+                  resolveResult = await window.electron.sync.resolveTracks(provider, playlist.tracks || []);
+                } catch (resolveErr) {
+                  console.warn('Send: track lookup failed:', resolveErr);
+                }
+                if (pushHold(resolveResult)) {
+                  showToast(`Couldn’t check every track on ${providerName} just now, so nothing was sent. Try again in a minute.`, 'error');
+                  return;
+                }
+                const result = await window.electron.sync.pushPlaylist(provider, externalId, resolveResult.resolved, metadata);
                 if (result?.success) {
                   const applyPush = prev => ({
                     ...prev,
@@ -593,57 +671,75 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               await savePlaylistToStore(updatedPlaylist);
             };
 
-            return React.createElement('div', {
-              className: 'mx-4 mb-4 overflow-hidden rounded-lg',
-              style: {
-                background: `linear-gradient(135deg, ${c.bg} 0%, ${c.bg} 100%)`,
-                border: `1px solid ${c.border}`,
-                boxShadow: `0 2px 8px ${c.bg}`
-              }
-            },
-              React.createElement('div', {
-                className: 'flex items-center justify-between px-4 py-3'
-              },
-                // Left side: icon + message
-                React.createElement('div', { className: 'flex items-center gap-3' },
-                  React.createElement('div', {
-                    className: 'flex items-center justify-center w-8 h-8 rounded-full',
-                    style: { background: c.iconBg }
-                  },
-                    React.createElement(syncState === 'push' ? Icons.Upload : Icons.AlertTriangle, { size: 16, className: c.text })
-                  ),
-                  // Plain words, not git's ("Push Local", "Pull Remote",
-                  // an uppercase SYNC CONFLICT label).
-                  React.createElement('div', { className: 'flex flex-col' },
-                    React.createElement('span', {
-                      className: 'text-ink-primary', style: { fontSize: '13px', fontWeight: 600 }
-                    }, syncState === 'push' ? 'You changed this playlist' : `This playlist changed here and on ${providerName}`),
-                    React.createElement('span', {
-                      className: 'text-ink-secondary', style: { fontSize: '13px' }
-                    }, syncState === 'push'
-                      ? `Send your changes to ${providerName}?`
-                      : localIsNewer
-                      ? 'Your version is newer.'
-                      : `${providerName}’s version is newer.`)
-                  )
-                ),
-                // The choices (the shared Button), the newer version as the
-                // primary. A conflict offered "Use X" twice when X was newer.
-                React.createElement('div', { className: 'flex items-center gap-2' },
-                  React.createElement(Button, { variant: 'text', size: 'sm', onClick: handleDismiss }, 'Dismiss'),
-                  syncState === 'push'
-                    ? React.createElement(Button, { variant: 'primary', size: 'sm', onClick: handlePush },
-                        React.createElement(Icons.Upload, { size: 14 }), `Send to ${providerName}`)
-                    : [
-                        React.createElement(Button, { key: 'mine', variant: localIsNewer ? 'primary' : 'secondary', size: 'sm', onClick: handlePush },
-                          React.createElement(Icons.Upload, { size: 14 }), 'Keep my version'),
-                        React.createElement(Button, { key: 'theirs', variant: localIsNewer ? 'secondary' : 'primary', size: 'sm', onClick: handlePull },
-                          React.createElement(Icons.Download, { size: 14 }), `Use ${providerName}’s version`)
-                      ]
-                )
-              )
-            );
+            // The shared notice (components/notice-banner.js). Plain words,
+            // not git's ("Push Local", "Pull Remote", an uppercase SYNC
+            // CONFLICT label); the newer version is the primary choice (a
+            // conflict offered "Use X" twice when X was newer).
+            return React.createElement(NoticeBanner, {
+              tone: syncState === 'push' ? 'success' : 'warning',
+              icon: syncState === 'push' ? Icons.Upload : Icons.AlertTriangle,
+              title: syncState === 'push' ? 'You changed this playlist' : `This playlist changed here and on ${providerName}`,
+              text: syncState === 'push'
+                ? `Send your changes to ${providerName}?`
+                : localIsNewer
+                ? 'Your version is newer.'
+                : `${providerName}’s version is newer.`,
+              actions: [
+                React.createElement(Button, { key: 'dismiss', variant: 'text', size: 'sm', onClick: handleDismiss }, 'Dismiss'),
+                syncState === 'push'
+                  ? React.createElement(Button, { key: 'send', variant: 'primary', size: 'sm', onClick: handlePush },
+                      React.createElement(Icons.Upload, { size: 14 }), `Send to ${providerName}`)
+                  : [
+                      React.createElement(Button, { key: 'mine', variant: localIsNewer ? 'primary' : 'secondary', size: 'sm', onClick: handlePush },
+                        React.createElement(Icons.Upload, { size: 14 }), 'Keep my version'),
+                      React.createElement(Button, { key: 'theirs', variant: localIsNewer ? 'secondary' : 'primary', size: 'sm', onClick: handlePull },
+                        React.createElement(Icons.Download, { size: 14 }), `Use ${providerName}’s version`)
+                    ]
+              ]
+            });
           })(),
+
+          // Duplicate tracks (#1635, mobile parity): later copies of a song
+          // already in the playlist (lib/playlist-duplicates.js, sync's own
+          // track identity). Removing keeps the first copy of each in place
+          // and saves like an edit, so the next sync sends the cleaned list
+          // to the mirrors and the source.
+          !playlistEditMode && offersRemoval(selectedPlaylist, duplicateTotal) && React.createElement(NoticeBanner, {
+            tone: 'info',
+            icon: Icons.Copy,
+            title: duplicateCopy.banner(duplicateTotal),
+            actions: React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: () => {
+                const playlist = selectedPlaylist;
+                const count = duplicateTotal;
+                showConfirmDialog({
+                  type: 'warning',
+                  title: duplicateCopy.confirmTitle(count),
+                  message: duplicateCopy.confirmBody(playlist.title),
+                  confirmLabel: duplicateCopy.remove,
+                  destructive: true,
+                  onConfirm: async () => {
+                    const tracks = withoutDuplicates(playlistTracks);
+                    const removed = playlistTracks.length - tracks.length;
+                    if (removed <= 0) return;
+                    const updated = {
+                      ...playlist,
+                      tracks,
+                      lastModified: Date.now(),
+                      // Saved with the tracks, so the push loops send it on
+                      // (sync.md "Local-content mutators must persist
+                      // locallyModified in the same save").
+                      ...((playlist.syncedFrom || playlist.syncedTo) ? { locallyModified: true } : {})
+                    };
+                    setSelectedPlaylist(updated);
+                    setPlaylistTracks(tracks);
+                    setPlaylists(prev => prev.map(p => p.id === updated.id ? updated : p));
+                    await savePlaylistToStore(updated);
+                    markPlaylistAsLocallyModified(updated.id);
+                    showToast(duplicateCopy.done(removed));
+                  }
+                });
+              } }, duplicateCopy.remove)
+          }),
 
           // Two-column layout: playlist cover + metadata on left, tracklist on right
           // Left padding only: the tracklist's own scroll area carries the
@@ -872,19 +968,24 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
                     style: { color: 'var(--text-tertiary)' }
                   }, `Source: ${sourceLabel}`);
                 })(),
-                // Where it syncs: one Badge per service, named and coloured from
-                // its plugin (an id other than Spotify read "Apple Music"), then
-                // the local-only switch as a real button that says what it does.
-                selectedPlaylist?.syncedTo && !selectedPlaylist.syncedFrom && React.createElement('div', {
+                // Where it syncs: one Badge per push mirror (lib/playlist-mirrors.js
+                // pushMirrors: a pulled playlist's too, its source left out since
+                // "Source: X" says it; #1640), named and coloured from its plugin
+                // (an id other than Spotify read "Apple Music"), then the
+                // local-only switch as a real button that says what it does.
+                (() => {
+                const mirrors = pushMirrors(selectedPlaylist);
+                return mirrors.length > 0 && React.createElement('div', {
                   className: 'flex items-center flex-wrap mt-1',
                   style: { gap: '6px' }
                 },
-                  ...Object.keys(selectedPlaylist.syncedTo).map(pid => {
-                    const service = (allResolvers || []).find(r => r.id === pid);
-                    const name = service?.name || pid;
+                  ...mirrors.map(pid => {
+                    // Name and colour from the plug-in registry (meta services
+                    // like ListenBrainz included), never the raw id.
+                    const name = pluginName(pid);
                     return React.createElement(Badge, {
                       key: pid,
-                      color: selectedPlaylist.localOnly ? undefined : (service?.color || undefined),
+                      color: selectedPlaylist.localOnly ? undefined : pluginColor(pid),
                       tooltip: selectedPlaylist.localOnly ? `Linked to ${name}, but kept local only` : `Syncs to ${name}`
                     }, name);
                   }),
@@ -900,7 +1001,8 @@ const tracksWithIds = (playlistTracks || []).map(track => ({
                       showToast(updatedPlaylist.localOnly ? 'Playlist set to local only' : 'Playlist will sync to services');
                     }
                   }, selectedPlaylist.localOnly ? 'Resume syncing' : 'Keep local only')
-                ),
+                );
+                })(),
                 // Edit mode: Title input
                 // The shared TextField (its focus ring and dark-mode colours).
                 playlistEditMode && editedPlaylistData && React.createElement(TextField, {

@@ -12,11 +12,11 @@ const app = read('src/renderer/app.js');
 const main = read('main.js');
 
 describe('playlist XSPF export is reachable', () => {
-  test('the handler exists and generates XSPF when the playlist has none', () => {
+  test('the handler exists and generates XSPF when the playlist has none, or its saved text is stale', () => {
     const start = app.indexOf('const handleExportPlaylist = async (playlist) => {');
     expect(start).toBeGreaterThan(-1);
     const src = app.slice(start, start + 1500);
-    expect(src).toMatch(/playlist\.xspf \|\| generateXSPF\(/);
+    expect(src).toMatch(/storedXspfFor\(playlist, parseXSPF\) \|\| generateXSPF\(/);
     expect(src).toMatch(/window\.electron\.playlists\.export\(defaultFilename, content\)/);
   });
 

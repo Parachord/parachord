@@ -240,6 +240,25 @@ describe('one layout (the #1498 contact-sheet review)', () => {
     expect(html.indexOf('>Advanced<')).toBeGreaterThan(scrobbling);
   });
 
+  test('Scrobbling and its loved tracks show while Enable is off, and Import reads the account\'s username', () => {
+    // Last.fm with recommendations off and scrobbling signed out: the loved
+    // tracks import needs only a username, so it must still be reachable.
+    global.window.scrobblers = [{ id: 'newservice', name: 'New Service', startAuth: noop }];
+    const plugin = base({
+      type: 'meta-service', capabilities: { scrobbling: true, recommendations: true, lovedTracks: true },
+      configurable: { username: { label: 'New Service username' } },
+      settings: { account: { type: 'username' } },
+    });
+    const html = render(plugin, {
+      hostAccounts: { newservice: { connect: noop, remove: noop } },
+      metaServiceConfigs: { newservice: { enabled: false, username: 'jh' } },
+      runLoveImport: noop,
+    });
+    expect(html).toContain('data-section="scrobbling"');
+    expect(html).toContain('Import loved tracks');
+    expect(html).not.toContain('Add your New Service username first');
+  });
+
   test('a sign-in note is the account row\'s own line, never a coloured paragraph', () => {
     const plugin = base({ settings: { account: { type: 'sign-in', signInHint: 'Sign in here' } } });
     const html = render(plugin, { hostAccounts: { newservice: { signedIn: false, signIn: noop, signOut: noop, status: 'Sign in in a window to play here', note: { tone: 'info', text: 'A loose note' } } } });
@@ -265,6 +284,43 @@ describe('one layout (the #1498 contact-sheet review)', () => {
     const cards = fs.readFileSync(path.join(ROOT, 'src/renderer/components/settings-cards.js'), 'utf8');
     expect(cards).not.toContain('ml-2 text-accent hover:underline');
     expect(cards).toMatch(/React\.createElement\(StackedField, \{\s*label: 'User token'/);
+  });
+});
+
+// A plug-in that needs a sign-in can't be turned on until it's signed in
+// (#1614), so its account comes first and Enable after it: the dialog reads
+// in the order you do it. Always, signed in or not, so nothing jumps after
+// signing in. A plug-in that works without one keeps Enable first.
+describe('the account comes before Enable for a plug-in that needs a sign-in (#1614)', () => {
+  const at = (html, text) => { const i = html.indexOf(text); expect(i).toBeGreaterThan(-1); return i; };
+
+  test('a sign-in the app runs (settings.account.type "sign-in"): account, its keys, then Enable', () => {
+    const plugin = base({ settings: { account: { type: 'sign-in' }, clientKeys: { label: 'Client ID', fields: ['clientId'] } }, configurable: { clientId: { label: 'Client ID' } } });
+    for (const signedIn of [false, true]) {
+      const html = render(plugin, {
+        hostAccounts: { newservice: { signedIn, signIn: noop, signOut: noop, keys: { source: 'user', values: { clientId: 'x' }, setValue: noop, save: noop, clear: noop } } },
+        activeResolvers: ['newservice'],
+        pluginAccounts: { newservice: signedIn },
+      });
+      expect(at(html, 'New Service account')).toBeLessThan(at(html, 'Enable New Service'));
+      expect(at(html, 'Client ID')).toBeLessThan(at(html, 'Enable New Service'));
+    }
+  });
+
+  test('a plug-in that signs in itself (capabilities.status): its account row, then Enable', () => {
+    const plugin = base({ capabilities: { resolve: true, status: true }, getStatus: async () => ({}) });
+    const html = render(plugin, { pluginStatuses: { newservice: { signedIn: false, statusMessage: 'Setup required' } }, pluginAccounts: { newservice: false } });
+    expect(at(html, 'Setup required')).toBeLessThan(at(html, 'Enable New Service'));
+  });
+
+  test('a plug-in that needs no sign-in keeps Enable first (Last.fm\'s username account and Scrobbling stay under it)', () => {
+    const plugin = base({
+      type: 'meta-service', capabilities: { recommendations: true },
+      configurable: { username: { label: 'New Service username' } },
+      settings: { account: { type: 'username' } },
+    });
+    const html = render(plugin, { hostAccounts: { newservice: { connect: noop, remove: noop } } });
+    expect(at(html, 'Enable New Service')).toBeLessThan(at(html, 'New Service username'));
   });
 });
 

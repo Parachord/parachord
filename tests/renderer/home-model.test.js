@@ -6,7 +6,11 @@ const now = new Date(2026, 10, 12, 15, 0, 0).getTime();
 describe('freshness', () => {
   test('falls back tracksChangedAt, lastModified, createdAt, 0', () => {
     expect(m.playlistFreshness({ tracksChangedAt: 5, lastModified: 9, createdAt: 1 })).toBe(5);
-    expect(m.playlistFreshness({ lastModified: 9, createdAt: 1 })).toBe(9);
+    // Never lastModified: the background save of resolved sources moves it,
+    // which put untouched playlists first as "Refreshed 1m ago" (2026-11-22).
+    expect(m.playlistFreshness({ lastModified: 9, createdAt: 1 })).toBe(1);
+    expect(m.playlistFreshness({ lastModified: 9, addedAt: 3 })).toBe(3);
+    expect(m.playlistFreshness({ lastModified: 9 })).toBe(0);
     expect(m.playlistFreshness({ createdAt: 1 })).toBe(1);
     expect(m.playlistFreshness({})).toBe(0);
   });
@@ -16,7 +20,7 @@ describe('freshness', () => {
     expect(m.freshestPlaylists([renamed, edited]).map((p) => p.id)).toEqual(['e', 'r']);
   });
   test('limit defaults to 6', () => {
-    const ps = Array.from({ length: 9 }, (_, i) => ({ id: i, lastModified: i }));
+    const ps = Array.from({ length: 9 }, (_, i) => ({ id: i, tracksChangedAt: i + 1 }));
     expect(m.freshestPlaylists(ps)).toHaveLength(6);
     expect(m.freshestPlaylists(ps)[0].id).toBe(8);
   });
@@ -123,12 +127,15 @@ describe('jumpBackInTiles', () => {
 });
 
 describe('playlistSubtitle', () => {
-  test('relative time and year', () => {
-    expect(m.playlistSubtitle({ tracksChangedAt: now - 2 * 3600000, createdAt: Date.UTC(2023, 0, 1) }, now))
-      .toBe('Refreshed 2h ago · since 2023');
-  });
-  test('omits since without createdAt', () => {
+  // One line, "Refreshed <when the tracks last changed>"; no "since <year>"
+  // (dropped to match mobile, #1632 / parachord-mobile#798).
+  test('when the tracks last changed, and nothing else', () => {
+    expect(m.playlistSubtitle({ tracksChangedAt: now - 2 * 3600000, createdAt: Date.UTC(2023, 0, 1) }, now)).toBe('Refreshed 2h ago');
     expect(m.playlistSubtitle({ tracksChangedAt: now - 3 * DAY }, now)).toBe('Refreshed 3d ago');
+  });
+  test('a playlist whose tracks never changed gets no line: a source save moving lastModified is not a change', () => {
+    expect(m.playlistSubtitle({ createdAt: Date.UTC(2015, 0, 1), lastModified: now - 60000 }, now)).toBeNull();
+    expect(m.playlistSubtitle({ lastModified: now - 60000 }, now)).toBeNull();
   });
 });
 

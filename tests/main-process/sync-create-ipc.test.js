@@ -233,7 +233,7 @@ describe('sync:resolve-tracks', () => {
   test('delegates to the provider with the resolved token', async () => {
     const { handlers, calls } = makeHarness();
     const result = await handlers.get('sync:resolve-tracks')(null, 'spotify', TRACKS);
-    expect(result).toEqual({ success: true, resolved: [{ artist: 'A', title: 'T', nativeId: 'n0' }], unresolved: [] });
+    expect(result).toEqual({ success: true, resolved: [{ artist: 'A', title: 'T', nativeId: 'n0' }], unresolved: [], unreachable: [] });
     expect(calls.resolveTracks).toEqual([TRACKS]);
   });
 

@@ -39,6 +39,7 @@
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
 const { isPlayableSource } = require('../lib/playable-source');
+const { sourceSwitchMarker, switchFailedMessage, replayTrackForSwitch, heldTrackForSwitch } = require('../lib/source-switch');
 const { fallbackAfter, trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack, pendingStartAt, trackPositionKey } = require('../lib/playback-helpers');
 const { reconcileEnginePlayState, musicKitStatePlaying, musicKitWebHoldsTrack, playStartPending, restartPositionForResume, PLAY_START_PATIENCE_MS, nativeAppleMusicPlaying, spotifyPlayingTrack, EXTERNAL_RESUME_POLL_MS } = require('../lib/play-state');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
@@ -254,6 +255,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // (the reason no call site changes: identical binds, new home).
   // ---------------------------------------------------------------
   const [isPlaying, setIsPlaying] = React.useState(false);
+  // A switch whose pick has started is over: a later failure of that source
+  // follows the ordinary rules (it is the source playing now).
+  React.useEffect(() => {
+    const open = sourceSwitchRef.current;
+    if (open && isPlaying && currentTrack && currentTrack._activeResolver === open.to) sourceSwitchRef.current = null;
+  }, [currentTrack, isPlaying]);
   // isPlayingRef is a Parachord-owned input (volume-hook consumes it first —
   // the engine syncs it here every render from the engine-owned isPlaying)
   const [trackLoading, setTrackLoading] = React.useState(false);
@@ -303,6 +310,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // Engine-internal refs — audit-driven: no outside-the-engine consumers.
   // ---------------------------------------------------------------
   const playbackGenerationRef = React.useRef(0);
+  // The Play from switch in flight (#1607, lib/source-switch.js): its marker
+  // until the pick starts, fails (handed back) or another play replaces it.
+  const sourceSwitchRef = React.useRef(null);
   const isAdvancingTrackRef = React.useRef(false);
   const html5AudioTrackRef = React.useRef(null); // Track that element is actually playing
   const localFilePlaybackTrackRef = React.useRef(null); // Track being played for fallback handling
@@ -727,7 +737,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // outgoing track goes to history out of the lap (#1329, mobile's
   // QueueManager after parachord-mobile#630): Previous reaches it, repeat all
   // doesn't wrap it. Playing the same track again adds nothing.
-  const handlePlay = async (trackOrSource, { historyHandled = false, fromQueue = false } = {}) => {
+  const handlePlay = async (trackOrSource, { historyHandled = false, fromQueue = false, sourceSwitch = false } = {}) => {
     // Any play this run keeps the launch-time queue restore from replacing it (#1287).
     if (playRequestedRef) playRequestedRef.current = true;
     if (!historyHandled) {
@@ -735,6 +745,30 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       playHistoryRef.current = fromQueue
         ? (outgoing && !isSameTrack(outgoing, trackOrSource) ? pushPlayHistory(playHistoryRef.current, outgoing) : playHistoryRef.current)
         : historyForReplacedTrack(playHistoryRef.current, outgoing, trackOrSource);
+    }
+    // A Play from pick (#1607): remember what is playing, so a pick that can't
+    // start hands it back. The marker rides on the track, so a fallback that
+    // re-enters with { ...trackOrSource, sources } is known as this switch's.
+    // Any other play ends a switch in flight.
+    let switchOpen = null;
+    if (sourceSwitch) {
+      switchOpen = sourceSwitchMarker({
+        track: trackOrSource,
+        current: currentTrackRef.current,
+        position: progressRef.current,
+        wasPlaying: isPlayingRef.current,
+      });
+      sourceSwitchRef.current = switchOpen;
+      if (switchOpen) trackOrSource = { ...trackOrSource, _sourceSwitch: switchOpen };
+    } else if (trackOrSource && trackOrSource._sourceSwitch && sourceSwitchRef.current
+      && trackOrSource._sourceSwitch.id === sourceSwitchRef.current.id) {
+      switchOpen = sourceSwitchRef.current;
+    } else {
+      sourceSwitchRef.current = null;
+      if (trackOrSource && trackOrSource._sourceSwitch) {
+        const { _sourceSwitch: _stale, ...rest } = trackOrSource;
+        trackOrSource = rest;
+      }
     }
     // Where this play starts: a restored queue's resume or a seek before Play
     // (#1319) leaves a pending position for this track. An engine that can
@@ -778,6 +812,35 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       holdTrackForPlay(trackOrSource);
     };
 
+    // A Play from pick that can't start (#1607): no fallback to a third
+    // source, no error, no failure recorded on the track. The track plays
+    // again from its own source where it was, or, paused, waits there for
+    // Play; a toast says so. True when it handled the failure (the caller
+    // returns). A switch a newer play replaced is dropped silently.
+    const recoverFailedSwitch = (reason) => {
+      if (!switchOpen) return false;
+      if (sourceSwitchRef.current !== switchOpen) return playbackGenerationRef.current !== thisGeneration;
+      sourceSwitchRef.current = null;
+      if (playbackGenerationRef.current !== thisGeneration) return true;
+      setTrackLoading(false);
+      const label = (id) => (window.resolverLabelById ? window.resolverLabelById(id) : id);
+      console.warn(`🔀 "${switchOpen.track.title}" couldn't switch to ${switchOpen.to} (${reason}); back to ${switchOpen.from}`);
+      showToast(switchFailedMessage({ pickedName: label(switchOpen.to), currentName: label(switchOpen.from), wasPlaying: switchOpen.wasPlaying }));
+      const trackKey = trackPositionKey(switchOpen.track);
+      const scrobbled = !!(trackKey && window.scrobbleManager?.hasScrobbled?.((t) => trackPositionKey(t) === trackKey));
+      const pending = restartPositionForResume(switchOpen.track, switchOpen.position, scrobbled);
+      if (pendingStartPositionRef) pendingStartPositionRef.current = pending;
+      if (switchOpen.wasPlaying) {
+        handlePlay(replayTrackForSwitch(switchOpen), { historyHandled: true });
+      } else {
+        setCurrentTrack(heldTrackForSwitch(switchOpen));
+        setIsPlaying(false);
+        setProgress(switchOpen.position);
+        trackNeedsExplicitStart.current = true;
+      }
+      return true;
+    };
+
     // Offline (#1297): stop on this track for Play with the connection
     // message, before any skip, source fallback or forced re-resolve (offline
     // that re-resolve reaches nothing, and a plugin that answers null on a
@@ -786,6 +849,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // needsNetwork: false for a local file.
     const stopIfOffline = ({ needsNetwork = true } = {}) => {
       if (!needsNetwork || !deviceOffline()) return false;
+      if (recoverFailedSwitch('offline')) return true;
       if (playbackGenerationRef.current !== thisGeneration) return true;
       setTrackLoading(false);
       holdFailedTrack();
@@ -803,6 +867,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // false when the caller should fall through to its dialog. A failure
     // that doesn't skip stops on this track, so it is held for Play first.
     const autoSkipIfAdvancing = (reason, { needsNetwork = true } = {}) => {
+      if (recoverFailedSwitch(reason)) return true;
       if (stopIfOffline({ needsNetwork })) return true;
       // A friend's track that can't play here (#1319, mobile's
       // onTrackUnplayable): play the track they've moved on to if one is
@@ -883,6 +948,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         ? window.__parachordNotePlanRefusal(refusedId, err.planKey) : null;
       const message = noted || err.message;
       console.warn(`🔐 ${label}: ${message}`);
+      if (recoverFailedSwitch(`plan refusal: ${message}`)) return true;
       const fallbackSources = trackOrSource.sources
         ? Object.keys(trackOrSource.sources).filter(id => id !== refusedId
           && isPlayableSource(trackOrSource.sources[id]) && activeResolversRef.current.includes(id))
@@ -974,7 +1040,10 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       try {
         console.log('⏹️ Pausing Apple Music (web) before playing new track');
         if (musicKitWeb.musicKit && musicKitWeb.musicKit.playbackState === 2) musicKitWeb.__parachordStopping = true;
-        musicKitWeb.pause();
+        // Waited for with the other engines' pauses: a pause landing after the
+        // next play had started cut into it ("play() request was interrupted
+        // by a call to pause()").
+        pausePromises.push(Promise.resolve(musicKitWeb.pause()).catch(() => {}));
       } catch (_e) {} // Silently ignore - may not be configured or playing
     }
 
@@ -1324,6 +1393,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const best = sortedSources[0];
       resolverId = best.resolverId;
       sourceToPlay = best.source;
+      // A switch plays its pick or nothing: anything else is a fallback.
+      if (switchOpen && resolverId !== switchOpen.to && recoverFailedSwitch('the pick was not selectable')) return;
 
       console.log(`🎵 Selected ${resolverId} (priority #${best.priority + 1}, confidence: ${(best.confidence * 100).toFixed(0)}%)`);
     } else {
@@ -1378,6 +1449,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         if (fileStatus === 'missing') {
           console.warn('🎵 Local file is no longer on disk:', localPath);
           forgetMissingLocalFile(localPath);
+          if (recoverFailedSwitch('local file missing')) return;
           const fallback = trackOrSource.sources ? fallbackAfter(trackOrSource.sources, resolverId) : { ids: [] };
           if (fallback.ids.length > 0) {
             handlePlay({
@@ -1567,6 +1639,10 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           return;
         }
 
+        if (recoverFailedSwitch(`local file playback: ${error && error.message}`)) {
+          localFileFallbackInProgressRef.current = false;
+          return;
+        }
         // Try fallback to next available source if we have the original track with sources
         if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => isPlayableSource(trackOrSource.sources[id])).length > 1) {
           const fallback = fallbackAfter(trackOrSource.sources, resolverId);
@@ -1736,6 +1812,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         // Offline it isn't this service refusing the track (#1297): no
         // "can't play this track here, playing via …", stop on the track.
         if (stopIfOffline()) return;
+        if (recoverFailedSwitch(`${serviceName}: ${error && error.message}`)) return;
 
         // Another enabled source for this track plays instead (the
         // Spotify-unavailable fallback's shape: drop this source, replay).
@@ -1791,7 +1868,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // and the plugin's context stay renderer-side). No shipped plugin
     // implements the pair yet — Amazon keeps the provider path below until
     // its dmls moves.
-    if (isWidevineResolver(resolverId)) {
+    // A Widevine plug-in that also hands the host a plain stream
+    // (getStreamUrl: Amazon's bought tracks from the library locker, #1612)
+    // plays that through the html5Stream branch below when the DRM stream
+    // doesn't start. Chosen by the method, like the DRM pair itself.
+    let drmFallback = false;
+    widevinePath: if (isWidevineResolver(resolverId)) {
       const streamLabel = resolver.name || resolverId;
       console.log(`🔐 Playing ${streamLabel} track via Widevine:`, sourceToPlay.title);
 
@@ -2005,6 +2087,21 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             return;
           }
         } else {
+          // The DRM stream didn't start (a licence refused, a manifest past
+          // its budget, a load that failed). A plug-in with a plain stream
+          // for this track plays that instead (#1612); past the plan
+          // refusal and the sign-in prompt above, so never for a track the
+          // account can't play.
+          if (typeof resolver.getStreamUrl === 'function') {
+            console.warn(`🔐 ${streamLabel}: the DRM stream didn't start (${error && error.message}); trying its plain stream`);
+            await stopWidevineIfActive();
+            if (playbackGenerationRef.current !== thisGeneration) {
+              setTrackLoading(false);
+              return;
+            }
+            drmFallback = true;
+            break widevinePath;
+          }
           console.error(`❌ ${streamLabel} playback error:`, error);
           if (autoSkipIfAdvancing(`${streamLabel} playback: ${error.message}`)) return;
           setTrackLoading(false);
@@ -2097,9 +2194,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // self-hosted server): the .axe's getStreamUrl builds a direct stream URL
     // from the saved config (never from the track) and the shared element
     // fetches it cross-origin with Range support. The host does not name them.
-    if (isHtml5StreamResolver(resolverId)) {
+    if (drmFallback || isHtml5StreamResolver(resolverId)) {
       const streamLabel = resolver.name || resolverId;
-      console.log(`📡 Playing ${streamLabel} track:`, sourceToPlay.title);
+      console.log(`📡 Playing ${streamLabel} track${drmFallback ? ' (its plain stream)' : ''}:`, sourceToPlay.title);
 
       // Stop Spotify polling when switching to Subsonic playback
       if (playbackPollerRef.current) {
@@ -2160,6 +2257,18 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         return;
       }
 
+      if (!streamUrl && drmFallback) {
+        // No plain stream for this track either: the DRM failure's message.
+        console.error(`❌ ${streamLabel}: no plain stream for this track`);
+        if (autoSkipIfAdvancing(`${streamLabel} playback: no DRM or plain stream`)) return;
+        setTrackLoading(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Couldn’t play the track',
+          message: `This ${streamLabel} track didn’t start. Try another source, or try again.`
+        });
+        return;
+      }
       if (!streamUrl) {
         console.error(`❌ No ${streamLabel} stream URL available`);
         if (autoSkipIfAdvancing(`${streamLabel}: no stream URL (check its settings in Settings › Plug-Ins)`)) return;
@@ -2516,6 +2625,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             return; // Success on retry, don't fall through to re-resolve
           }
           console.error('❌ Spotify retry also failed');
+          if (recoverFailedSwitch('Spotify retry failed')) return;
 
           // Spotify failed after retry - try to fall back to next best source
           if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => isPlayableSource(trackOrSource.sources[id])).length > 1) {
@@ -2564,6 +2674,10 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             }
           }
         }
+
+        // A Play from pick hands the playback back here: no fallback, no
+        // re-resolve (#1607).
+        if (recoverFailedSwitch(`${resolver.name} play() failed`)) return;
 
         // For Apple Music, fall back to next best source (track may not be available in region)
         if (resolverId === 'applemusic' && !trackOrSource._appleMusicFallback) {
@@ -2643,6 +2757,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       console.error(`❌ Error playing with ${resolver.name}:`, error);
       setTrackLoading(false); // Clear loading state on error
       if (stopIfOffline({ needsNetwork: !resolver.capabilities?.local })) return;
+      if (recoverFailedSwitch(`${resolver.name}: ${error && error.message}`)) return;
 
       // On error, also try to re-resolve. This path used to be silent: the
       // spinner cleared and nothing happened. Say what failed, same as the

@@ -307,41 +307,10 @@ window.resolveMbidViaIsrc = async (isrc, opts) => {
   }
 };
 
-// Pick an ISRC from a track. ISRC is per-recording, not per-service, so
-// any valid match anywhere on the track object is authoritative.
-//
-// Checks top-level `track.isrc` first (where the native MusicKit AM path
-// and the iTunes-Search-fallback put it), then walks each
-// `track.sources[*].isrc` (where Spotify writes it after parachord#893,
-// and where Apple Music's source record carries it because the resolver
-// result is spread into the source). Validates the canonical ISRC format
-// (2-letter country + 3-char alphanumeric registrant + 7 digits) and
-// normalizes (trim + uppercase) before returning.
-//
-// Returns null when no source carries a usable one. Skips sources with
-// `noMatch` set — those are dropped resolutions, not real source links.
-//
-// Mirrors the achordion.axe `resolveIsrc` helper (parachord#892) — same
-// rules so the two stay byte-equivalent across desktop's two ISRC sites.
-window.pickTrackIsrc = function(track) {
-  if (!track) return null;
-  const isValidIsrc = (s) => typeof s === 'string' && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(s);
-  if (typeof track.isrc === 'string' && track.isrc) {
-    const norm = track.isrc.trim().toUpperCase();
-    if (isValidIsrc(norm)) return norm;
-  }
-  if (track.sources) {
-    for (const id of Object.keys(track.sources)) {
-      const s = track.sources[id];
-      if (!s || s.noMatch) continue;
-      if (typeof s.isrc === 'string' && s.isrc) {
-        const norm = s.isrc.trim().toUpperCase();
-        if (isValidIsrc(norm)) return norm;
-      }
-    }
-  }
-  return null;
-};
+// Pick an ISRC from a track (src/renderer/lib/track-isrc.js, where the rules
+// and their history live; a module so pure code can use it too).
+const { pickTrackIsrc } = require('./lib/track-isrc');
+window.pickTrackIsrc = pickTrackIsrc;
 
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Four tiers:
@@ -606,7 +575,7 @@ const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRele
 const { resolversToAskAgain, nextUnanswered } = require('./lib/unanswered-resolvers');
 // A plug-in's cached miss holds only for the version that gave it (#1535).
 const { isMiss, newMiss, isStaleMiss } = require('./lib/cached-miss');
-const { pickRelease } = require('./lib/release-pick');
+const { pickRelease, orderReleaseSearchHits } = require('./lib/release-pick');
 const { uniqueReleases, freshDropsWindow, withinFreshDropsWindow } = require('./lib/fresh-drops-releases');
 const { uniqueConcerts, concertSourceKeys, concertMatchesSource, venueMatchesLocationText } = require('./lib/concert-events');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
@@ -1400,6 +1369,8 @@ const {
   VirtualizedQueueList, VirtualizedTrackList, TrackRow, sourceColumnWidth,
 } = require('./components/track-lists');
 const { countOf } = require('./lib/plural');
+// A track's own artist on an album (a compilation's tracks): lib/album-track-artist.js.
+const { ownTrackArtist, playableAlbumTrack } = require('./lib/album-track-artist');
 const { summarizeToolResults } = require('./lib/tool-summary');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
@@ -1412,7 +1383,8 @@ const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context')
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
 const { SERVICE_REFRESH_MS, playlistUpdateMode, isPolledHostedXspf, serviceRefreshDue, hostedListForMode } = require('./lib/playlist-update-mode');
 const { refreshedTracks } = require('./lib/hosted-refresh');
-const { shouldPushToSource, recordPushToSource } = require('../../sync-engine/auto-pull');
+const { shouldPushToSource, recordPushToSource, tracksFingerprint } = require('../../sync-engine/auto-pull');
+const { pushHold } = require('../../sync-engine/push-hold');
 const { Play, Pause, SkipForward, SkipBack, Volume2, Search, List, Settings, Plus, Music, Radio, Users, Heart, X } = Icons;
 
 
@@ -2061,7 +2033,7 @@ const { useLocalFiles } = require('./hooks/use-local-files');
 // The Collection with local files merged in (#1532): one song list, one
 // album list, every source on each entry.
 // When resolveTrack's local-file gate applies: everything not on screen (#1532).
-const { isOnScreenResolution, skipsLocalFill } = require('./lib/enrichment-gate');
+const { isOnScreenResolution, skipsLocalFill, needsPlayFill, mergeFoundSources } = require('./lib/enrichment-gate');
 const { albumIdentity, mergeCollectionSongs, deriveLocalAlbums, mergeCollectionAlbums, deriveLocalArtists, mergeCollectionArtists, hideLocalAlbum, unhideLocalAlbum, planAlbumRemoval, savedAlbumIdsFor, findSavedAlbumCopy } = require('./lib/local-albums');
 const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage, PlaylistViewLoading } = require('./components/playlist-view-page');
@@ -2085,6 +2057,9 @@ const { PROVIDER_LABEL, getPlaylistMirrorTargets } = require('./lib/playlist-mir
 // A playlist's own cover in XSPF (#1410): read from a document's playlist-level
 // <image> only when it's a public http(s) URL, and written back out on export.
 const { playlistImageUrl, playlistImageXml, withPlaylistImage } = require('./lib/xspf-image');
+const { storedXspfFor } = require('./lib/stored-xspf');
+const { sortPlaylists: sortPlaylistsBy } = require('./lib/playlists-sort');
+const { existingHostedRecord } = require('./lib/hosted-import-target');
 const { playlistImportLabel } = require('./lib/playlist-import-sources');
 const { FirstRunTutorial } = require('./components/first-run-tutorial');
 const { StopSyncDialog } = require('./components/stop-sync-dialog');
@@ -2747,6 +2722,7 @@ PLAYING ALBUMS vs TRACKS:
   Example: To play "Punisher" album, queue_add all 11 tracks in order.
 - If user says "add album to queue": use queue_add with ALL tracks and position "last" - does NOT interrupt current playback
 - NEVER use play + queue_add together for multi-track requests — that causes the first song to play twice
+- HOW MANY TRACKS: A mix, playlist or "some songs" with no number given gets 10 tracks. If the user names a number, use exactly that number. An album gets all of its tracks.
 - NEVER say "the album will continue playing" - you must explicitly queue each track
 
 PERSONALIZATION - CRITICAL:
@@ -4518,17 +4494,25 @@ const Parachord = () => {
                     console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                     let pushOk = false;
                     try {
-                      // Resolve tracks to provider-specific URIs before pushing
-                      let tracksForPush = playlist.tracks || [];
+                      // Resolve tracks to provider-specific URIs before pushing. The push
+                      // REPLACES the mirror with what resolved, so it holds while any lookup
+                      // went unanswered (a rate limit, the network, the mapper) or the lookup
+                      // itself failed: pushing without those tracks removed them from the
+                      // mirror (#1637, sync-engine/push-hold.js). The playlist stays marked
+                      // (syncedAt doesn't move), so the next sync tries again.
+                      let resolveResult;
                       try {
-                        const resolveResult = await window.electron.sync.resolveTracks(providerId, tracksForPush);
-                        if (resolveResult.success) {
-                          tracksForPush = resolveResult.resolved;
-                          playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
-                        }
+                        resolveResult = await window.electron.sync.resolveTracks(providerId, playlist.tracks || []);
                       } catch (resolveErr) {
                         console.warn(`[Sync] Track resolution failed for "${playlist.title}" on ${providerId}:`, resolveErr.message);
                       }
+                      const hold = pushHold(resolveResult);
+                      if (hold) {
+                        console.warn(`[Sync] Holding the push of "${playlist.title}" to ${providerId}: ${hold.reason === 'unanswered' ? `${hold.count} track lookup(s) went unanswered` : 'the track lookup failed'}; the next sync tries again`);
+                        continue;
+                      }
+                      const tracksForPush = resolveResult.resolved;
+                      playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
 
                       const pushResult = await window.electron.sync.pushPlaylist(
                         providerId,
@@ -5453,37 +5437,8 @@ const Parachord = () => {
     return items.filter(p => p.title.toLowerCase().includes(query));
   }, [playlistsSearch]);
 
-  const sortPlaylists = useCallback((items) => {
-    const sorted = [...items];
-    switch (playlistsSort) {
-      case 'added':
-        // Sort by addedAt descending (newest first), fallback to createdAt
-        return sorted.sort((a, b) => {
-          const aTime = Number(a.addedAt) || Number(a.createdAt) || 0;
-          const bTime = Number(b.addedAt) || Number(b.createdAt) || 0;
-          return bTime - aTime;
-        });
-      case 'created':
-        // Sort by createdAt descending (newest first), fallback to addedAt, then by title for stability
-        return sorted.sort((a, b) => {
-          const aTime = Number(a.createdAt) || Number(a.addedAt) || 0;
-          const bTime = Number(b.createdAt) || Number(b.addedAt) || 0;
-          if (aTime !== bTime) return bTime - aTime;
-          // Tie-breaker: sort by title alphabetically
-          return (a.title || '').localeCompare(b.title || '');
-        });
-      case 'modified':
-        // Sort by lastModified descending, fallback to addedAt
-        return sorted.sort((a, b) => {
-          const aTime = Number(a.lastModified) || Number(a.addedAt) || 0;
-          const bTime = Number(b.lastModified) || Number(b.addedAt) || 0;
-          return bTime - aTime;
-        });
-      case 'alpha-asc': return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-      case 'alpha-desc': return sorted.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-      default: return sorted;
-    }
-  }, [playlistsSort]);
+  // One sort for this page and the Add to playlist panel (lib/playlists-sort.js).
+  const sortPlaylists = useCallback((items) => sortPlaylistsBy(items, playlistsSort), [playlistsSort]);
 
   // Filter artist releases by search query
   const filterArtistReleases = useCallback((releases) => {
@@ -8043,14 +7998,22 @@ const Parachord = () => {
   // fresh timestamp. cacheValid then treats every enabled resolver as already
   // queried for 7 days. Zero those timestamps too, not only entries that
   // carry the marker.
-  const clearResolverMisses = (resolverId) => {
+  //
+  // `sources: true` drops the resolver's FOUND sources too, not only its
+  // misses: on entering a plan that plays only owned tracks (Amazon on Prime,
+  // #1494, playback-limits.js limitTransition's purge), a source found on
+  // another plan may be a track the account doesn't own. The queue and an
+  // open playlist keep theirs until they resolve again; playing one the
+  // plan refuses plays another source (the engine's plan refusal).
+  const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {
+    const gone = (value) => !!value && (dropFound || !!value.noMatch);
     const cache = trackSourcesCache.current || {};
     for (const key of Object.keys(cache)) {
       const entry = cache[key];
       if (!entry?.sources) continue;
       const am = entry.sources[resolverId];
-      if (am && !am.noMatch) continue;
-      if (am?.noMatch) {
+      if (am && !gone(am)) continue;
+      if (gone(am)) {
         const sources = { ...entry.sources };
         delete sources[resolverId];
         entry.sources = sources;
@@ -8066,7 +8029,7 @@ const Parachord = () => {
       let changed = false;
       const next = { ...prev };
       for (const key of Object.keys(next)) {
-        if (!next[key]?.[resolverId]?.noMatch) continue;
+        if (!gone(next[key]?.[resolverId])) continue;
         const copy = { ...next[key] };
         delete copy[resolverId];
         if (copy.__noMatchAll) delete copy.__noMatchAll;
@@ -8079,7 +8042,7 @@ const Parachord = () => {
       if (!prev?.tracks?.length) return prev;
       let changed = false;
       const tracks = prev.tracks.map(t => {
-        if (!t?.sources?.[resolverId]?.noMatch) return t;
+        if (!gone(t?.sources?.[resolverId])) return t;
         changed = true;
         const sources = { ...t.sources };
         delete sources[resolverId];
@@ -8102,8 +8065,13 @@ const Parachord = () => {
       const key = PlaybackLimits.limitStorageKey(resolverId);
       let last = null;
       try { last = localStorage.getItem(key); } catch (e) {}
-      const { reresolve, store } = PlaybackLimits.limitTransition(last, limit);
-      if (reresolve) {
+      const { reresolve, purge, store } = PlaybackLimits.limitTransition(last, limit);
+      if (purge) {
+        // A plan that plays only owned tracks (#1494): sources found before
+        // may not be owned, so they go, and the resolver searches again.
+        console.log(`[Playback limits] ${resolverId} plays only owned tracks (${limit.planKey}); dropping its saved sources and searching again`);
+        clearResolverMisses(resolverId, { sources: true });
+      } else if (reresolve) {
         console.log(`[Playback limits] ${resolverId} can play now (${limit.planKey}); searching it again`);
         clearResolverMisses(resolverId);
       }
@@ -9253,6 +9221,35 @@ const Parachord = () => {
     };
   }, [cacheLoaded]);
 
+  // A track that starts playing with a local file as its only playable source
+  // fills its other sources once (needsPlayFill, lib/enrichment-gate.js).
+  // Played from somewhere not on screen (the queue, Collection Radio, a link,
+  // listen-along), it only ever met the gated resolutions above, so its other
+  // services were never asked and the playbar's "Play from" picker, which
+  // lists only the playing track's own sources, had nothing to offer. One
+  // fill per track per session (enrichmentAttemptedRef, shared with the
+  // trickle); the gate still holds for every bulk and background pass. What
+  // it finds joins the playing track (mergeFoundSources), never replacing a
+  // source it has; resolveTrack also writes it to trackSources and the cache.
+  const playingTrackId = currentTrack?.id || null;
+  useEffect(() => {
+    const track = currentTrack;
+    if (!track || !track.id || track.id !== playingTrackId) return;
+    if (enrichmentAttemptedRef.current.has(track.id)) return;
+    if (!needsPlayFill(track, { isLocal: isLocalResolver, isPlayable: isPlayableSource })) return;
+    enrichmentAttemptedRef.current.add(track.id);
+    resolveTrack(track, track.artist || track.artistName || 'Unknown Artist', { forceEnrichment: true })
+      .then((found) => {
+        if (!found || typeof found !== 'object') return;
+        setCurrentTrack(prev => {
+          if (!prev || prev.id !== track.id) return prev;
+          const merged = mergeFoundSources(prev.sources, found);
+          return Object.keys(merged).length === Object.keys(prev.sources || {}).length ? prev : { ...prev, sources: merged };
+        });
+      })
+      .catch((err) => console.warn('[Play fill] Could not look for other sources:', err?.message || err));
+  }, [playingTrackId]);
+
   // Fire-and-forget telemetry recorder. Best-effort — failures are
   // logged in main and never propagate to UI state.
   const announcementViewedThisSessionRef = useRef(new Set());
@@ -10144,17 +10141,25 @@ const Parachord = () => {
                 console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                 let pushOk = false;
                 try {
-                  // Resolve tracks to provider-specific URIs before pushing
-                  let tracksForPush = playlist.tracks || [];
+                  // Resolve tracks to provider-specific URIs before pushing. The push
+                  // REPLACES the mirror with what resolved, so it holds while any lookup
+                  // went unanswered (a rate limit, the network, the mapper) or the lookup
+                  // itself failed: pushing without those tracks removed them from the
+                  // mirror (#1637, sync-engine/push-hold.js). The playlist stays marked
+                  // (syncedAt doesn't move), so the next sync tries again.
+                  let resolveResult;
                   try {
-                    const resolveResult = await window.electron.sync.resolveTracks(providerId, tracksForPush);
-                    if (resolveResult.success) {
-                      tracksForPush = resolveResult.resolved;
-                      playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
-                    }
+                    resolveResult = await window.electron.sync.resolveTracks(providerId, playlist.tracks || []);
                   } catch (resolveErr) {
                     console.warn(`[Sync] Track resolution failed for "${playlist.title}" on ${providerId}:`, resolveErr.message);
                   }
+                  const hold = pushHold(resolveResult);
+                  if (hold) {
+                    console.warn(`[Sync] Holding the push of "${playlist.title}" to ${providerId}: ${hold.reason === 'unanswered' ? `${hold.count} track lookup(s) went unanswered` : 'the track lookup failed'}; the next sync tries again`);
+                    continue;
+                  }
+                  const tracksForPush = resolveResult.resolved;
+                  playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
 
                   const pushResult = await window.electron.sync.pushPlaylist(
                     providerId,
@@ -12860,10 +12865,13 @@ ${trackListXml}
       }
     };
 
-    // Apple Music session error (e.g. error 6: TOS not accepted, Music daemon not running)
-    // Show a one-time toast guiding the user to open Music.app
+    // Apple Music session error (error 6: the Mac's player isn't ready, as
+    // after a macOS update until the Music app has run once, or terms not
+    // accepted). The plug-in falls back to MusicKit JS, so the track still
+    // plays: say that, and what fixes it. Once a session (the plug-in sends
+    // the event once).
     const handleAppleMusicSessionError = () => {
-      showToast('Apple Music can\'t play right now. Open the Music app to accept any pending terms or sign in, then try again.', 'error');
+      showToast('Apple Music is playing through its web player because this Mac’s player isn’t ready. Open the Music app once to fix it.', 'info', null, { duration: 10000 });
     };
 
     window.addEventListener('musickit-track-ended', handleMusicKitTrackEnded);
@@ -14550,9 +14558,12 @@ ${trackListXml}
     setLoveImportRunning(prev => ({ ...prev, [service]: true }));
     setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
     try {
-      let connected = false;
-      try { connected = await scrobbler.isSignedIn(); } catch (e) { connected = false; }
-      if (!connected) { showToast(`${label} is not connected`, 'error'); return; }
+      // Whose loves: the scrobbling sign-in's username, else the plug-in
+      // account's. Both services publish a user's loves by username, so the
+      // import needs no sign-in (it showed only while scrobbling was signed
+      // in, and Last.fm's import went missing with it, 2026-11-23).
+      const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;
+      if (!username) { showToast(`Add your ${label} username first`, 'error'); return; }
 
       // Cross-service propagation, confirmed up front (issue #1071 rule 2).
       // Connected, not just toggled — the dialog must not promise pushes a
@@ -14569,7 +14580,7 @@ ${trackListXml}
             showConfirmDialog({
               type: 'info',
               title: 'Import loved tracks',
-              message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push newly loved tracks to ${otherLabel}" is on. This can't be undone from Parachord.`,
+              message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push loves to ${otherLabel}" is on. This can't be undone from Parachord.`,
               confirmLabel: 'Import',
               onConfirm: () => resolve(true),
               onCancel: () => resolve(false),
@@ -14586,8 +14597,8 @@ ${trackListXml}
       // 1. Fetch: only loves newer than the cursor (collectLoves owns the
       //    paging, the per-page retries and the stop rules).
       const fetchPage = service === 'lastfm'
-        ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count })
-        : async ({ offset, count }) => window.listenbrainzScrobbler.getLovedTracksPage({ offset, count });
+        ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count, username })
+        : async ({ offset, count }) => window.listenbrainzScrobbler.getLovedTracksPage({ offset, count, username });
       const { loves, skipped, complete, error, capped } = await LoveImport.collectLoves({
         fetchPage,
         parse: service === 'lastfm' ? LoveImport.parseLastfmLovedPage : LoveImport.parseListenbrainzFeedbackPage,
@@ -14596,7 +14607,7 @@ ${trackListXml}
         onProgress: (done, total) => setProgress(done, total),
       });
       if (error && loves.length === 0 && skipped === 0) {
-        if (error === 'Not connected') showToast(`Reconnect ${label} to import your loved tracks`, 'error');
+        if (error === 'Not connected') showToast(`Add your ${label} username first`, 'error');
         else showToast(`Couldn't import from ${label}: ${error}`, 'error');
         return;
       }
@@ -14799,7 +14810,7 @@ ${trackListXml}
         // Without a restart the rows are already in memory, so a re-run
         // matches them and the confirmed cross-service push never fires —
         // say how to push them anyway.
-        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or push the imported loves with Backfill on the ${otherLabel} card` : ''}`;
+        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or send the imported loves from ${otherLabel}'s settings` : ''}`;
       }
       if (!complete && error) {
         showToast(`Imported ${added} from ${label}, then stopped: ${error}. Run it again to pick up the rest.`, 'error', null, { duration: 8000 });
@@ -14814,7 +14825,7 @@ ${trackListXml}
         // The restricted backfill is a no-op while that service's own backfill
         // is running — say so instead of silently skipping the confirmed push.
         if (loveBackfillRunningRef.current[otherService]) {
-          showToast(`A ${otherLabel} backfill is still running. Once it finishes, run Backfill on the ${otherLabel} card to push the ${confirmedIds.length} imported loves.`, 'info');
+          showToast(`A ${otherLabel} backfill is still running. Once it finishes, send the ${countOf(confirmedIds.length, 'imported love')} from ${otherLabel}'s settings.`, 'info');
         } else {
           runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch((err) => {
             console.warn(`[love-import ${service}] cross-service push failed:`, err?.message || err);
@@ -15575,16 +15586,15 @@ ${trackListXml}
       const artistName = currentArtist?.name || 'Unknown Artist';
       const visibleTracks = [];
       visibleReleaseTrackIds.current.forEach(trackId => {
-        const track = currentRelease.tracks.find(t => {
-          const computedId = trackSlug(artistName || 'unknown', t.title || 'untitled', currentRelease.title || 'noalbum');
-          return computedId === trackId;
-        });
-        if (track) {
+        const albumTrack = currentRelease.tracks
+          .map(t => playableAlbumTrack(t, { albumArtist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt }))
+          .find(t => t.id === trackId);
+        if (albumTrack) {
           visibleTracks.push({
             key: trackId,
             data: {
-              track: { ...track, id: trackId, artist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt },
-              artistName
+              track: albumTrack,
+              artistName: albumTrack.artist || artistName
             }
           });
         }
@@ -15626,7 +15636,8 @@ ${trackListXml}
       console.log('🔄 Local library changed, re-resolving release tracks...');
       const artistName = currentArtist?.name || 'Unknown Artist';
       currentRelease.tracks.forEach(track => {
-        resolveTrack(track, artistName, { forceRefresh: true });
+        const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt });
+        resolveTrack(albumTrack, albumTrack.artist || artistName, { forceRefresh: true });
       });
     }
 
@@ -20195,6 +20206,7 @@ ${trackListXml}
             listenbrainzId: jam.id,
             title: jam.title,
             weekLabel: jam.weekLabel,
+            date: jam.date || null,
             description: jam.description,
             tracks: jam.tracks || [],
             tracksLoaded: jam.tracksLoaded,
@@ -21048,6 +21060,7 @@ ${trackListXml}
                 recording: track.recording,
                 mbid: track.recording?.id || null,
                 artistMbids: track.recording?.['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
+                trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
                 mediumIndex: mediumIndex + 1,
                 mediumTitle: medium.title
               });
@@ -21135,8 +21148,8 @@ ${trackListXml}
       const artistName = artist?.name || artist || 'Unknown Artist';
       console.log(`🎵 [release] Triggering resolution for ${tracks.length} album tracks (artist=${artistName}, release=${releaseData.title})`);
       tracks.forEach(track => {
-        const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', releaseData.title || 'noalbum');
-        resolveAlbumTrack({ ...track, id: trackId }, artistName);
+        const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: releaseData.title });
+        resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
       });
 
       // Fetch album art in background (don't block track display)
@@ -21326,16 +21339,14 @@ ${trackListXml}
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = trackSlug(artist?.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
               tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                recordingId: track.recording?.id,
-                artist: artist?.name,
-                album: release.title,
-                albumArt: release.albumArt,
+                ...playableAlbumTrack({
+                  position: track.position,
+                  title: track.title || track.recording?.title || 'Unknown Track',
+                  length: track.length,
+                  recordingId: track.recording?.id,
+                  trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+                }, { albumArtist: artist?.name, album: release.title, albumArt: release.albumArt }),
                 sources: {}
               });
             });
@@ -21404,17 +21415,14 @@ ${trackListXml}
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = trackSlug(artistName, track.title || 'untitled', album.title || 'noalbum');
-              const albumArt = album.albumArt || null;
               tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                recordingId: track.recording?.id,
-                artist: artistName,
-                album: album.title,
-                albumArt: albumArt,
+                ...playableAlbumTrack({
+                  position: track.position,
+                  title: track.title || track.recording?.title || 'Unknown Track',
+                  length: track.length,
+                  recordingId: track.recording?.id,
+                  trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+                }, { albumArtist: artistName, album: album.title, albumArt: album.albumArt || null }),
                 sources: {}
               });
             });
@@ -21629,8 +21637,8 @@ ${trackListXml}
     setCurrentRelease(prev => (canApplyNow(prev) ? release : prev));
     if (applied) setLoadingRelease(false);
     release.tracks.forEach(track => {
-      const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', release.title || 'noalbum');
-      resolveAlbumTrack({ ...track, id: trackId }, artistName);
+      const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: release.title });
+      resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
     });
     return true;
   };
@@ -21921,6 +21929,7 @@ ${trackListXml}
                   recording: track.recording,
                   mbid: track.recording?.id || null,
                   artistMbids: track.recording?.['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
+                  trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
                   mediumIndex: mediumIndex + 1,
                   mediumTitle: medium.title
                 });
@@ -21958,8 +21967,8 @@ ${trackListXml}
         }
         console.log(`✅ [release] Switched to ${releaseData.title} (${tracks.length} tracks)`);
         tracks.forEach(track => {
-          const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', releaseInfo.title || 'noalbum');
-          resolveAlbumTrack({ ...track, id: trackId }, artistName);
+          const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: releaseInfo.title });
+          resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
         });
       } catch (e) {
         console.warn('Album release switch failed:', e?.message || e);
@@ -22005,8 +22014,8 @@ ${trackListXml}
           }
         }
         newRelease.tracks.forEach(track => {
-          const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', newRelease.title || 'noalbum');
-          resolveAlbumTrack({ ...track, id: trackId }, artistName);
+          const albumTrack = playableAlbumTrack(track, { albumArtist: artistName, album: newRelease.title });
+          resolveAlbumTrack({ ...track, id: albumTrack.id }, albumTrack.artist || artistName);
         });
       } catch (e) {
         console.warn('Album catalog edition switch failed:', e?.message || e);
@@ -23798,16 +23807,17 @@ ${trackListXml}
           visibleReleaseTrackIds.current.forEach(trackId => {
             // Release tracks from API don't have id - we need to find by matching the computed ID
             // The trackId is computed as: artist-title-album (lowercase, alphanumeric only)
-            const track = releaseTracks.find(t => {
-              const computedId = trackSlug(artistName || 'unknown', t.title || 'untitled', releaseTitle || 'noalbum');
-              return computedId === trackId;
-            });
-            if (track) {
+            // A compilation's track is keyed under its own artist
+            // (lib/album-track-artist.js), as the row is.
+            const albumTrack = releaseTracks
+              .map(t => playableAlbumTrack(t, { albumArtist: artistName, album: releaseTitle, albumArt: releaseAlbumArt }))
+              .find(t => t.id === trackId);
+            if (albumTrack) {
               visibleTracks.push({
                 key: trackId,
                 data: {
-                  track: { ...track, id: trackId, artist: artistName, album: releaseTitle, albumArt: releaseAlbumArt },
-                  artistName
+                  track: albumTrack,
+                  artistName: albumTrack.artist || artistName
                 }
               });
             }
@@ -26213,18 +26223,12 @@ ${tracks}
       // Background lane of the MusicBrainz limiter: a prefetch must never make
       // a click's lookup wait behind it (two requests per hovered card did).
       const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
-      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await bgFetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      // The shared search: the album's pick first, never an empty placeholder
+      // (orderReleaseSearchHits), and the first-artist retry for "A & B".
+      const releases = await searchMusicBrainzRelease(album.title, album.artist, { background: true });
+      if (releases.length === 0) return null;
 
-      if (!mbResponse.ok) return null;
-
-      const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return null;
-
-      const releaseId = mbData.releases[0].id;
+      const releaseId = releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
@@ -26239,7 +26243,8 @@ ${tracks}
           tracks.push({
             id: track.recording?.id || track.id,
             title: track.title,
-            artist: album.artist,
+            // A compilation's track under its own artist (lib/album-track-artist.js).
+            artist: ownTrackArtist(track, releaseData['artist-credit']) || album.artist,
             duration: track.length ? Math.round(track.length / 1000) : null,
             albumArt: album.albumArt
           });
@@ -27599,7 +27604,11 @@ Return ONLY the JSON array, no other text.`;
     return orderCatalogResolvers(
       loader.getSimilarUsersResolvers()
         .filter(r => isFriendService(r.id))
-        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id))
+        // "Use recommendations from X" off (#1505) leaves its listeners out
+        // too: they're recommendations, and without this they kept the
+        // plug-in's chip on the page's filter bar (2026-11-23).
+        .filter(r => !recommendationsOffRef.current.includes(r.id)),
       { activeIds, order }
     );
   };
@@ -30732,7 +30741,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const doSearch = async (artistQuery) => {
       const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artistQuery}"`);
       const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        // 25 hits, not 1: the top hit's album is picked from them
+        // (orderReleaseSearchHits), so an empty placeholder MusicBrainz scores
+        // first never stands for the album. Still one request.
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=25`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }, mbBackground: !!opts.background }
       );
 
@@ -30741,7 +30753,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       const mbData = await mbResponse.json();
-      return mbData.releases || [];
+      return orderReleaseSearchHits(mbData.releases || []);
     };
 
     // Try with full artist name first
@@ -30797,17 +30809,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           releaseData.media.forEach((medium) => {
             if (medium.tracks) {
               medium.tracks.forEach(track => {
-                const trackId = trackSlug(artistName, track.title || 'untitled', albumName);
                 tracks.push({
-                  id: trackId,
-                  position: track.position,
-                  title: track.title || track.recording?.title || 'Unknown Track',
-                  length: track.length,
-                  duration: track.length ? Math.round(track.length / 1000) : 0,
-                  recordingId: track.recording?.id,
-                  artist: artistName,
-                  album: albumName,
-                  albumArt: albumArt,
+                  ...playableAlbumTrack({
+                    position: track.position,
+                    title: track.title || track.recording?.title || 'Unknown Track',
+                    length: track.length,
+                    duration: track.length ? Math.round(track.length / 1000) : 0,
+                    recordingId: track.recording?.id,
+                    trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+                  }, { albumArtist: artistName, album: albumName, albumArt }),
                   sources: {}
                 });
               });
@@ -30948,19 +30958,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       // Background lane of the MusicBrainz limiter (see prefetchChartsTracks).
       const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
-      // Search MusicBrainz for the release
-      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await bgFetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      // The shared search: the album's pick first, never an empty placeholder
+      // (orderReleaseSearchHits), and the first-artist retry for "A & B".
+      const releases = await searchMusicBrainzRelease(album.title, album.artist, { background: true });
+      if (releases.length === 0) return null;
 
-      if (!mbResponse.ok) return null;
-
-      const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return null;
-
-      const releaseId = mbData.releases[0].id;
+      const releaseId = releases[0].id;
 
       // Fetch release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
@@ -32415,9 +32418,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
-    // Parse XSPF if we have the content
-    if (playlist.xspf) {
-      const parsed = parseXSPF(playlist.xspf);
+    // Parse the saved XSPF text while it still lists the playlist's tracks;
+    // after a sync pull it doesn't, and `tracks` (the branch below) is the
+    // playlist (lib/stored-xspf.js).
+    const storedXspf = storedXspfFor(playlist, parseXSPF);
+    if (storedXspf) {
+      const parsed = parseXSPF(storedXspf);
       if (parsed) {
         console.log(`🎵 Parsed ${parsed.tracks.length} tracks from XSPF`);
 
@@ -33297,61 +33303,59 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // even when one provider's push DOES have legitimate work, sibling
       // providers' playlist-diff phases now proceed in parallel rather
       // than getting starved.
-      let existingOnDisk = null;
+      let onDisk = null;
       try {
-        const onDisk = await window.electron.playlists.load();
-        existingOnDisk = onDisk.find(p => p.sourceUrl === url || p.id === id);
+        onDisk = await window.electron.playlists.load();
       } catch (e) {
         console.warn('Failed to load on-disk playlists for hosted-import dedup:', e);
       }
 
-      // Check if playlist already exists (use updater form to avoid stale closure)
-      let didUpdate = false;
-      let updatedPlaylist = null;
-      setPlaylists(prev => {
-        const existingIndex = prev.findIndex(p => p.sourceUrl === url || p.id === id);
-        // React state takes precedence when present (it's the freshest write
-        // path); fall back to the on-disk record when React state is stale.
-        // The branch reached either way preserves `syncedTo` / `syncedFrom`
-        // / `syncSources` via the `...existing` spread.
-        const existing = existingIndex >= 0 ? prev[existingIndex] : existingOnDisk;
-        if (existing) {
-          didUpdate = true;
-          // Keep the local tracks (edits included) unless the link's
-          // tracklist changed since the last import; a change replaces them
-          // and is flagged so the sync loop pushes it to the mirrors. An
-          // unchanged reload or poll leaves the edits, and their flag, alone
-          // (lib/hosted-refresh.js).
-          let previousLinkTracks = null;
-          try { previousLinkTracks = existing.xspf ? (parseXSPF(existing.xspf)?.tracks || null) : null; } catch { previousLinkTracks = null; }
-          const refreshed = refreshedTracks(existing, { previousLinkTracks, linkTracks: parsed.tracks || [] });
-          const contentChanged = refreshed.changed;
-          // Freshness: a refresh that brought different tracks is a change
-          // (tracksChangedAt, lastChangeAdded); a re-poll with the same
-          // tracks keeps the existing stamp.
-          updatedPlaylist = stampPlaylist(existing, {
-            ...existing,
-            xspf: content,
-            title: playlistTitle,
-            creator: playlistCreator,
-            ...(playlistCover ? { coverArt: playlistCover } : {}),
-            tracks: refreshed.tracks,
-            lastUpdated: Date.now(),
-            ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
-          }, Date.now());
+      // Decide update or new HERE, before touching state
+      // (lib/hosted-import-target.js): the copy in state (playlistsRef, the
+      // latest committed list) first, then the one on disk. Deciding inside a
+      // setPlaylists updater and reading the answer right after misses
+      // whenever React defers the updater, as it does at launch: every hosted
+      // playlist was rebuilt from its link on every launch (2026-11-22).
+      // Either copy preserves `syncedTo` / `syncedFrom` / `syncSources`
+      // through the `...existing` spread.
+      const existing = existingHostedRecord({ stateList: playlistsRef.current, diskList: onDisk, url, id });
+      if (existing) {
+        // Keep the local tracks (edits included) unless the link's
+        // tracklist changed since the last import; a change replaces them
+        // and is flagged so the sync loop pushes it to the mirrors. An
+        // unchanged reload or poll leaves the edits, and their flag, alone
+        // (lib/hosted-refresh.js).
+        let previousLinkTracks = null;
+        try { previousLinkTracks = existing.xspf ? (parseXSPF(existing.xspf)?.tracks || null) : null; } catch { previousLinkTracks = null; }
+        const refreshed = refreshedTracks(existing, { previousLinkTracks, linkTracks: parsed.tracks || [] });
+        const contentChanged = refreshed.changed;
+        // Freshness: a refresh that brought different tracks is a change
+        // (tracksChangedAt, lastChangeAdded); a re-poll with the same
+        // tracks keeps the existing stamp.
+        const updatedPlaylist = stampPlaylist(existing, {
+          ...existing,
+          xspf: content,
+          title: playlistTitle,
+          creator: playlistCreator,
+          ...(playlistCover ? { coverArt: playlistCover } : {}),
+          tracks: refreshed.tracks,
+          // The link's own tracklist, on every poll: the sync banner reads
+          // tracks that match it as the link's change, not yours
+          // (lib/playlist-sync-banner.js).
+          linkTracksFingerprint: tracksFingerprint(parsed.tracks || []),
+          lastUpdated: Date.now(),
+          ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
+        }, Date.now());
+        setPlaylists(prev => {
+          const existingIndex = prev.findIndex(p => p.sourceUrl === url || p.id === id);
           if (existingIndex >= 0) {
             return prev.map((p, i) => i === existingIndex ? updatedPlaylist : p);
           }
-          // Existed on disk but not in React state — restore it. Without
-          // this, the "add new" branch below would create a duplicate
-          // playlist entry on next save, and the sync push loop would still
-          // see the fresh entry (no sync state) and re-push everything.
+          // Existed on disk but not in React state: restore it, so the
+          // next save doesn't add a second entry.
           return [updatedPlaylist, ...prev];
-        }
-        return prev;
-      });
+        });
 
-      if (didUpdate) {
         // Persist updated hosted playlist to disk so it survives sync reloads and can be synced to providers
         try {
           await window.electron.playlists.save(updatedPlaylist);
@@ -33750,7 +33754,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // menu ("Export as XSPF…") and the queue save dialog ("Save to file")
   // (parachord#1010; the handler and IPC existed with no caller). Playlists
   // created in-app (queue-*, ai-chat-*, playlist-*) carry no `xspf` field, so
-  // the document is generated from `tracks` when it is missing.
+  // the document is generated from `tracks` when it is missing, and also
+  // when it no longer lists them (a sync pull changes `tracks` only;
+  // lib/stored-xspf.js).
   const handleExportPlaylist = async (playlist) => {
     try {
       console.log(`📤 Exporting playlist: ${playlist.id}`);
@@ -33762,7 +33768,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
       // Every exported playlist carries its cover (#1410): a stored document
       // that doesn't name one gets the record's coverArt added.
-      const content = withPlaylistImage(playlist.xspf || generateXSPF({
+      const content = withPlaylistImage(storedXspfFor(playlist, parseXSPF) || generateXSPF({
         title: playlist.title || playlist.name || 'Playlist',
         creator: playlist.creator,
         createdAt: playlist.createdAt,
@@ -35364,6 +35370,7 @@ useEffect(() => {
     getPlaylistMirrorTargets, handleExportPlaylist, handleImportPlaylistFromUrl, handlePlay, handlePlaylistDragEnd,
     linkUpdateMode, markPlaylistAsLocallyModified, moveInEditedPlaylist, navigateTo,
     refreshHostedPlaylist, savePlaylistToStore, setPlaylistUpdateMode, setQueueWithContext,
+    showConfirmDialog,
   });
 
   // A recommended (or Home's service-mix) playlist card's art: the
@@ -35868,8 +35875,27 @@ useEffect(() => {
 
   // Stable function props for the memo'd PluginSettingsDialog (keys must
   // match PLUGIN_SETTINGS_DIALOG_HANDLERS in plugin-settings-dialog.js).
+  // A plug-in dialog's "Playback quality" line opens the global setting
+  // (#1608): close the dialog, then Settings › General at that section.
+  const openPlaybackQualitySettings = () => {
+    setSelectedResolver(null);
+    setActiveView('settings');
+    setSettingsTab('general');
+    setTimeout(() => {
+      const section = document.getElementById('playback-quality-settings');
+      if (section) section.scrollIntoView({ block: 'start' });
+    }, 0);
+  };
+  // What the app plays a plug-in with, for its "Playback quality" line and
+  // the Playback Quality section (lib/playback-quality-line.js, #1608):
+  // hostPlayback[pluginId].nativeApp is the service's own app playing it
+  // (Apple Music through the macOS helper, which follows the Music app's
+  // quality setting rather than Parachord's), keyed like hostAccounts.
+  const hostPlayback = useMemo(() => ({
+    applemusic: { nativeApp: appleMusicNativeAvailable },
+  }), [appleMusicNativeAvailable]);
   const pluginSettingsDialogHandlers = useStableHandlers({
-    clearMetaServiceConfig, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openSyncSetupModal, refreshPluginStatus, saveMetaServiceConfig, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
+    clearMetaServiceConfig, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openPlaybackQualitySettings, openSyncSetupModal, refreshPluginStatus, saveMetaServiceConfig, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
   });
 
   // The accounts the app itself signs in to, for the plug-in settings
@@ -36635,6 +36661,8 @@ useEffect(() => {
           homeSuggestionsAutoRefresh,
           homeSuggestionsAutoRefreshRef,
           installingResolvers,
+          hostPlayback,
+          pluginAccounts,
           loadedResolvers,
           marketplaceCategory,
           marketplaceError,
@@ -36855,6 +36883,8 @@ useEffect(() => {
       currentTrackRef,
       dynamicModelOptions,
       hostAccounts,
+      hostPlayback,
+      pluginAccounts,
       installingResolvers,
       isScanning,
       localFilesStats,
@@ -36868,6 +36898,9 @@ useEffect(() => {
       metaServiceConfigs,
       metaServices,
       playbackLimits,
+      playbackAbr,
+      playbackQuality,
+      playbackSpatial,
       pluginStatuses,
       playbackOffResolvers,
       recommendationsOffResolvers,

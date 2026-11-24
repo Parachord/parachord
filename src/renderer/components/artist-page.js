@@ -18,7 +18,8 @@
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
 
-const { sellerColor, sellerTextColor, sellerBadgeBg, sellerShortName, sellerName } = require('../lib/ticket-sellers');
+const { sellerColor } = require('../lib/ticket-sellers');
+const { SellerBadges } = require('./seller-badges');
 const { transition } = require('../lib/motion');
 const { Tooltip, ShareButton } = require('./ui-atoms');
 const { BrandMark } = require('./brand-logos');
@@ -42,7 +43,9 @@ const { SectionHeader } = require('./section-header');
 const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon } = require('./cards');
 const { ArtistCard, ArtistCardSkeleton } = require('./artist-card');
-const { trackSlug, slug } = require('../lib/track-slug');
+const { slug } = require('../lib/track-slug');
+// A compilation's tracks under their own artists (lib/album-track-artist.js).
+const { playableAlbumTrack } = require('../lib/album-track-artist');
 const { releaseMenu, artistMenu } = require('../lib/item-menus');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
@@ -576,6 +579,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           React.createElement(ReleasePage, {
             release: currentRelease,
             onRetryLoad: retryReleaseLoad,
+            // A compilation's artist column opens that track's artist.
+            onOpenArtist: (name) => fetchArtistData(name),
             handleSearch: handleSearchInput,
             handlePlay: handlePlay,
             onTrackPlay: (track, tracksAfter) => {
@@ -622,15 +627,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               if (rel.tracks?.length > 0) {
                 const context = { type: 'album', id: rel.id, name: rel.title, artist: rel.artist?.name };
                 const tracks = rel.tracks.map(t => {
-                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                  return {
-                    ...t,
-                    id: trackId,
-                    artist: rel.artist?.name,
-                    album: rel.title,
-                    albumArt: rel.albumArt,
-                    sources: trackSources[trackId] || {}
-                  };
+                  const albumTrack = playableAlbumTrack(t, { albumArtist: rel.artist?.name, album: rel.title, albumArt: rel.albumArt });
+                  return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                 });
                 const [firstTrack, ...remainingTracks] = tracks;
                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
@@ -641,15 +639,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             onAlbumAddToQueue: (rel) => {
               if (rel.tracks?.length > 0) {
                 const tracks = rel.tracks.map(t => {
-                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                  return {
-                    ...t,
-                    id: trackId,
-                    artist: rel.artist?.name,
-                    album: rel.title,
-                    albumArt: rel.albumArt,
-                    sources: trackSources[trackId] || {}
-                  };
+                  const albumTrack = playableAlbumTrack(t, { albumArtist: rel.artist?.name, album: rel.title, albumArt: rel.albumArt });
+                  return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                 });
                 addToQueue(tracks, { type: 'album', name: rel.title, id: rel.id });
               }
@@ -657,15 +648,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             onAlbumAddToPlaylist: (rel) => {
               if (rel.tracks?.length > 0) {
                 const tracks = rel.tracks.map(t => {
-                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                  return {
-                    ...t,
-                    id: trackId,
-                    artist: rel.artist?.name,
-                    album: rel.title,
-                    albumArt: rel.albumArt,
-                    sources: trackSources[trackId] || {}
-                  };
+                  const albumTrack = playableAlbumTrack(t, { albumArtist: rel.artist?.name, album: rel.title, albumArt: rel.albumArt });
+                  return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                 });
                 setAddToPlaylistPanel({
                   open: true,
@@ -902,15 +886,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                         // Use already loaded tracks from current release
                         const tracks = currentRelease.tracks.map(t => {
-                          const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                          return {
-                            ...t,
-                            id: trackId,
-                            artist: currentArtist?.name,
-                            album: rel.title,
-                            albumArt: rel.albumArt,
-                            sources: trackSources[trackId] || {}
-                          };
+                          const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                          return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                         });
                         window.showItemMenu(releaseMenu(albumData, { tracks: tracks }));
                       } else {
@@ -929,15 +906,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                        return {
-                          ...t,
-                          id: trackId,
-                          artist: currentArtist?.name,
-                          album: rel.title,
-                          albumArt: rel.albumArt,
-                          sources: trackSources[trackId] || {}
-                        };
+                        const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                        return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                       });
                     }
                     if (tracks.length > 0) {
@@ -968,15 +938,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                        return {
-                          ...t,
-                          id: trackId,
-                          artist: currentArtist?.name,
-                          album: rel.title,
-                          albumArt: rel.albumArt,
-                          sources: trackSources[trackId] || {}
-                        };
+                        const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                        return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                       });
                     }
                     if (tracks.length > 0) {
@@ -997,15 +960,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
-                        return {
-                          ...t,
-                          id: trackId,
-                          artist: currentArtist?.name,
-                          album: rel.title,
-                          albumArt: rel.albumArt,
-                          sources: trackSources[trackId] || {}
-                        };
+                        const albumTrack = playableAlbumTrack(t, { albumArtist: currentArtist?.name, album: rel.title, albumArt: rel.albumArt });
+                        return { ...albumTrack, sources: trackSources[albumTrack.id] || {} };
                       });
                     }
                     if (tracks.length > 0) {
@@ -1645,30 +1601,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             React.createElement('span', {
                               className: `font-semibold truncate text-ink-primary`
                             }, event.title || `${currentArtist?.name || event.artist} live`),
-                            // Source badges
-                            ...(() => {
-                              const badgeLabel = sellerShortName;
-                              const badgeFullName = sellerName;
-                              const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
-                              const hasAiSource = sources.some(s => s.source === 'ai');
-                              const badges = sources.map((src, si) => {
-                                const c = { bg: sellerBadgeBg(src.source), text: sellerTextColor(src.source) };
-                                return React.createElement('span', {
-                                  key: `badge-${si}`,
-                                  className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
-                                  style: { backgroundColor: c.bg, color: c.text },
-                                  title: badgeFullName(src)
-                                }, badgeLabel(src));
-                              });
-                              if (hasAiSource) {
-                                badges.push(React.createElement('span', {
-                                  key: 'ai-disclaimer',
-                                  className: 'text-xs text-page-concerts italic flex-shrink-0',
-                                  title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
-                                }, 'AI generated results may be hallucinations'));
-                              }
-                              return badges;
-                            })()
+                            // Where the tickets come from (components/seller-badges.js).
+                            ...SellerBadges({ sources: event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }] })
                           ),
                           React.createElement('div', {
                             className: `text-sm truncate text-ink-secondary`

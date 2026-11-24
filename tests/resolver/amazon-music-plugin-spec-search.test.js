@@ -68,6 +68,16 @@ const resolverTrack = (t) => ({
 
 const search = (resolver, query) => resolver.search(query, {});
 
+// Off Music Unlimited the search answers from the account's bought tracks
+// (#1494). The plan-gate tests below serve an empty purchase list, so a
+// resolve's search is refused (plan-ineligible, never a cached miss) and no
+// catalog search runs.
+const { serveAmazonLibrary, amazonLibraryPage } = require('../helpers/amazon-plugin-bridge');
+const withNoPurchases = (ws) => { serveAmazonLibrary(ws, { first: amazonLibraryPage([]) }); return ws; };
+const searchTrack = (resolver) => resolver.search({ artist: 'Daft Punk', title: 'Around the World' }, {});
+const catalogLoads = (ws) => ws.load.mock.calls.filter(([, url]) => String(url).includes('/search/'));
+const catalogReplays = (ws) => ws.pageFetch.mock.calls.filter(([, req]) => String(req && req.body).includes('SpecSearchSeeMorePage'));
+
 afterEach(() => {
   delete global.window;
 });
@@ -96,28 +106,29 @@ describe('the plan gate (#1220) before any search', () => {
     });
   });
 
-  test('plan-ineligible when the account is Prime, before any search', async () => {
-    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'PRIME' });
+  // (What the bought-tracks search finds is amazon-music-prime-purchases.test.js.)
+  test('off Music Unlimited no catalog search runs: a resolve with no bought match is plan-ineligible', async () => {
+    const ws = withNoPurchases(amazonWebSessionMock({ tracks: TRACKS, tier: 'SOMETHING_NEW' }));
     const resolver = instantiateAmazonPlugin(axe);
-    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+    await expect(searchTrack(resolver)).rejects.toMatchObject({
       notReady: true,
       code: 'plan-ineligible'
     });
-    expect(ws.load).not.toHaveBeenCalled();
-    expect(ws.pageFetch).not.toHaveBeenCalled();
+    expect(catalogLoads(ws)).toHaveLength(0);
+    expect(catalogReplays(ws)).toHaveLength(0);
     // The plan read is cached — a second search does not re-read config.json.
-    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ notReady: true, code: 'plan-ineligible' });
+    await expect(searchTrack(resolver)).rejects.toMatchObject({ notReady: true, code: 'plan-ineligible' });
     expect(ws.fetch).toHaveBeenCalledTimes(1);
   });
 
-  test('an unreadable config.json is unknown, and unknown blocks too', async () => {
-    const ws = amazonWebSessionMock({ tracks: TRACKS, configResult: { success: true, status: 200, headers: {}, text: 'not json' } });
+  test('an unreadable config.json is unknown, which plays only purchases too', async () => {
+    const ws = withNoPurchases(amazonWebSessionMock({ tracks: TRACKS, configResult: { success: true, status: 200, headers: {}, text: 'not json' } }));
     const resolver = instantiateAmazonPlugin(axe);
-    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+    await expect(searchTrack(resolver)).rejects.toMatchObject({
       notReady: true,
       code: 'plan-ineligible'
     });
-    expect(ws.load).not.toHaveBeenCalled();
+    expect(catalogLoads(ws)).toHaveLength(0);
   });
 
   test('only an unlimited reading earns the 30-min TTL — a refusal re-reads within a minute (the upgrade path)', async () => {
@@ -126,16 +137,16 @@ describe('the plan gate (#1220) before any search', () => {
     // refused reading must not sit for 30 minutes: an upgrade unblocks the
     // search a minute later at the worst. The plugin's own _lib constants pin
     // the TTLs; this pins which reading gets which.
-    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'PRIME' });
+    const ws = withNoPurchases(amazonWebSessionMock({ tracks: TRACKS, tier: 'SOMETHING_NEW' }));
     const resolver = instantiateAmazonPlugin(axe);
-    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'plan-ineligible' });
+    await expect(searchTrack(resolver)).rejects.toMatchObject({ code: 'plan-ineligible' });
     expect(ws.fetch).toHaveBeenCalledTimes(1);
     resolver._planState.at = Date.now() - (61 * 1000); // the 1-min refusal TTL elapsed
-    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({ code: 'plan-ineligible' });
+    await expect(searchTrack(resolver)).rejects.toMatchObject({ code: 'plan-ineligible' });
     expect(ws.fetch).toHaveBeenCalledTimes(2); // re-read — not the 30-min cache
     // ...and an unlimited reading within the 30-min TTL is served from cache.
     ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'UNLIMITED_AUDIO' }) });
-    resolver._planState.at = Date.now() - (61 * 1000); // the refusal re-read re-cached 'prime'
+    resolver._planState.at = Date.now() - (61 * 1000); // the refusal re-read re-cached 'unknown'
     const rows = await search(resolver, 'daft punk');
     expect(rows).toHaveLength(2);
     resolver._planState.at = Date.now() - (29 * 60 * 1000); // within the 30-min unlimited TTL
@@ -148,17 +159,16 @@ describe('the plan gate (#1220) before any search', () => {
     // The plugin's gate mirrors the dmls gate exactly (amazon-dmls.js
     // getPlan): only a FORCED re-read keeps a known plan when the tier read
     // fails. A scheduled re-read reads what came back — unknown — so a
-    // hornet rename of `tier` blocks the plugin's search (plan-ineligible,
-    // re-read within the 1-min TTL) exactly as it blocks the host's, instead
-    // of the plugin serving its last Unlimited reading until a restart or
-    // sign-out.
-    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
+    // hornet rename of `tier` keeps the plugin's search to the account's
+    // purchases (re-read within the 1-min TTL), instead of the plugin
+    // serving its last Unlimited reading until a restart or sign-out.
+    const ws = withNoPurchases(amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' }));
     const resolver = instantiateAmazonPlugin(axe);
     await search(resolver, 'daft punk'); // caches the unlimited reading
     expect(ws.fetch).toHaveBeenCalledTimes(1);
     resolver._planState.at = Date.now() - (31 * 60 * 1000); // the TTL elapsed
     ws.fetch.mockResolvedValue({ success: true, status: 200, headers: {}, text: 'not json' });
-    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+    await expect(searchTrack(resolver)).rejects.toMatchObject({
       notReady: true,
       code: 'plan-ineligible'
     });
@@ -173,7 +183,7 @@ describe('the plan gate (#1220) before any search', () => {
     // searches), so this drives getPlan's forced option directly — and the
     // kept reading is NOT re-cached: the stale timestamp stands, so the
     // scheduled re-read that follows still re-reads.
-    const ws = amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' });
+    const ws = withNoPurchases(amazonWebSessionMock({ tracks: TRACKS, tier: 'UNLIMITED_AUDIO' }));
     const resolver = instantiateAmazonPlugin(axe);
     await search(resolver, 'daft punk'); // caches the unlimited reading
     expect(ws.fetch).toHaveBeenCalledTimes(1);
@@ -185,7 +195,7 @@ describe('the plan gate (#1220) before any search', () => {
     expect(resolver._planState.at).toBe(staleAt); // not re-cached
     // The scheduled re-read that follows stays the judge: unknown, not the
     // kept reading.
-    await expect(search(resolver, 'daft punk')).rejects.toMatchObject({
+    await expect(searchTrack(resolver)).rejects.toMatchObject({
       notReady: true,
       code: 'plan-ineligible'
     });
@@ -771,12 +781,12 @@ describe('the session generation (a sign-out the plugin cannot see the event of)
     // gate B on A's plan), and the stale read must not WRITE the plan cache
     // under the new account — the generation drop in sessionState is
     // worthless if that write lands after it.
-    const ws = amazonWebSessionMock({ tracks: TRACKS });
+    const ws = withNoPurchases(amazonWebSessionMock({ tracks: TRACKS }));
     const resolver = instantiateAmazonPlugin(axe);
     const releases = [];
     ws.fetch.mockImplementation(() => new Promise((resolve) => releases.push(resolve)));
     // Account A's search starts the plan read under generation 0.
-    const p1 = search(resolver, 'daft punk');
+    const p1 = searchTrack(resolver);
     await new Promise((r) => setTimeout(r, 0));
     expect(releases).toHaveLength(1);
     // Sign out + sign in as B, observed by the next state read BEFORE the
@@ -793,9 +803,9 @@ describe('the session generation (a sign-out the plugin cannot see the event of)
     // The concurrent search did NOT join account A's in-flight read — it
     // started its own fetch under the new generation.
     expect(releases).toHaveLength(2);
-    releases[0]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'PRIME', customerId: 'A1' }) });
+    releases[0]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'SOMETHING_NEW', customerId: 'A1' }) });
     releases[1]({ success: true, status: 200, headers: {}, text: JSON.stringify({ tier: 'UNLIMITED_AUDIO', customerId: 'B2' }) });
-    // A's own search still answers A's reading (Prime → plan-ineligible);
+    // A's own search still answers A's reading (unconfirmed → plan-ineligible);
     // B's search proceeds.
     await expect(p1).rejects.toMatchObject({ notReady: true, code: 'plan-ineligible' });
     const rows = await p2;

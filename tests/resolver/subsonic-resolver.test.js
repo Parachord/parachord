@@ -491,9 +491,9 @@ describe('app.js integration', () => {
 
   test('handlePlay has an html5Stream branch that plays through the shared audioRef', () => {
     // Subsonic reaches it by declaring capabilities.html5Stream, not by name.
-    expect(appSrc).toContain('if (isHtml5StreamResolver(resolverId)) {');
+    expect(appSrc).toContain('if (drmFallback || isHtml5StreamResolver(resolverId)) {');
     // the branch must come before the generic resolver.play() path
-    const branchIdx = appSrc.indexOf('if (isHtml5StreamResolver(resolverId)) {');
+    const branchIdx = appSrc.indexOf('if (drmFallback || isHtml5StreamResolver(resolverId)) {');
     const genericIdx = appSrc.indexOf('const success = await resolver.play(playSource, config);');
     expect(branchIdx).toBeGreaterThan(0);
     expect(branchIdx).toBeLessThan(genericIdx);

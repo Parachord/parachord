@@ -21,7 +21,7 @@ const { ListRow } = require('./list-row');
 const { SortMenu } = require('./sort-menu');
 const { TextField } = require('./fields');
 const { CardButton } = require('./card-button');
-const { playlistsSortOptions } = require('../lib/playlists-sort');
+const { playlistsSortOptions, sortPlaylists } = require('../lib/playlists-sort');
 
 const { Music } = Icons;
 
@@ -428,29 +428,8 @@ const AddToPlaylistPanel = React.memo(function AddToPlaylistPanel(props) {
               const query = addToPlaylistSearch.toLowerCase();
               filteredPlaylists = playlists.filter(p => p.title.toLowerCase().includes(query));
             }
-            // Sort playlists
-            const sortedPlaylists = [...filteredPlaylists];
-            switch (addToPlaylistSort) {
-              case 'added':
-                sortedPlaylists.sort((a, b) => {
-                  const aTime = Number(a.addedAt) || Number(a.createdAt) || 0;
-                  const bTime = Number(b.addedAt) || Number(b.createdAt) || 0;
-                  return bTime - aTime;
-                });
-                break;
-              case 'created':
-                sortedPlaylists.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
-                break;
-              case 'modified':
-                sortedPlaylists.sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0));
-                break;
-              case 'alpha-asc':
-                sortedPlaylists.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-                break;
-              case 'alpha-desc':
-                sortedPlaylists.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-                break;
-            }
+            // Sort playlists (lib/playlists-sort.js, shared with the Playlists page)
+            const sortedPlaylists = sortPlaylists(filteredPlaylists, addToPlaylistSort);
 
             if (sortedPlaylists.length === 0) {
               return React.createElement('div', {

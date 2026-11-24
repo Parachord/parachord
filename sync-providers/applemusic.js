@@ -9,6 +9,7 @@
 const APPLE_MUSIC_API_BASE = 'https://api.music.apple.com/v1';
 
 const { pickConfidentMatch } = require('./confidence-scoring');
+const { failureIsAnswer } = require('./lookup-outcome');
 
 // ISRC of a track, normalized to Apple's expected upper-case form, or null.
 // Walks top-level `track.isrc` first, then every `track.sources[*].isrc`
@@ -668,6 +669,10 @@ const AppleMusicSyncProvider = {
     const { developerToken, userToken } = JSON.parse(token);
     const resolved = [];
     const unresolved = [];
+    // Lookups that went unanswered (429, 5xx, the sign-in, the network): never
+    // a miss, or a push would remove the track from the mirror (#1637,
+    // sync-engine/push-hold.js, sync-providers/lookup-outcome.js).
+    const unreachable = [];
 
     // Storefront-aware (parachord#911 D-Legacy-2): all catalog lookups below
     // hit the user's storefront, not a hardcoded 'us', so desktop + mobile
@@ -709,7 +714,7 @@ const AppleMusicSyncProvider = {
         );
 
         if (!resp.ok) {
-          unresolved.push({ artist: track.artist, title: track.title });
+          (failureIsAnswer(resp.status) ? unresolved : unreachable).push({ artist: track.artist, title: track.title });
           await new Promise(resolve => setTimeout(resolve, 150));
           continue;
         }
@@ -740,11 +745,11 @@ const AppleMusicSyncProvider = {
         await new Promise(resolve => setTimeout(resolve, 150));
       } catch (error) {
         console.error(`Failed to resolve track "${track.title}" by "${track.artist}":`, error.message);
-        unresolved.push({ artist: track.artist, title: track.title });
+        unreachable.push({ artist: track.artist, title: track.title });
       }
     }
 
-    return { resolved, unresolved };
+    return { resolved, unresolved, unreachable };
   },
 
   // Find an existing user-owned playlist by exact name (case-insensitive).

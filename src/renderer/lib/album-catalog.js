@@ -18,6 +18,9 @@
 // A MusicBrainz id is a UUID. Anything else on a release (spotify-…,
 // applemusic-…, lastfm-…, discogs-…) is a service's id that MusicBrainz will
 // never know.
+// A compilation's tracks keep their own artists (2026-11-23).
+const { ownCatalogTrackArtist } = require('./album-track-artist');
+
 const MB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isMusicBrainzId = (id) => typeof id === 'string' && MB_ID.test(id);
 
@@ -426,6 +429,7 @@ function catalogAlbumToRelease(album, { resolverId, resolverName, requested = {}
     return da !== db ? da - db : (a.trackNumber || 0) - (b.trackNumber || 0);
   });
   const perDisc = {};
+  const albumArtist = requested.artistName || album.artist || null;
   const tracks = sorted.filter(t => t && t.title).map((t) => {
     const disc = t.discNumber || 1;
     perDisc[disc] = (perDisc[disc] || 0) + 1;
@@ -438,6 +442,7 @@ function catalogAlbumToRelease(album, { resolverId, resolverName, requested = {}
       recording: null,
       mbid: null,
       artistMbids: [],
+      trackArtist: ownCatalogTrackArtist(t.artist, albumArtist),
     };
   });
   const releaseDate = typeof album.releaseDate === 'string' ? album.releaseDate.slice(0, 10) : null;

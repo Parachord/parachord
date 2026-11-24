@@ -729,17 +729,509 @@ describe('the plan gate (#1220) before any dmls request', () => {
     expect(resolver._planState.plan).toBe('unlimited');
   });
 
+  // Every plan but Music Unlimited plays only the account's bought tracks
+  // (#1494): a free account, or a tier Parachord can't read, like Prime.
   test.each([
-    ['PRIME', 'prime', /^Amazon Prime: Amazon is used for album art, artist photos and links\. Playing Amazon tracks in Parachord needs Music Unlimited\.$/],
-    [undefined, 'unknown', /couldn't confirm your Amazon Music plan/],
-    ['SOMETHING_NEW', 'unknown', /couldn't confirm your Amazon Music plan/]
-  ])('tier %p is refused as plan-ineligible before any dmls request', async (tier, planKey, message) => {
-    const { fetches } = mockWithConfig(configWithTier(tier));
+    [undefined, 'unknown'],
+    ['SOMETHING_NEW', 'unknown']
+  ])('tier %p plays a bought track and refuses the rest before any dmls request', async (tier, planKey) => {
+    const { amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+    const { ws, fetches } = mockWithConfig(configWithTier(tier));
+    serveAmazonLibrary(ws, { first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'Bought', artist: 'A' }]) });
     const resolver = instantiateAmazonPlugin(axe);
     const err = await resolver.getPlaybackManifest(drmTrack(), {}).catch((e) => e);
     expect(err).toMatchObject({ reason: 'plan-ineligible', planKey });
-    expect(err.message).toMatch(message);
+    expect(err.message).toBe("Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited, which Parachord couldn't find on your account.");
     expect(manifestPosts(fetches)).toHaveLength(0);
+    await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+    expect(manifestPosts(fetches)).toHaveLength(1);
+  });
+
+  // Prime plays the tracks the account bought (#1494), checked against the
+  // plugin's own list from the library page, never a flag on the track.
+  describe('on Prime', () => {
+    const { amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+    const primeWithLibrary = (pages) => {
+      const mock = mockWithConfig(configWithTier('PRIME'));
+      serveAmazonLibrary(mock.ws, pages || {
+        first: amazonLibraryPage([
+          { asin: 'B0OWNED001', title: 'Bought', artist: 'A' },
+          { asin: 'B0LIKED001', title: 'Liked', artist: 'A', bought: false }
+        ])
+      });
+      return mock;
+    };
+
+    test('a bought track plays', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+      expect(manifestPosts(fetches)).toHaveLength(1);
+    });
+
+    test('a track the account only liked, or never bought, is refused before any dmls request', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      for (const asin of ['B0LIKED001', 'B0NEVER001']) {
+        const err = await resolver.getPlaybackManifest(drmTrack(asin), {}).catch((e) => e);
+        expect(err).toMatchObject({ reason: 'plan-ineligible', planKey: 'prime' });
+        expect(err.message).toBe("Amazon Prime: Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited.");
+      }
+      expect(manifestPosts(fetches)).toHaveLength(0);
+    });
+
+    test('on an iOS host the gate refuses before any FairPlay request too (#1627)', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      resolver.host = { platform: 'ios', webSession: global.window.electron.webSession, appVersion: async () => '1.2.3' };
+      await expect(resolver.getPlaybackManifest(drmTrack('B0NEVER001'), {})).rejects.toMatchObject({ reason: 'plan-ineligible', planKey: 'prime' });
+      expect(dmlsFetches(fetches).filter((r) => String(r.headers['X-Amz-Target'] || '').includes('getStreamingURLsWithFirstChunkV2'))).toHaveLength(0);
+    });
+
+    test('a flag on the track is not proof of a purchase', async () => {
+      const { fetches } = primeWithLibrary();
+      const resolver = instantiateAmazonPlugin(axe);
+      const track = { ...drmTrack('B0NEVER001'), amazonPurchased: true, owned: true };
+      await expect(resolver.getPlaybackManifest(track, {})).rejects.toMatchObject({ reason: 'plan-ineligible' });
+      expect(manifestPosts(fetches)).toHaveLength(0);
+    });
+
+    test('a library that cannot be read is "try again", not a plan refusal', async () => {
+      const mock = mockWithConfig(configWithTier('PRIME'));
+      serveAmazonLibrary(mock.ws, {}, { capture: null });
+      const resolver = instantiateAmazonPlugin(axe);
+      const err = await resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {}).catch((e) => e);
+      expect(err).toMatchObject({ reason: 'not-ready' });
+      expect(err.message).toBe("Couldn't read your Amazon purchases. Try again in a minute.");
+      expect(manifestPosts(mock.fetches)).toHaveLength(0);
+    });
+  });
+});
+
+// ── the first play on Prime (#1603) ────────────────────────────────────────
+
+// The purchases read holds the page-flow queue for a page load and its
+// replays; a csrf mint behind it used to load another page (the songs
+// search), and together they missed the engine's 10 s manifest budget on the
+// first play after launch. The read now keeps the csrf triplet its own page
+// sent, and a mint right after it uses that instead of a second page load.
+describe('the first play on Prime (#1603)', () => {
+  const { amazonLibraryCapture, amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+  const PRIME_CONFIG = { ...CONFIG_JSON, tier: 'PRIME' };
+  const ownedPage = () => ({ first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'Bought', artist: 'A' }]) });
+  // The purchases page's own gql request, with a live-looking csrf triplet.
+  const liveLibraryCapture = () => {
+    const capture = amazonLibraryCapture();
+    return { ...capture, headers: { ...capture.headers, ...MINT_HEADERS_FRESH } };
+  };
+  const primeMock = (opts = {}) => {
+    const mock = drmMock({ configJson: PRIME_CONFIG, ...opts });
+    serveAmazonLibrary(mock.ws, ownedPage(), { capture: liveLibraryCapture() });
+    return mock;
+  };
+  // Every page load, the purchases page included (serveAmazonLibrary answers
+  // that one itself).
+  const pageLoads = (ws) => ws.load.mock.calls.map((c) => c[1]);
+
+  test('a play reads the purchases first and mints from that page\'s headers: one page load, not two', async () => {
+    const { ws, fetches } = primeMock();
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+    expect(pageLoads(ws)).toEqual(['https://music.amazon.com/my/purchases']);
+    expect(manifestPosts(fetches)[0].headers['csrf-token']).toBe(MINT_HEADERS_FRESH['csrf-token']);
+    expect(manifestPosts(fetches)[0].headers['csrf-ts']).toBe(MINT_HEADERS_FRESH['csrf-ts']);
+    // The plan read's config.json serves the mint too (read seconds apart).
+    expect(configFetches(fetches)).toHaveLength(1);
+  });
+
+  test('a play while the launch-time purchases read is running joins it and needs no page of its own', async () => {
+    const mock = primeMock();
+    let releaseLibrary;
+    const libraryLoaded = new Promise((resolve) => { releaseLibrary = resolve; });
+    const served = mock.ws.load.getMockImplementation();
+    mock.ws.load.mockImplementation(async (id, url, o) => {
+      if (String(url).endsWith('/my/purchases')) await libraryLoaded;
+      return served(id, url, o);
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    const startupRead = resolver.getOwnedTracks(); // getStatus's prefetch
+    await flush();
+    const play = resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {});
+    await flush();
+    releaseLibrary();
+    await expect(play).resolves.toMatchObject({ manifest: expect.any(String) });
+    await startupRead;
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases']);
+  });
+
+  test('placeholder csrf values on the purchases page are not kept: the mint loads its page', async () => {
+    const mock = drmMock({ configJson: PRIME_CONFIG });
+    serveAmazonLibrary(mock.ws, ownedPage()); // the fixture's 't'/'r' placeholders
+    const resolver = instantiateAmazonPlugin(axe);
+    await resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {});
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases', 'https://music.amazon.com/search/the/songs']);
+    expect(manifestPosts(mock.fetches)[0].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
+  });
+
+  test('kept headers older than the reuse window are not used', async () => {
+    const mock = primeMock();
+    const resolver = instantiateAmazonPlugin(axe);
+    const lib = resolver.requireLib();
+    await resolver.getOwnedTracks();
+    resolver._csrfHarvest.at -= lib.CSRF_HARVEST_MAX_AGE_MS + 1;
+    await resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {});
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases', 'https://music.amazon.com/search/the/songs']);
+  });
+
+  test('a sign-out drops the kept headers with the rest of the session', async () => {
+    primeMock({ generation: 0 });
+    const resolver = instantiateAmazonPlugin(axe);
+    await resolver.sessionState();
+    await resolver.getOwnedTracks();
+    expect(resolver._csrfHarvest).toBeTruthy();
+    primeMock({ generation: 1 });
+    await resolver.sessionState();
+    expect(resolver._csrfHarvest).toBeNull();
+  });
+
+  test('a session the dmls refused re-mints from a page load, never from the kept headers', async () => {
+    const authRefusal = { status: 400, text: '{"message":"REQUIRED_COOKIES_MISSING"}' };
+    const mock = primeMock({
+      dmls: [authRefusal, { status: 200, text: JSON.stringify({ contentResponseList: [manifestReply()] }) }, { status: 200, text: '{"license":"Q0VSVF9PSw=="}' }]
+    });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getPlaybackManifest(drmTrack('B0OWNED001'), {})).resolves.toMatchObject({ manifest: expect.any(String) });
+    expect(pageLoads(mock.ws)).toEqual(['https://music.amazon.com/my/purchases', 'https://music.amazon.com/search/the/songs']);
+    const posts = manifestPosts(mock.fetches);
+    expect(posts[0].headers['csrf-token']).toBe(MINT_HEADERS_FRESH['csrf-token']);
+    expect(posts[1].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
+  });
+
+  test('Music Unlimited still mints from one page load and one config.json read', async () => {
+    const { ws, fetches } = drmMock();
+    const resolver = instantiateAmazonPlugin(axe);
+    await resolver.getPlaybackManifest(drmTrack(), {});
+    expect(pageLoads(ws)).toEqual(['https://music.amazon.com/search/the/songs']);
+    expect(configFetches(fetches)).toHaveLength(1);
+  });
+});
+
+// ── a purchase's plain stream (#1612) ────────────────────────────────────────
+
+// Amazon's own web player streams a purchase from the library locker
+// (getStreamingURLs by the purchased copy's COID) as a progressive MP3, with
+// no DRM. getStreamUrl asks for it, only for a track on the plug-in's own
+// purchases list.
+// On Music Unlimited, resolution plays a catalog copy, often another release
+// of the song than the one bought, so the purchased copy's COID isn't under
+// the source's ASIN (#1629: "Overthrown" resolved to a different copy and
+// the plain-stream fallback found nothing). ownedCoidFor matches the bought
+// tracks by artist and title when the ASIN misses, and by length when
+// several copies match.
+describe('ownedCoidFor: the bought copy of a song (#1629)', () => {
+  const { ownedCoidFor } = instantiateAmazonPlugin(axe).lib;
+  const owned = [
+    { asin: 'B0BOUGHT01', coid: 'c-bought-01', title: 'Overthrown', artist: 'Pinegrove', duration: 214 },
+    { asin: 'B0BOUGHT02', coid: 'c-bought-02', title: 'Overthrown (Live)', artist: 'Pinegrove', duration: 260 },
+    { asin: 'B0NOCOID01', title: 'No Copy', artist: 'Pinegrove', duration: 100 }
+  ];
+
+  test('the ASIN first', () => {
+    expect(ownedCoidFor(owned, { asin: 'B0BOUGHT02', title: 'anything', artist: 'x' })).toBe('c-bought-02');
+  });
+
+  test('else the same artist and title, folded', () => {
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'overthrown', artist: 'PINEGROVE', duration: 213 })).toBe('c-bought-01');
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'Overthrown', artist: 'Pinegrove' })).toBe('c-bought-01');
+  });
+
+  test('a credit that names more artists still matches', () => {
+    const rows = [{ asin: 'B0X', coid: 'c-x', title: 'You Found Me', artist: 'Waxahatchee', duration: 254 }];
+    expect(ownedCoidFor(rows, { asin: 'B0Y', title: 'You Found Me', artist: 'Waxahatchee, Kevin Morby', duration: 254 })).toBe('c-x');
+  });
+
+  test('several copies: the closest length wins, and one far off is another recording', () => {
+    const two = [
+      { asin: 'B01', coid: 'c-studio', title: 'Song', artist: 'A', duration: 200 },
+      { asin: 'B02', coid: 'c-remaster', title: 'Song', artist: 'A', duration: 203 }
+    ];
+    expect(ownedCoidFor(two, { asin: 'B09', title: 'Song', artist: 'A', duration: 202 })).toBe('c-remaster');
+    expect(ownedCoidFor(two, { asin: 'B09', title: 'Song', artist: 'A', duration: 320 })).toBeNull();
+  });
+
+  test('no match, no COID, or nothing to match on is null', () => {
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'Another Song', artist: 'Pinegrove' })).toBeNull();
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1', title: 'No Copy', artist: 'Pinegrove', duration: 100 })).toBeNull();
+    expect(ownedCoidFor(owned, { asin: 'B0CATALOG1' })).toBeNull();
+    expect(ownedCoidFor(null, { asin: 'B0BOUGHT01' })).toBeNull();
+  });
+});
+
+describe('getStreamUrl: a purchase from the library locker (#1612)', () => {
+  const { amazonLibraryPage, serveAmazonLibrary } = require('../helpers/amazon-plugin-bridge');
+  const STREAM = 'https://d1.cloudfront.net/obj?response-content-disposition=filename%3D%2205%20-%20Song.mp3%22&coid=b0owned001&Expires=1&Signature=s&Key-Pair-Id=k';
+  const lockerReply = (over = {}) => ({
+    contentResponseList: [{
+      contentID: { identifier: 'b0owned001', identifierType: 'COID' },
+      protocol: 'PROGRESSIVE', statusCode: 'SUCCESS', cdnTypeList: ['cf'], assetQualities: [],
+      expiration: 1795000000, urlList: [STREAM], ...over
+    }],
+    statusCode: 'SUCCESS'
+  });
+  const lockerMock = (dmls, tier = 'PRIME') => {
+    const mock = drmMock({ configJson: { ...CONFIG_JSON, tier }, dmls });
+    serveAmazonLibrary(mock.ws, { first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'Bought', artist: 'A' }]) });
+    return mock;
+  };
+  const lockerPosts = (fetches) => dmlsFetches(fetches).filter((r) => String(r.headers['X-Amz-Target'] || '').endsWith('.getStreamingURLs'));
+
+  test('on Unlimited, a catalog copy of a bought song finds the bought copy by artist and title (#1629)', async () => {
+    const mock = drmMock({ configJson: { ...CONFIG_JSON, tier: 'UNLIMITED_HD' }, dmls: [{ status: 200, text: JSON.stringify(lockerReply()) }] });
+    // drmTrack's song (Kara Jackson, "no fun", 210s), bought under another ASIN.
+    serveAmazonLibrary(mock.ws, { first: amazonLibraryPage([{ asin: 'B0OWNED001', title: 'no fun', artist: 'Kara Jackson', duration: 211 }]) });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0CATALOG9'), {})).resolves.toBe(STREAM);
+    expect(JSON.parse(lockerPosts(mock.fetches)[0].body).contentIdList).toEqual([{ identifier: 'b0owned001', identifierType: 'COID' }]);
+  });
+
+  test('a bought track: one getStreamingURLs request by its COID, answering the signed URL', async () => {
+    const { fetches } = lockerMock([{ status: 200, text: JSON.stringify(lockerReply()) }]);
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0OWNED001'), {})).resolves.toBe(STREAM);
+    const posts = lockerPosts(fetches);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].url).toBe('https://music.amazon.com/NA/api/dmls/');
+    expect(posts[0].headers['X-Amz-Target']).toBe('com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.getStreamingURLs');
+    expect(posts[0].headers['csrf-token']).toBe(MINT_HEADERS['csrf-token']);
+    const body = JSON.parse(posts[0].body);
+    expect(body).toMatchObject({
+      contentIdList: [{ identifier: 'b0owned001', identifierType: 'COID' }],
+      bitRate: 'HIGH',
+      deviceToken: { deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '12345678901234567' },
+      appMetadata: { https: true, appId: 'GreenHornet_Web' },
+      clientMetadata: { clientId: 'WebCP' },
+      customerId: 'CUST1'
+    });
+    expect(typeof body.clientMetadata.clientRequestId).toBe('string');
+    expect(body.clientMetadata.clientRequestId.length).toBeGreaterThan(8);
+    // No manifest request: this path has no DRM.
+    expect(manifestPosts(fetches)).toHaveLength(0);
+  });
+
+  test('on Music Unlimited a purchase streams the same way', async () => {
+    lockerMock([{ status: 200, text: JSON.stringify(lockerReply()) }], 'UNLIMITED_HD');
+    await expect(instantiateAmazonPlugin(axe).getStreamUrl(drmTrack('B0OWNED001'), {})).resolves.toBe(STREAM);
+  });
+
+  test('a track the account doesn\'t own has no plain stream: null, no request, whatever the track says', async () => {
+    const { fetches } = lockerMock([]);
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0NEVER001'), {})).resolves.toBeNull();
+    await expect(resolver.getStreamUrl({ ...drmTrack('B0NEVER001'), amazonCoid: 'forged', owned: true }, {})).resolves.toBeNull();
+    expect(lockerPosts(fetches)).toHaveLength(0);
+  });
+
+  test('a refusal or an answer with no https URL is load-failed, never a URL', async () => {
+    for (const reply of [
+      { status: 500, text: 'oops' },
+      { status: 200, text: 'not json' },
+      { status: 200, text: JSON.stringify(lockerReply({ statusCode: 'CONTENT_NOT_FOUND', urlList: [] })) },
+      { status: 200, text: JSON.stringify(lockerReply({ urlList: ['http://insecure.example/x.mp3'] })) },
+    ]) {
+      lockerMock([reply]);
+      await expect(instantiateAmazonPlugin(axe).getStreamUrl(drmTrack('B0OWNED001'), {})).rejects.toMatchObject({ reason: 'load-failed' });
+    }
+  });
+
+  test('signed out: not-signed-in, no request', async () => {
+    const mock = drmMock({ signedIn: false });
+    const resolver = instantiateAmazonPlugin(axe);
+    await expect(resolver.getStreamUrl(drmTrack('B0OWNED001'), {})).rejects.toMatchObject({ reason: 'not-signed-in' });
+    expect(lockerPosts(mock.fetches)).toHaveLength(0);
+  });
+
+  test('purchases that can\'t be read are "try again", not null', async () => {
+    const mock = drmMock({ configJson: { ...CONFIG_JSON, tier: 'PRIME' } });
+    serveAmazonLibrary(mock.ws, {}, { capture: null });
+    await expect(instantiateAmazonPlugin(axe).getStreamUrl(drmTrack('B0OWNED001'), {})).rejects.toMatchObject({ reason: 'not-ready' });
+  });
+});
+
+// ── FairPlay for an iOS host (#1627) ────────────────────────────────────────
+// iOS has no Widevine. Amazon serves a catalog track to Safari as FairPlay HLS
+// (parachord-mobile#780): the manifest from getStreamingURLsWithFirstChunkV2,
+// the licence through the same getLicenseForPlaybackV2 call as Widevine with
+// DrmType FAIRPLAY (Safari 27.2, 2026-11-22). Picked when the host says it is
+// iOS (this.host.platform); every other host keeps Widevine DASH.
+
+const FP_CERT = 'Q0VSVElGSUNBVEU=';
+function fairPlayReply(over = {}) {
+  return {
+    contentResponseList: [{
+      contentID: { identifier: 'B00CRMX53S', identifierType: 'ASIN' },
+      protocol: 'HLS', format: 'ENCRYPTED_AAC', drmType: 'FAIRPLAY', statusCode: 'SUCCESS',
+      urlList: ['https://cdn.example.cloudfront.net/api/manifest.m3u8?dmid=1&m=m&r=RID&region=NA'],
+      httpHeaders: {
+        manifestHeaders: [{ name: 'Cookie', value: 'rid=RID' }],
+        audioSegmentHeaders: [{ name: 'Cookie', value: 'rid=RID' }],
+        keyHeaders: [
+          { name: 'x-amz-target', value: 'com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.getLicenseForPlaybackV3' },
+          { name: 'x-amz-music-drm-type', value: 'FAIRPLAY' },
+          { name: 'Cookie', value: 'rid=RID' }
+        ]
+      },
+      ...over
+    }],
+    drmPlaybackResource: { fairplay: { applicationCertificate: FP_CERT, licenseAcquisitionURL: 'https://music.amazon.com/NA/api/dmlvs/v1/getLicenseForPlaybackV3' } },
+    statusCode: 'SUCCESS'
+  };
+}
+const iosHost = () => ({ platform: 'ios', webSession: global.window.electron.webSession, appVersion: async () => '1.2.3' });
+const fairPlayPosts = (fetches) => dmlsFetches(fetches).filter((r) => String(r.headers['X-Amz-Target'] || '').includes('getStreamingURLsWithFirstChunkV2'));
+
+describe('FairPlay for an iOS host (#1627)', () => {
+  test('amazonFairPlayManifestBody builds the shape Safari sends', () => {
+    const { amazonFairPlayManifestBody } = instantiateAmazonPlugin(axe).lib;
+    const base = { asin: 'B00CRMX53S', customerId: 'CUST', marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US', deviceId: '123', userAgent: 'UA', requestId: 'req-1' };
+    const body = amazonFairPlayManifestBody(base);
+    expect(body).toEqual({
+      contentIdList: [{ identifier: 'B00CRMX53S', identifierType: 'ASIN' }],
+      customerId: 'CUST',
+      customerInfo: { marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US' },
+      protocol: 'HLS',
+      format: 'ENCRYPTED_AAC',
+      drmType: 'FAIRPLAY',
+      deviceToken: { deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '123' },
+      appMetadata: { https: true, appId: 'GreenHornet_Web', appVersion: expect.any(String), userAgent: 'UA' },
+      clientMetadata: { clientId: 'WebCP', clientRequestId: 'req-1' }
+    });
+    // The plan codes go along only when the session has them.
+    expect(amazonFairPlayManifestBody({ ...base, entitlementList: ['KATANA'] }).customerInfo.entitlementList).toEqual(['KATANA']);
+    expect(amazonFairPlayManifestBody({ ...base, asin: null })).toBeNull();
+    expect(amazonFairPlayManifestBody({ ...base, deviceId: null })).toBeNull();
+  });
+
+  test('fairPlayStreamFromReply reads the HLS URL, the certificate and the three header lists', () => {
+    const { fairPlayStreamFromReply } = instantiateAmazonPlugin(axe).lib;
+    expect(fairPlayStreamFromReply(fairPlayReply())).toEqual({
+      url: 'https://cdn.example.cloudfront.net/api/manifest.m3u8?dmid=1&m=m&r=RID&region=NA',
+      certificate: FP_CERT,
+      headers: {
+        manifest: [{ name: 'Cookie', value: 'rid=RID' }],
+        segments: [{ name: 'Cookie', value: 'rid=RID' }],
+        key: [
+          { name: 'x-amz-target', value: 'com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.getLicenseForPlaybackV3' },
+          { name: 'x-amz-music-drm-type', value: 'FAIRPLAY' },
+          { name: 'Cookie', value: 'rid=RID' }
+        ]
+      }
+    });
+    expect(fairPlayStreamFromReply(fairPlayReply({ statusCode: 'CONTENT_NOT_FOUND' }))).toBeNull();
+    expect(fairPlayStreamFromReply(fairPlayReply({ urlList: ['http://insecure/manifest.m3u8'] }))).toBeNull();
+    expect(fairPlayStreamFromReply({ ...fairPlayReply(), drmPlaybackResource: {} })).toBeNull();
+    expect(fairPlayStreamFromReply(null)).toBeNull();
+  });
+
+  // Amazon answers 400 INVALID_MISSING_CUSTOMER_INFO without the plan's
+  // codes (#1629, live 2026-11-22). Its web player builds them from the
+  // account's tier (convertTierToEntitlementList in its own bundle): the
+  // plug-in mirrors that on config.json's tier, so it never claims a plan
+  // the account doesn't have.
+  test('amazonEntitlementList mirrors the web player: the account\'s own plan codes', () => {
+    const { amazonEntitlementList } = instantiateAmazonPlugin(axe).lib;
+    const unlimited = ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING'];
+    expect(amazonEntitlementList('UNLIMITED_HD')).toEqual(unlimited);
+    expect(amazonEntitlementList('UNLIMITED')).toEqual(unlimited);
+    expect(amazonEntitlementList('unlimited_individual')).toEqual(unlimited);
+    expect(amazonEntitlementList('PRIME')).toEqual(['SONIC_RUSH', 'ROBIN', 'NIGHTWING']);
+    expect(amazonEntitlementList('FREE')).toEqual(['NIGHTWING']);
+    expect(amazonEntitlementList('NONE')).toEqual([]);
+    expect(amazonEntitlementList(null)).toEqual([]);
+  });
+
+  test('the FairPlay manifest request carries the session tier\'s codes', async () => {
+    const { fetches } = drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply()) }] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    await resolver.getPlaybackManifest(drmTrack(), {});
+    // CONFIG_JSON's tier is UNLIMITED_HD.
+    expect(JSON.parse(fairPlayPosts(fetches)[0].body).customerInfo).toEqual({
+      marketplaceId: 'MKT', territoryId: 'US', entitlementList: ['KATANA', 'HAWKFIRE', 'SONIC_RUSH', 'ROBIN', 'NIGHTWING']
+    });
+  });
+
+  test('on iOS, getPlaybackManifest asks for FairPlay HLS and answers the hls-fairplay shape', async () => {
+    const { fetches } = drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply()) }] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    const reply = await resolver.getPlaybackManifest(drmTrack('B00CRMX53S'), {});
+    const req = fairPlayPosts(fetches)[0];
+    expect(req).toBeTruthy();
+    expect(manifestPosts(fetches)).toHaveLength(0);
+    const body = JSON.parse(req.body);
+    expect(body).toMatchObject({ protocol: 'HLS', format: 'ENCRYPTED_AAC', drmType: 'FAIRPLAY', customerId: 'CUST1' });
+    expect(body.contentIdList).toEqual([{ identifier: 'B00CRMX53S', identifierType: 'ASIN' }]);
+    expect(reply).toMatchObject({
+      type: 'hls-fairplay',
+      drm: 'fairplay',
+      url: 'https://cdn.example.cloudfront.net/api/manifest.m3u8?dmid=1&m=m&r=RID&region=NA',
+      certificate: FP_CERT,
+      asin: 'B00CRMX53S'
+    });
+    expect(reply.headers.key).toHaveLength(3);
+    expect(reply.manifest).toBeUndefined();
+    expect(reply.context).toMatchObject({ drmType: 'FAIRPLAY', customerId: 'CUST1', csrfToken: MINT_HEADERS['csrf-token'] });
+    // No Widevine cert warm on a FairPlay host.
+    await flush();
+    expect(dmlsFetches(fetches)).toHaveLength(1);
+  });
+
+  test('a desktop or Android host keeps Widevine DASH', async () => {
+    for (const platform of ['desktop', 'android']) {
+      const { fetches } = drmMock();
+      const resolver = instantiateAmazonPlugin(axe);
+      resolver.host = { ...iosHost(), platform };
+      const reply = await resolver.getPlaybackManifest(drmTrack(), {});
+      expect(reply.type).toBe('dash');
+      expect(fairPlayPosts(fetches)).toHaveLength(0);
+    }
+  });
+
+  test('a FairPlay refusal or a bad reply maps like the Widevine path', async () => {
+    drmMock({ dmls: [{ status: 200, text: JSON.stringify(fairPlayReply({ statusCode: 'CONTENT_NOT_FOUND' })) }] });
+    let resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    await expect(resolver.getPlaybackManifest(drmTrack(), {})).rejects.toMatchObject({ reason: 'playback-failed' });
+
+    drmMock({ dmls: [{ status: -1, text: 'web-session fetch exceeded 30000ms' }] });
+    resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    await expect(resolver.getPlaybackManifest(drmTrack(), {})).rejects.toMatchObject({ reason: 'load-failed' });
+  });
+
+  test('relayLicense sends a FairPlay session\'s SPC as Safari does: getLicenseForPlaybackV2, DrmType FAIRPLAY', async () => {
+    const { fetches } = drmMock({ dmls: [{ status: 200, text: '{"license":"Q0tD"}' }] });
+    const resolver = instantiateAmazonPlugin(axe);
+    resolver.host = iosHost();
+    const context = { customerId: 'CUST1', deviceId: '12345678901234567', csrfToken: 'tok-x', csrfRnd: '1', csrfTs: '2', region: 'NA', drmType: 'FAIRPLAY' };
+    // An SPC is larger than a Widevine challenge (about 10 KB of base64).
+    const spc = 'A'.repeat(10000) + '==';
+    await expect(resolver.relayLicense(spc, context)).resolves.toBe('Q0tD');
+    const req = dmlsFetches(fetches)[0];
+    expect(req.headers['X-Amz-Target']).toContain('getLicenseForPlaybackV2');
+    const body = JSON.parse(req.body);
+    expect(body.DrmType).toBe('FAIRPLAY');
+    expect(body.licenseChallenge).toBe(spc);
+    expect(body.customerId).toBe('CUST1');
+    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '12345678901234567' });
+  });
+
+  test('amazonDmlsLicenseBody: WIDEVINE unless told FAIRPLAY, and nothing else', () => {
+    const { amazonDmlsLicenseBody } = instantiateAmazonPlugin(axe).lib;
+    const base = { challenge: 'Q0FR', customerId: 'C', deviceId: 'D' };
+    expect(amazonDmlsLicenseBody(base).DrmType).toBe('WIDEVINE');
+    expect(amazonDmlsLicenseBody({ ...base, drmType: 'FAIRPLAY' }).DrmType).toBe('FAIRPLAY');
+    expect(amazonDmlsLicenseBody({ ...base, drmType: 'PLAYREADY' }).DrmType).toBe('WIDEVINE');
   });
 });
 

@@ -41,14 +41,20 @@ const between = (src, start, end) => {
 // amazonPlaybackLimit mapper and the IPC status it fed are deleted (the
 // plugin's reply mapping is pinned in
 // tests/resolver/amazon-music-plugin-session.test.js).
-const PRIME_MESSAGE = 'Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.';
+// Every Amazon plan but Music Unlimited plays only the account's bought
+// tracks (#1494): unblocked, ownedOnly. The blocked cases are another
+// service's (otherLimit below).
+const PRIME_MESSAGE = "Amazon Prime: Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited.";
+const UNKNOWN_MESSAGE = "Parachord plays the songs you've bought from Amazon. Playing anything else from Amazon needs Music Unlimited, which Parachord couldn't find on your account.";
 const amazonReply = (plan) => ({
   signedIn: true,
   playbackLimit: plan === 'unlimited'
     ? { blocked: false, planKey: 'unlimited', label: null, message: null, searchesHeldBack: true }
-    : { blocked: true, planKey: plan, label: plan === 'prime' ? 'Prime: no playback' : 'Plan not confirmed', message: PRIME_MESSAGE, searchesHeldBack: true },
+    : plan === 'prime'
+      ? { blocked: false, ownedOnly: true, planKey: 'prime', label: 'Prime: purchases only', message: PRIME_MESSAGE, searchesHeldBack: true }
+      : { blocked: false, ownedOnly: true, planKey: plan, label: 'Purchases only', message: UNKNOWN_MESSAGE, searchesHeldBack: true },
   statusLabel: null,
-  statusMessage: plan === 'unlimited' ? null : PRIME_MESSAGE
+  statusMessage: plan === 'unlimited' ? null : plan === 'prime' ? PRIME_MESSAGE : UNKNOWN_MESSAGE
 });
 const amazonLimit = (plan) => pluginStatusLimit(amazonReply(plan));
 // A second service with a free tier that can't play on demand and whose
@@ -78,9 +84,13 @@ describe('Apple Music: signed out leaves playback until it connects (2026-11)', 
     const check = between(app, 'const checkMusicKitAvailable = async () => {', 'checkMusicKitAvailable();');
     expect(check).toMatch(/finally \{\s*setAppleMusicAuthChecked\(true\);/);
   });
-  test('a tile that can\'t play stays in full colour (it is on), unnumbered, with its warning line', () => {
+  // A plan that can't play keeps a signed-in tile in full colour (it is on).
+  // A signed-out one reads as off instead (#1614: a plug-in that needs a
+  // sign-in never shows as enabled until it's signed in).
+  test('a tile that can\'t play stays in full colour (it is on), unnumbered, with its warning line; signed out, it reads as off', () => {
     const card = read('src/renderer/components/settings-cards.js');
-    expect(card).toMatch(/const isGrayed = isAvailable;/);
+    expect(card).toMatch(/const isEnabled = isActive === true && !signInNeeded;/);
+    expect(card).toMatch(/const isGrayed = !isEnabled && !isInstalling;/);
     expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
   });
 });
@@ -93,7 +103,7 @@ describe('what the map drives', () => {
   };
 
   test('the blocked ids, and the resolvers that play', () => {
-    expect(planBlockedIds(limits)).toEqual(['amazonmusic', 'other']);
+    expect(planBlockedIds(limits)).toEqual(['other']);
     expect(planBlockedIds({ other: otherLimit(false) })).toEqual([]);
     const active = ['other', 'amazonmusic', 'bandcamp'];
     expect(playbackResolverIds(active, ['amazonmusic', 'other'])).toEqual(['bandcamp']);
@@ -103,7 +113,7 @@ describe('what the map drives', () => {
 
   test('the tile label and tooltip, and the panel message', () => {
     expect(tileStatus(limits, 'other')).toEqual({ statusLabel: 'Free: no playback', statusTitle: OTHER_MESSAGE });
-    expect(tileStatus(limits, 'amazonmusic')).toEqual({ statusLabel: 'Prime: no playback', statusTitle: PRIME_MESSAGE });
+    expect(tileStatus(limits, 'amazonmusic')).toEqual({ statusLabel: 'Prime: purchases only', statusTitle: PRIME_MESSAGE });
     expect(tileStatus(limits, 'soundcloud')).toEqual({ statusLabel: null, statusTitle: null });
     expect(tileStatus({ other: otherLimit(false) }, 'other')).toEqual({ statusLabel: null, statusTitle: null });
     expect(limitMessage(limits, 'other')).toBe(OTHER_MESSAGE);
@@ -113,13 +123,13 @@ describe('what the map drives', () => {
   test('an upgrade searches again only where searches were held back', () => {
     // Amazon Prime -> Unlimited: search again (the plugin's reply says
     // searchesHeldBack even when unblocked — that is what re-triggers).
-    expect(limitTransition('1', amazonLimit('unlimited'))).toEqual({ reresolve: true, store: '0' });
+    expect(limitTransition('1', amazonLimit('unlimited'))).toEqual({ reresolve: true, purge: false, store: '0' });
     // A service whose searches ran all along: nothing to search again.
-    expect(limitTransition('1', otherLimit(false))).toEqual({ reresolve: false, store: '0' });
+    expect(limitTransition('1', otherLimit(false))).toEqual({ reresolve: false, purge: false, store: '0' });
     // Still blocked, first sighting, or no reading: nothing to do.
-    expect(limitTransition('1', amazonLimit('prime'))).toEqual({ reresolve: false, store: '1' });
-    expect(limitTransition(null, amazonLimit('unlimited'))).toEqual({ reresolve: false, store: '0' });
-    expect(limitTransition('1', null)).toEqual({ reresolve: false, store: null });
+    expect(limitTransition('1', otherLimit(true))).toEqual({ reresolve: false, purge: false, store: '1' });
+    expect(limitTransition(null, amazonLimit('unlimited'))).toEqual({ reresolve: false, purge: false, store: '0' });
+    expect(limitTransition('1', null)).toEqual({ reresolve: false, purge: false, store: null });
     expect(limitStorageKey('amazonmusic')).toBe('playback_limit_blocked:amazonmusic');
   });
 });
@@ -258,7 +268,7 @@ describe('app wiring', () => {
     // dropped on.
     expect(app).toMatch(/\[\.\.\.playingInOrder, \.\.\.planBlockedInOrder\]\.forEach\(\(resolverId, index\) => \{/);
     expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
-    expect(app).toMatch(/const reorderable = isActive && !notPlayingResolverIds\.includes\(resolver\.id\);/);
+    expect(app).toMatch(/const reorderable = isActive && !signInNeeded && !notPlayingResolverIds\.includes\(resolver\.id\);/);
     expect(app).toMatch(/draggable: reorderable,/);
     expect(app).toMatch(/onDrop: reorderable \? /);
     expect(app).not.toMatch(/setResolverOrder\([^)]*planBlocked/);
@@ -282,12 +292,14 @@ describe('app wiring', () => {
     const effect = between(app, 'for (const [resolverId, limit] of Object.entries(playbackLimits)) {', '}, [playbackLimits]);');
     expect(effect).toMatch(/PlaybackLimits\.limitTransition\(last, limit\)/);
     expect(effect).toMatch(/if \(reresolve\) \{[\s\S]*clearResolverMisses\(resolverId\);/);
+    // Entering a plan that plays only owned tracks drops the saved sources (#1494).
+    expect(effect).toMatch(/if \(purge\) \{[\s\S]*clearResolverMisses\(resolverId, \{ sources: true \}\);[\s\S]*\} else if \(reresolve\) \{/);
     expect(effect).toMatch(/localStorage\.setItem\(key, store\)/);
     // The Amazon-only key is gone; the clear is per resolver.
     expect(app).not.toMatch(/amazonmusic_last_plan/);
-    expect(app).toMatch(/const clearResolverMisses = \(resolverId\) => \{/);
+    expect(app).toMatch(/const clearResolverMisses = \(resolverId, \{ sources: dropFound = false \} = \{\}\) => \{/);
     expect(app).toMatch(/window\.__parachordClearAmazonNoMatch = \(\) => clearResolverMisses\('amazonmusic'\);/);
-    const clear = between(app, 'const clearResolverMisses = (resolverId) => {', "window.__parachordClearAmazonNoMatch = ");
+    const clear = between(app, 'const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {', "window.__parachordClearAmazonNoMatch = ");
     expect(clear).not.toMatch(/amazonmusic/);
   });
 
@@ -338,6 +350,47 @@ describe('spotify.axe: unchanged by playback limits', () => {
     const axe = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'plugins', 'spotify.axe'), 'utf8'));
     expect(axe.implementation.play).not.toMatch(/plan-ineligible/);
     expect(axe.manifest.minAppVersion).toBeUndefined();
+  });
+});
+
+describe('a plan that plays only owned tracks (Amazon on Prime, #1494)', () => {
+  const prime = amazonLimit('prime');
+
+  test('the plugin\'s ownedOnly entry keeps the resolver in playback', () => {
+    expect(prime).toEqual({
+      blocked: false, ownedOnly: true, planKey: 'prime', label: 'Prime: purchases only', message: PRIME_MESSAGE, searchesHeldBack: true
+    });
+    expect(planBlockedIds({ amazonmusic: prime })).toEqual([]);
+    const active = ['amazonmusic', 'bandcamp'];
+    expect(playbackResolverIds(active, planBlockedIds({ amazonmusic: prime }))).toBe(active);
+  });
+
+  test('ownedOnly is only ever an unblocked entry\'s, and only when said', () => {
+    expect(pluginStatusLimit({ playbackLimit: { blocked: true, ownedOnly: true } })).not.toHaveProperty('ownedOnly');
+    expect(pluginStatusLimit({ playbackLimit: { blocked: false, ownedOnly: 'yes' } })).not.toHaveProperty('ownedOnly');
+    expect(amazonLimit('unlimited')).not.toHaveProperty('ownedOnly');
+  });
+
+  test('the tile says what still plays', () => {
+    expect(tileStatus({ amazonmusic: prime }, 'amazonmusic')).toEqual({ statusLabel: 'Prime: purchases only', statusTitle: PRIME_MESSAGE });
+    expect(tileStatus({ amazonmusic: { blocked: false, ownedOnly: true } }, 'amazonmusic').statusLabel).toBe('Purchases only');
+    expect(limitMessage({ amazonmusic: prime }, 'amazonmusic')).toBeNull();
+  });
+
+  test('entering it drops the saved sources and searches again; leaving it for Unlimited searches again', () => {
+    // Unlimited -> Prime: sources found on Unlimited may not be owned.
+    expect(limitTransition('0', prime)).toEqual({ reresolve: true, purge: true, store: 'owned' });
+    // The old whole-resolver block -> Prime, and a first sighting: the same.
+    expect(limitTransition('1', prime)).toEqual({ reresolve: true, purge: true, store: 'owned' });
+    expect(limitTransition(null, prime)).toEqual({ reresolve: true, purge: true, store: 'owned' });
+    // Still on Prime: nothing.
+    expect(limitTransition('owned', prime)).toEqual({ reresolve: false, purge: false, store: 'owned' });
+    // Prime -> Unlimited: the searches answered only owned tracks.
+    expect(limitTransition('owned', amazonLimit('unlimited'))).toEqual({ reresolve: true, purge: false, store: '0' });
+    // Prime -> a plan that isn't read: still purchases only.
+    expect(limitTransition('owned', amazonLimit('unknown'))).toEqual({ reresolve: false, purge: false, store: 'owned' });
+    // Owned-only -> blocked (another service's plan): it leaves playback whole.
+    expect(limitTransition('owned', otherLimit(true))).toEqual({ reresolve: false, purge: false, store: '1' });
   });
 });
 

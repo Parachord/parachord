@@ -28,6 +28,16 @@
 // so jest drives it with real conf stores in a temp dir
 // (tests/store/split-store.test.js).
 //
+// `local_playlists` itself is one file per playlist under store/playlists/
+// (main-process/playlist-store.js, #801): even in a file of its own, the list
+// was 15 MB, and one playlist save re-read, re-parsed and rewrote all of it
+// (~260 ms). The array get/set keep working for every caller; `savePlaylist`
+// and `getPlaylist` touch one record. The first run of this build moves the
+// single file there (built under a temporary name and renamed into place, so
+// an interrupted move leaves the single file in charge) and renames the
+// single file to local_playlists.json.premigration. An older build run after
+// that sees no playlists, as it saw no caches after the first split.
+//
 // Every `local_playlists` write is also where playlist freshness is stamped
 // (`tracksChangedAt`, `lastChangeAdded`; playlist-freshness.js): the renderer's
 // playlists.save IPC, the sync IPC and main.js's own handlers all land here.
@@ -38,7 +48,8 @@
 
 'use strict';
 
-const { stampTrackChanges, indexPlaylists } = require('../playlist-freshness');
+const fsDefault = require('fs');
+const { createPlaylistStore } = require('./playlist-store');
 
 // Big or frequently rewritten keys. Every cache_* key the renderer persists
 // is split by prefix, so a new cache gets its own file without an edit here.
@@ -52,7 +63,7 @@ function isSplitStoreKey(key) {
     && (SPLIT_KEYS.has(key) || key.startsWith(SPLIT_PREFIX));
 }
 
-function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log, now = Date.now }) {
+function createSplitStore({ main, openKeyStore, listKeyStores, playlistsDir, retireKeyStore, fs = fsDefault, log = console.log, now = Date.now }) {
   const keyStores = new Map();
   const keyStore = (key) => {
     let s = keyStores.get(key);
@@ -67,7 +78,25 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
   const splitKeysOnDisk = () => {
     const keys = new Set(keyStores.keys());
     for (const key of listKeyStores()) if (isSplitStoreKey(key)) keys.add(key);
+    keys.delete(PLAYLISTS_KEY);
     return keys;
+  };
+
+  // `local_playlists`, one file per playlist (see the header).
+  const openPlaylists = () => createPlaylistStore({ dir: playlistsDir, fs, log, now });
+  let playlists = openPlaylists();
+  const migratingDir = `${playlistsDir}.migrating`;
+  fs.rmSync(migratingDir, { recursive: true, force: true });
+  const migratePlaylists = (list, from) => {
+    if (playlists.has()) return false;
+    const t0 = Date.now();
+    const staging = createPlaylistStore({ dir: migratingDir, fs, log, now });
+    staging.importList(Array.isArray(list) ? list : []);
+    fs.rmSync(playlistsDir, { recursive: true, force: true });
+    fs.renameSync(migratingDir, playlistsDir);
+    playlists = openPlaylists();
+    log(`📦 Moved ${Array.isArray(list) ? list.length : 0} playlist(s) from ${from} into a file each (${Date.now() - t0}ms)`);
+    return true;
   };
 
   // One-time migration out of config.json.
@@ -76,6 +105,11 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
   if (moved.length > 0) {
     const t0 = Date.now();
     for (const key of moved) {
+      if (key === PLAYLISTS_KEY) {
+        // Only into an empty playlist store: a split copy is the newer one.
+        if (!listKeyStores().includes(PLAYLISTS_KEY)) migratePlaylists(all[key], 'config.json');
+        continue;
+      }
       const s = keyStore(key);
       if (!s.has(key)) s.set(key, all[key]);
     }
@@ -85,34 +119,24 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
     log(`📦 Moved ${moved.length} large key(s) out of config.json into their own files (${Date.now() - t0}ms): ${moved.join(', ')}`);
   }
 
+  // The single local_playlists file of the first split, then set aside.
+  if (listKeyStores().includes(PLAYLISTS_KEY)) {
+    const legacy = keyStore(PLAYLISTS_KEY);
+    if (legacy.has(PLAYLISTS_KEY)) migratePlaylists(legacy.get(PLAYLISTS_KEY), 'local_playlists.json');
+    keyStores.delete(PLAYLISTS_KEY);
+    retireKeyStore(PLAYLISTS_KEY);
+  }
+
   const route = (key) => (isSplitStoreKey(key) ? keyStore(key) : main);
 
-  // Freshness index of the stored playlists (see the header). Null means
-  // "read the file"; reset whenever the key is deleted or cleared.
-  let playlistsIndex = null;
   const writeSplit = (key, value) => {
-    if (key !== PLAYLISTS_KEY) {
-      keyStore(key).set(key, value);
-      return;
-    }
-    let toWrite = value;
-    let nextIndex = null;
-    try {
-      const prev = playlistsIndex || indexPlaylists(keyStore(key).get(key));
-      const filled = new Map();
-      toWrite = stampTrackChanges(prev, value, now(), filled);
-      nextIndex = Array.isArray(toWrite) ? filled : null;
-    } catch (error) {
-      log(`⚠️ Playlist freshness stamp skipped: ${error && error.message}`);
-      toWrite = value;
-    }
-    playlistsIndex = null;
-    keyStore(key).set(key, toWrite);
-    playlistsIndex = nextIndex;
+    if (key === PLAYLISTS_KEY) playlists.set(value);
+    else keyStore(key).set(key, value);
   };
 
   return {
     get(key, defaultValue) {
+      if (key === PLAYLISTS_KEY) return playlists.get(defaultValue);
       return route(key).get(key, defaultValue);
     },
     set(key, value) {
@@ -129,14 +153,15 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
       else main.set(key, value);
     },
     has(key) {
+      if (key === PLAYLISTS_KEY) return playlists.has();
       return route(key).has(key);
     },
     delete(key) {
-      if (key === PLAYLISTS_KEY) playlistsIndex = null;
-      route(key).delete(key);
+      if (key === PLAYLISTS_KEY) playlists.delete();
+      else route(key).delete(key);
     },
     clear() {
-      playlistsIndex = null;
+      playlists.delete();
       main.clear();
       for (const key of splitKeysOnDisk()) keyStore(key).clear();
     },
@@ -147,7 +172,17 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
         const value = keyStore(key).get(key);
         if (value !== undefined) merged[key] = value;
       }
+      if (playlists.has()) merged[PLAYLISTS_KEY] = playlists.get();
       return merged;
+    },
+    // One playlist: the stored record with this id (a copy), or null.
+    getPlaylist(id) {
+      return playlists.getPlaylist(id);
+    },
+    // Save one playlist (replacing the stored record with its id, or adding
+    // it), freshness-stamped; writes that playlist's file and nothing else.
+    savePlaylist(record) {
+      return playlists.savePlaylist(record);
     },
     get path() {
       return main.path;

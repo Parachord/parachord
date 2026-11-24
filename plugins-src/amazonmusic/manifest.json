@@ -2,13 +2,15 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.21.4",
+    "version": "1.24.2",
     "minAppVersion": {
-      "desktop": "0.9.13"
+      "desktop": "0.9.14",
+      "android": "0.9.13",
+      "ios": "0.3.0"
     },
     "author": "Parachord Team",
     "description": "Search and play Amazon Music in Parachord, without the Amazon Music app.",
-    "requirement": "Needs Amazon Music Unlimited. With Prime, Amazon gives Parachord art and links only.",
+    "requirement": "Plays everything with Amazon Music Unlimited. With any other Amazon account, Prime included, it plays the songs you've bought from Amazon.",
     "icon": "\ud83c\udfb5",
     "color": "#25D1DA",
     "homepage": "https://music.amazon.com",
@@ -23,7 +25,6 @@
     "albumSearch": true,
     "artistImage": true,
     "widevine": true,
-    "mobile": false,
     "recommendations": true,
     "status": true
   },

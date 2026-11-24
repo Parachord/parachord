@@ -16,7 +16,8 @@
 //      the app's ports are shared):
 //        PARACHORD_USER_DATA=/tmp/parachord-sheets npm start -- --remote-debugging-port=9333
 //      (Copy files into that folder first if the surface needs data, e.g.
-//      store/local_playlists.json for playlist variants.)
+//      store/local_playlists.json for playlist variants; the app moves it
+//      into store/playlists/, a file per playlist, on its first start.)
 //   2. node scripts/ui-contact-sheet.js plugin-settings [--out dir] [--port 9333] [--themes light,dark]
 //
 // Writes one PNG per variant per theme, summary-<theme>.json (headings,
