@@ -245,6 +245,11 @@ describe('album-catalog: which catalog results are editions of the album', () =>
     expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (Disc2)', artist: 'A' })).toBe(false);
     expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (CD 1)', artist: 'A' })).toBe(false);
     expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits, Vol. 2', artist: 'A' })).toBe(false);
+    // a bare numeral in brackets is a sequel or a volume too
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (2)', artist: 'A' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'Paul McCartney', title: 'McCartney' }, { name: 'McCartney (II)', artist: 'Paul McCartney' })).toBe(false);
+    // a symbol title still finds its own edition
+    expect(isCatalogAlbumEdition({ artist: 'Ed Sheeran', title: '÷' }, { name: '÷ (Deluxe)', artist: 'Ed Sheeran' })).toBe(true);
   });
 
   test('another album is not, even when its title contains the album\'s', () => {

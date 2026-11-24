@@ -110,6 +110,18 @@ describe('matching', () => {
     expect(creditMatches('Tyler, The Creator', 'Tyler, The Creator & Someone Else & Third')).toBe(false);
   });
 
+  test('a title with no letters or digits is compared as written', () => {
+    // Ed Sheeran's albums are "÷", "+" and "×". Folding them to nothing made
+    // each of them match nothing at all — the opener said it couldn't find
+    // "÷ (Deluxe)" while main opened it (jherskowitz's review, 2026-11-24).
+    expect(normalizeAlbumTitle('÷ (Deluxe)')).toBe(normalizeAlbumTitle('÷'));
+    expect(normalizeAlbumTitle('+ (Deluxe Version)')).toBe(normalizeAlbumTitle('+'));
+    expect(normalizeAlbumTitle('÷')).not.toBe(normalizeAlbumTitle('×'));
+    expect(albumMatchScore({ artist: 'Ed Sheeran', title: '÷' }, { name: '÷ (Deluxe)', artist: 'Ed Sheeran' })).toBeGreaterThan(0);
+    // the catalog fallback can match it too, which it never could before
+    expect(pickCatalogAlbum([{ name: '÷ (Deluxe)', artist: 'Ed Sheeran', url: 'u' }], { artist: 'Ed Sheeran', title: '÷' }).url).toBe('u');
+  });
+
   test('non-Latin titles match on their own letters', () => {
     expect(albumMatchScore({ artist: 'ХЛЕБ', title: 'Пушка' }, { name: 'Пушка', artist: 'ХЛЕБ' })).toBeGreaterThan(0);
     expect(albumMatchScore({ artist: 'ХЛЕБ', title: 'Пушка' }, { name: 'Яйца', artist: 'ХЛЕБ' })).toBe(0);
@@ -195,6 +207,20 @@ describe('pickReleaseGroupForAlbum', () => {
       group('b', 'Tomorrow’s Another Day.....', ['Gothic Horizon']),
     ];
     expect(pickReleaseGroupForAlbum(incident, { artist: 'Defenders Of The Faith, Therion', title: 'Another Day Once Called Tomorrow' })).toBeNull();
+  });
+
+  test('a symbol-only album title still means a title', () => {
+    // "÷" folds to nothing, but it is a title: the artist alone must not
+    // decide, and each symbol album is its own album.
+    const albums = [group('times', '×', ['Ed Sheeran']), group('divide', '÷', ['Ed Sheeran']), group('plus', '+', ['Ed Sheeran'])];
+    expect(pickReleaseGroupForAlbum(albums, { artist: 'Ed Sheeran', title: '÷' }).id).toBe('divide');
+    expect(pickReleaseGroupForAlbum(albums, { artist: 'Ed Sheeran', title: '×' }).id).toBe('times');
+    // the edition suffix aside, the same album
+    expect(pickReleaseGroupForAlbum([group('x', '×', ['Ed Sheeran']), group('d', '÷ (Deluxe)', ['Ed Sheeran'])], { artist: 'Ed Sheeran', title: '÷' }).id).toBe('d');
+    // a title nobody has is a miss, not the artist's first album
+    expect(pickReleaseGroupForAlbum(albums, { artist: 'Ed Sheeran', title: '−' })).toBeNull();
+    // no title at all: the artist alone decides, as always
+    expect(pickReleaseGroupForAlbum(albums, { artist: 'Ed Sheeran' }).id).toBe('times');
   });
 
   test('a symbol-only artist name is a name, matched as written', () => {

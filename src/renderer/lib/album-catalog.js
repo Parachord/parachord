@@ -44,7 +44,11 @@ const FORMAT_SUFFIX = /\s+-\s+(?:single|ep|lp)\s*$/i;
 
 function normalizeAlbumTitle(title) {
   const s = stripMarks(title).replace(EDITION, ' ').replace(FORMAT_SUFFIX, '');
-  return s.replace(/&/g, 'and').replace(/[^\p{L}\p{N}]+/gu, '');
+  // A title with no letters or digits at all ("÷", "+", "×") folds to nothing,
+  // which made it unable to match itself: the album page said it couldn't find
+  // Ed Sheeran's "÷ (Deluxe)" while main opened it. Such a title is compared
+  // as written (the same rule creditMatches gives a symbol-only artist name).
+  return s.replace(/&/g, 'and').replace(/[^\p{L}\p{N}]+/gu, '') || s.trim().replace(/\s+/g, ' ');
 }
 
 function normalizeArtistName(name) {
@@ -289,8 +293,11 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   // artist to check against (then the title alone decides). The gate is the
   // artist as written, not its folded form: a symbol-only name ("!!!", "†††")
   // folds to nothing but is still a name, and must not open anyone's album.
-  const bareTitle = (s) => stripMarks(s).replace(/&/g, 'and').replace(/[^\p{L}\p{N}]+/gu, '');
-  const wanted = bareTitle(title);
+  //
+  // "A title was given" is the string, not its folded form: "÷" folds to
+  // nothing but is a title, and the artist alone must not decide.
+  const asWritten = (s) => stripMarks(s).replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+  const hasTitle = !!String(title || '').trim();
   const hasArtist = String(artist || '').trim().length > 0;
   const byArtist = hasArtist
     ? scored.filter((entry) => creditMatches(artist, releaseGroupCredit(entry.r)))
@@ -302,7 +309,7 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
     // title is at least close ("…: the subtitle"): a search for an album
     // MusicBrainz doesn't have must not open the artist's previous record. No
     // title at all (the album-card actions' search): the artist alone decides.
-    if (!wanted) return best(byArtist);
+    if (!hasTitle) return best(byArtist);
     const close = byArtist.filter((entry) => entry.closeness > 0);
     return close.length > 0 ? best(close) : null;
   }
@@ -314,8 +321,8 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   // result (MusicBrainz doesn't have the album: "Another Day Once Called
   // Tomorrow" returned "Tomorrow's Another Day" by other artists) answers
   // null — never another artist's album.
-  if (!wanted) return null;
-  const exactTitle = scored.filter((entry) => bareTitle(entry.r.title) === wanted);
+  if (!hasTitle) return null;
+  const exactTitle = scored.filter((entry) => asWritten(entry.r.title) === asWritten(title));
   return exactTitle.length === 1 ? exactTitle[0].r : null;
 }
 
@@ -326,13 +333,16 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
 // volume marker is never one: "Greatest Hits (Disc 2)" is not an edition of
 // "Greatest Hits" — picking it would swap in half an album.
 const VOLUME_MARKER = /^(?:disc|cd|part|pt|vol|volume|side)s?(?:$|[^a-z])/i;
+// A bare numeral in brackets is a volume or a sequel too: "McCartney (II)",
+// "Greatest Hits (2)" are not editions of "McCartney" / "Greatest Hits".
+const BARE_SEQUEL = /^(?:[ivxlcdm]+|\d+)$/i;
 function bareEditionTitle(title) {
   let out = String(title || '').trim();
   for (let i = 0; i < 3; i++) {
     const suffix = out.match(/\s*[([][^()[\]]*[)\]]\s*$/);
     if (!suffix || !suffix[0].length) break;
     const inner = suffix[0].replace(/^\s*[([]\s*/, '').replace(/\s*[)\]]\s*$/, '');
-    if (VOLUME_MARKER.test(inner)) break;
+    if (VOLUME_MARKER.test(inner) || BARE_SEQUEL.test(inner.trim())) break;
     const next = out.slice(0, suffix.index).trim();
     if (!next) break;
     out = next;
