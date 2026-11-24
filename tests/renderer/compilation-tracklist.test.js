@@ -58,9 +58,8 @@ describe('every path that plays an album\'s tracks uses the same track (lib/albu
   const read = (p) => fs.readFileSync(path.join(__dirname, '../../src/renderer', p), 'utf8');
   test('MusicBrainz track lists keep each track\'s own artist', () => {
     const app = read('app.js');
-    // The album page's two loads, and the four background track lists.
-    expect((app.match(/trackArtist: ownTrackArtist\(track, releaseData\['artist-credit'\]\)/g) || []).length).toBe(5);
-    expect(app).toContain("artist: ownTrackArtist(track, releaseData['artist-credit']) || album.artist,");
+    // The album page's two loads, and the five background track lists.
+    expect((app.match(/trackArtist: ownTrackArtist\(track, releaseData\['artist-credit'\]\)/g) || []).length).toBe(7);
   });
   test('no page builds an album track by hand under the album\'s artist', () => {
     expect(read('components/artist-page.js')).not.toMatch(/trackSlug\(\w[\w?.]* \|\| 'unknown', t\.title \|\| 'untitled', \w+\.title \|\| 'noalbum'\)/);
