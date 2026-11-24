@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { playableAlbumTrack, albumArtistForTrack } = require('../../src/renderer/lib/album-track-artist');
 const { isPlaceholderAlbum } = require('../../src/renderer/lib/collection-ids');
+const { hasArtistPage } = require('../../src/renderer/lib/artist-page-name');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '../../src/renderer', p), 'utf8');
 const app = read('app.js');
@@ -47,13 +48,15 @@ describe('albumArtistForTrack: whose album a track\'s album name is', () => {
 function makeOpener({ search, picks = new Map(), mapper = null }) {
   const start = app.indexOf('const openAlbumForTrack = async (track) => {');
   const src = app.slice(start, app.indexOf('const handleAlbumClick = async (album) => {', start));
-  const calls = { searched: [], opened: [], placeholders: [], catalogs: [], artistPages: [] };
+  const calls = { searched: [], opened: [], placeholders: [], catalogs: [], artistPages: [], loadErrors: [] };
   const window = {};
   const helpers = app.slice(app.indexOf('window.pickAlbumNameForTrack = '), app.indexOf('// Coalesce bursts of per-key state writes'));
   new Function('window', 'normalizeStr', 'isPlaceholderAlbum', helpers)(window, (s) => String(s || '').toLowerCase().trim(), isPlaceholderAlbum);
   const deps = {
     window,
     albumArtistForTrack,
+    hasArtistPage,
+    showReleaseLoadError: (id, error, retry) => calls.loadErrors.push({ message: error.userMessage, retry: retry.kind }),
     showToast: () => {}, setCurrentRelease: () => {}, setLoadingRelease: () => {}, setArtistHistory: () => {},
     setArtistReleases: () => {}, setCurrentArtist: () => {}, navigateTo: () => {}, fetchReleaseData: () => {},
     openingReleaseRef: { current: false }, rememberReleaseGroupAlias: () => {}, editionPickFor: () => null,
@@ -107,6 +110,13 @@ describe('the playbar\'s album link', () => {
     await open(compilationTrack());
     expect(calls.catalogs).toEqual(['Various Artists']);
     expect(calls.artistPages).toEqual(['Iggy Pop']);
+  });
+
+  test('a track with no artist of its own has no page to fall back to: the album\'s page says why, with a retry', async () => {
+    const { open, calls } = makeOpener({ search: {} });
+    await open({ artist: 'Various Artists', title: 'Track 1', album: 'Trainspotting' });
+    expect(calls.artistPages).toEqual([]);
+    expect(calls.loadErrors).toEqual([{ message: 'Couldn’t find this album’s tracks on MusicBrainz or your services.', retry: 'release' }]);
   });
 
   test('an ordinary track searches once, under its artist, as before', async () => {
