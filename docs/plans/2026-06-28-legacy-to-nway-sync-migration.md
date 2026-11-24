@@ -124,7 +124,7 @@ We don't build passive telemetry. Each user validates their own migration, and p
 
 ## Phases
 
-Phases are the user-visible steps; milestones (M) are from the sync-providers plan. The two tracks there, plug-in providers (M1 to M5) and finishing N-way (M6 to M8), run in parallel and meet at the default flip.
+Phases are the user-visible steps; milestones (M) are from the sync-providers plan. The two tracks there, plug-in providers (M1 to M4) and finishing N-way (M6 to M8), run in parallel and meet at the default flip.
 
 - **Phase 0 — baseline seeding. DONE (desktop and mobile).** `sync_playlist_state` is seeded at every launch, idempotent, no network.
 - **Phase 1 — coexistence hardening and shadow validation. PARTLY DONE.**
@@ -152,7 +152,7 @@ Phases are the user-visible steps; milestones (M) are from the sync-providers pl
   - Old builds still on `legacy` keep writing shared remotes indefinitely (no telemetry, no account), which is why rules 4 to 9 must also hold in N-way and not only in the legacy code that's deleted.
 
 **Plug-in providers, in this order relative to the phases:**
-- **M1 to M5 (contract, registry, bridge, Subsonic/Plex library, loves) can ship during Phase 2** (see "Plug-in services" for what each needs). They don't change which engine writes playlists. M1's no-op golden test and state audit script stand in for a backup during that move, since no data shape changes.
+- **Loves (M5) come first, before M1** (2026-11-24): they touch neither playlist engine nor the library. **M1 to M4 (contract, registry, bridge, Subsonic/Plex library) can ship during Phase 2** (see "Plug-in services" for what each needs). They don't change which engine writes playlists. M1's no-op golden test and state audit script stand in for a backup during that move, since no data shape changes.
 - **M11 (plug-in playlist providers) waits for Phase 3**, so plug-in playlists never touch legacy.
 - **M15 (built-in providers move into their `.axe`) waits for M3's bridge to carry Subsonic and Plex for a release.** Each move runs the M1 conformance suite and golden test, and the release that ships it makes an automatic backup.
 
