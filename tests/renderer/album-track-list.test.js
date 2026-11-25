@@ -86,10 +86,23 @@ describe('pickReleaseGroup', () => {
     ];
     expect(pickReleaseGroup(results, 'portishead').id).toBe('studio');
   });
-  test('then anything credited to the artist, then the top result', () => {
+  test('another artist\'s results are never returned, and empty input gives null', () => {
     expect(pickReleaseGroup([{ id: 'x', 'artist-credit': credit('A') }, { id: 'ep', 'primary-type': 'EP', 'artist-credit': credit('B') }], 'B').id).toBe('ep');
-    expect(pickReleaseGroup([{ id: 'top', 'artist-credit': credit('A') }], 'B').id).toBe('top');
+    // An album MusicBrainz doesn't have answers same-words albums by other
+    // artists: opening one of those is worse than answering "not found" (the
+    // callers then try the services' catalogs).
+    expect(pickReleaseGroup([{ id: 'top', 'artist-credit': credit('A') }], 'B')).toBeNull();
     expect(pickReleaseGroup([], 'B')).toBeNull();
+  });
+  test('with the album title, the album asked for wins over a studio album of the artist', () => {
+    const results = [
+      { id: 'tribute', title: 'A Tribute to Black Sabbath', 'primary-type': 'Album', 'artist-credit': credit('Lounge Brigade') },
+      { id: 'wanted', title: 'Back to the Beginning', 'primary-type': 'Album', 'secondary-types': ['Live'], 'artist-credit': credit('Ozzy Osbourne') },
+      { id: '13', title: '13', 'primary-type': 'Album', 'artist-credit': credit('Black Sabbath') },
+    ];
+    expect(pickReleaseGroup(results, 'Ozzy Osbourne, Black Sabbath', 'Back To The Beginning (Live)').id).toBe('wanted');
+    // no title: the artist rule alone, as before
+    expect(pickReleaseGroup(results, 'Black Sabbath').id).toBe('13');
   });
 });
 

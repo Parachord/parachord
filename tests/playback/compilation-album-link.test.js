@@ -11,6 +11,7 @@ const path = require('path');
 const { playableAlbumTrack, albumArtistForTrack } = require('../../src/renderer/lib/album-track-artist');
 const { isPlaceholderAlbum } = require('../../src/renderer/lib/collection-ids');
 const { hasArtistPage } = require('../../src/renderer/lib/artist-page-name');
+const { pickReleaseGroupForAlbum } = require('../../src/renderer/lib/album-catalog');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '../../src/renderer', p), 'utf8');
 const app = read('app.js');
@@ -51,7 +52,7 @@ function makeOpener({ search, picks = new Map(), mapper = null }) {
   const calls = { searched: [], opened: [], placeholders: [], catalogs: [], artistPages: [], loadErrors: [] };
   const window = {};
   const helpers = app.slice(app.indexOf('window.pickAlbumNameForTrack = '), app.indexOf('// Coalesce bursts of per-key state writes'));
-  new Function('window', 'normalizeStr', 'isPlaceholderAlbum', helpers)(window, (s) => String(s || '').toLowerCase().trim(), isPlaceholderAlbum);
+  new Function('window', 'pickReleaseGroupForAlbum', 'isPlaceholderAlbum', helpers)(window, pickReleaseGroupForAlbum, isPlaceholderAlbum);
   const deps = {
     window,
     albumArtistForTrack,

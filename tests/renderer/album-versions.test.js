@@ -228,10 +228,28 @@ describe('album-catalog: which catalog results are editions of the album', () =>
     // a joint credit with a suffixed title still counts (the artist rules pass
     // through albumMatchScore's split even when the bare titles differ)
     expect(isCatalogAlbumEdition({ artist: 'Erykah Badu', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman (Deluxe)', artist: 'Erykah Badu & The Alchemist' })).toBe(true);
+    // any trailing parenthetical, not only the edition words: a service lists a
+    // live record as "Back To The Beginning (Live)" and the page (MusicBrainz)
+    // as "Back to the Beginning" — the same album, and it was dropped from the
+    // source dropdown (2026-11-20).
+    expect(isCatalogAlbumEdition(
+      { artist: 'Ozzy Osbourne, Black Sabbath', title: 'Back to the Beginning' },
+      { name: 'Back To The Beginning (Live)', artist: 'Ozzy Osbourne, Black Sabbath' }
+    )).toBe(true);
     // a dash-form suffix ("Queen I - Collector's Edition") is NOT stripped by
     // normalizeAlbumTitle's bracket-only EDITION rule — same limitation
     // pickCatalogAlbum has always had; not this feature's to change.
     expect(isCatalogAlbumEdition(target, { name: 'Queen I - Collector\'s Edition', artist: 'Queen' })).toBe(false);
+    // a volume marker is a different disc of a compilation, never an edition
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (Disc 2)', artist: 'A' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (Disc2)', artist: 'A' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (CD 1)', artist: 'A' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits, Vol. 2', artist: 'A' })).toBe(false);
+    // a bare numeral in brackets is a sequel or a volume too
+    expect(isCatalogAlbumEdition({ artist: 'A', title: 'Greatest Hits' }, { name: 'Greatest Hits (2)', artist: 'A' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'Paul McCartney', title: 'McCartney' }, { name: 'McCartney (II)', artist: 'Paul McCartney' })).toBe(false);
+    // a symbol title still finds its own edition
+    expect(isCatalogAlbumEdition({ artist: 'Ed Sheeran', title: '÷' }, { name: '÷ (Deluxe)', artist: 'Ed Sheeran' })).toBe(true);
   });
 
   test('another album is not, even when its title contains the album\'s', () => {
@@ -242,12 +260,16 @@ describe('album-catalog: which catalog results are editions of the album', () =>
 
   test('a joint credit still names the same artist', () => {
     // one side of a joint credit is enough — the documented pickCatalogAlbum
-    // rule — when that side is a single name: an edition the service credits
-    // to both artists still counts. (Both sides joined with different joins —
-    // "and" vs "," — is a pre-existing albumMatchScore limitation, not this
-    // filter's.)
+    // rule. An edition the service credits to both artists still counts, and
+    // since 2026-11-20 so does one where BOTH sides are joint credits joined
+    // differently ("and" vs "," vs "&"). It used to not: folding the whole
+    // credit strings left them different, which is how a release credited
+    // "Ozzy Osbourne, Black Sabbath" by Amazon matched nothing on MusicBrainz
+    // ("Ozzy Osbourne & Black Sabbath") and opened an unrelated album.
     expect(isCatalogAlbumEdition({ artist: 'Erykah Badu', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Erykah Badu & The Alchemist' })).toBe(true);
-    expect(isCatalogAlbumEdition({ artist: 'Erykah Badu and The Alchemist', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Erykah Badu, The Alchemist' })).toBe(false);
+    expect(isCatalogAlbumEdition({ artist: 'Erykah Badu and The Alchemist', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Erykah Badu, The Alchemist' })).toBe(true);
+    // different acts are still different
+    expect(isCatalogAlbumEdition({ artist: 'Erykah Badu and The Alchemist', title: 'The Soul of a Woman' }, { name: 'The Soul of a Woman', artist: 'Someone Else & Another' })).toBe(false);
   });
 });
 

@@ -122,25 +122,11 @@ window.pickAlbumNameForTrack = (track, mapperResult) => {
 };
 
 // Choose which MusicBrainz release-group search result to open for a track's
-// album: an Album by the right artist, else anything by the right artist,
-// else the first Album, else the first result. "Right artist" is a
-// normalized containment match on the artist credit, so a same-titled album
-// by someone else doesn't win just because it sorted first.
-window.pickReleaseGroupForAlbum = (results, artist) => {
-  const list = Array.isArray(results) ? results : [];
-  if (list.length === 0) return null;
-  const want = normalizeStr(artist || '');
-  const byArtist = (r) => {
-    if (!want) return false;
-    const credit = normalizeStr((r['artist-credit'] || []).map((c) => c && c.name).filter(Boolean).join(' '));
-    return !!credit && (credit.includes(want) || want.includes(credit));
-  };
-  const isAlbum = (r) => r['primary-type'] === 'Album';
-  return list.find((r) => isAlbum(r) && byArtist(r))
-    || list.find(byArtist)
-    || list.find(isAlbum)
-    || list[0];
-};
+// album (album-catalog.js's pickReleaseGroupForAlbum: the album's title and
+// artist decide, a joint credit written differently by the source counts, and
+// a studio edition of that album wins between its editions).
+window.pickReleaseGroupForAlbum = (results, artist, title = '') =>
+  pickReleaseGroupForAlbum(results, { artist, title });
 
 
 
@@ -578,7 +564,8 @@ const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
   catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
   normalizeAlbumTitle, normalizeArtistName, isCatalogAlbumEdition, albumMatchScore,
-  albumVersionsGroup, albumVersionsKey, albumEditionPickKeys
+  albumVersionsGroup, albumVersionsKey, albumEditionPickKeys,
+  creditMatches, releaseGroupCredit, pickReleaseGroupForAlbum
 } = require('./lib/album-catalog');
 const {
   deezerArtistImageFromSearch, firstArtistImage, createArtistImageMissCache
@@ -3656,6 +3643,9 @@ const Parachord = () => {
   const artistConcertsAskedEarlyRef = useRef(null); // the artist whose concerts were asked for before a concert plug-in was ready
   const artistConcertsCache = useRef({}); // { normalizedArtistName: { events: [], timestamp } }
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
+  // The latest collection album opener, for an album page's Try again: the
+  // retry is stored on the page and must not call a render's stale closure.
+  const handleCollectionAlbumClickRef = useRef(null);
   // The release on screen now, for timers and async callbacks (the album
   // catalog race) that must not act on a stale closure.
   const currentReleaseRef = useRef(null);
@@ -12294,34 +12284,39 @@ const Parachord = () => {
                   { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
                 );
 
-                if (!response.ok) throw new Error('Album search failed');
+                if (!response.ok) throw userError('Couldn’t search MusicBrainz for this album. Try again in a minute.');
 
                 const data = await response.json();
                 const results = data['release-groups'] || [];
 
+                // Neither MusicBrainz nor a service has it: the placeholder
+                // page (title and cover) says why, with a retry that runs the
+                // shared opener — a toast left its track skeleton up forever.
+                const showNotFound = (error) => {
+                  const notFound = error instanceof Error ? error : new Error('Album not found');
+                  if (!notFound.userMessage) {
+                    notFound.userMessage = `Couldn’t find "${albumTitle}" on MusicBrainz or your services.`;
+                  }
+                  showReleaseLoadError(linkPlaceholderId, notFound, {
+                    run: () => handleCollectionAlbumClickRef.current?.({ title: albumTitle, artist: artistName })
+                  });
+                };
+
                 if (results.length === 0) {
                   if (await openFromCatalogs()) break;
-                  showToast(`Album not found: ${albumTitle}`, 'error');
-                  setLoadingRelease(false);
+                  showNotFound();
                   break;
                 }
 
-                // Find best match - prefer artist match and studio albums
-                const artistMatches = results.filter(r =>
-                  r['artist-credit']?.[0]?.name?.toLowerCase() === artistName.toLowerCase()
-                );
-                const isStudioAlbum = (r) => {
-                  const primaryType = r['primary-type']?.toLowerCase();
-                  const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
-                  if (primaryType !== 'album') return false;
-                  const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
-                  return !secondaryTypes.some(t => nonStudioTypes.includes(t));
-                };
-
-                const match = artistMatches.find(isStudioAlbum)
-                  || artistMatches[0]
-                  || results.find(isStudioAlbum)
-                  || results[0];
+                // The album asked for, by title and artist (a joint credit
+                // written "A, B" by the source and "A & B" by MusicBrainz
+                // still matches).
+                const match = pickReleaseGroupForAlbum(results, { artist: artistName, title: albumTitle });
+                if (!match) {
+                  if (await openFromCatalogs()) break;
+                  showNotFound();
+                  break;
+                }
 
                 fetchReleaseData({
                   id: match.id,
@@ -12338,8 +12333,13 @@ const Parachord = () => {
                   console.warn('Album catalog fallback failed:', catalogError);
                 }
                 if (!opened) {
-                  showToast(`Failed to load album: ${albumTitle}`, 'error');
-                  setLoadingRelease(false);
+                  const notFound = error instanceof Error ? error : new Error('Album not found');
+                  if (!notFound.userMessage) {
+                    notFound.userMessage = `Couldn’t load "${albumTitle}". Check your connection and try again.`;
+                  }
+                  showReleaseLoadError(linkPlaceholderId, notFound, {
+                    run: () => handleCollectionAlbumClickRef.current?.({ title: albumTitle, artist: artistName })
+                  });
                 }
               }
             }
@@ -21039,7 +21039,7 @@ ${trackListXml}
       if (!isMusicBrainzId(release.id) && pickEdition?.kind !== 'mb') {
         if (await tryCatalogs()) return;
         const notFound = new Error('Album not found in any catalog');
-        notFound.userMessage = "Couldn't find this album's tracks on MusicBrainz or your services.";
+        notFound.userMessage = "Couldn’t find this album’s tracks on MusicBrainz or your services.";
         showReleaseLoadError(release.id, notFound, { kind: 'release', release, artist });
         return;
       }
@@ -21536,6 +21536,8 @@ ${trackListXml}
   // an error, after a second round of requests to the service that was down.
   // Only the release still on screen is marked (the user may have moved on).
   //   retry: { kind: 'chartsAlbum', album } | { kind: 'release', release, artist }
+  //          | { run } — an opener re-running its own search (a collection
+  //          album, a parachord://album link), called from retryReleaseLoad.
   // Album track lists from the plugins when MusicBrainz can't supply one
   // (src/renderer/lib/album-catalog.js; the plugin contract is "searchAlbums"
   // in docs/architecture/plugins.md). MusicBrainz stays first for albums with
@@ -21674,6 +21676,10 @@ ${trackListXml}
   const retryReleaseLoad = () => {
     const retry = currentRelease?._retry;
     if (!retry) return;
+    // An opener's retry that must re-run its own search (a collection album,
+    // a parachord://album link): a closure it built, called from the latest
+    // render's reference below.
+    if (typeof retry.run === 'function') { retry.run(); return; }
     if (retry.kind === 'chartsAlbum') openChartsAlbum(retry.album);
     else fetchReleaseData(retry.release, retry.artist);
   };
@@ -22251,7 +22257,7 @@ ${trackListXml}
           );
           if (response.ok) {
             const data = await response.json();
-            const album = window.pickReleaseGroupForAlbum(data['release-groups'], artist);
+            const album = window.pickReleaseGroupForAlbum(data['release-groups'], artist, albumName);
             if (album) {
               releaseGroupPicksRef.current.set(artist, albumName, album);
               return handleAlbumClick({ ...album, isReleaseGroup: true });
@@ -22383,11 +22389,27 @@ ${trackListXml}
         canApply: (prev) => !!prev && prev.id === collectionPlaceholderId && !prev.tracks
       });
     };
+    // Neither MusicBrainz nor any service has it. The placeholder stays the
+    // page on screen (title and cover), so it carries the reason and a retry
+    // that runs this opener again, through the ref below (a render's closure
+    // would read stale state): before, the page kept its track skeleton
+    // forever behind a toast.
+    const showNotFound = (error) => {
+      const notFound = error instanceof Error ? error : new Error('Album not found');
+      if (!notFound.userMessage) {
+        notFound.userMessage = "Couldn’t find this album on MusicBrainz or your services.";
+      }
+      showReleaseLoadError(collectionPlaceholderId, notFound, {
+        run: () => handleCollectionAlbumClickRef.current?.(album)
+      });
+    };
     try {
       console.log('Loading collection album:', album.title, 'by', album.artist);
 
-      // Skip if already viewing this album (avoid unnecessary reloads)
-      if (activeView === 'artist' && currentRelease?.title === album.title && currentArtist?.name === album.artist) {
+      // Skip if already viewing this album (avoid unnecessary reloads). A
+      // page showing a load error is not "viewing" it: Try again must run.
+      if (activeView === 'artist' && currentRelease?.title === album.title
+        && currentArtist?.name === album.artist && !currentRelease?._loadError) {
         console.log('📀 Already viewing album:', album.title);
         return;
       }
@@ -22453,52 +22475,47 @@ ${trackListXml}
         { headers: { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' } }
       );
 
-      if (!response.ok) throw new Error('Search failed');
+      if (!response.ok) throw userError('Couldn’t search MusicBrainz for this album. Try again in a minute.');
 
       const data = await response.json();
       const results = data['release-groups'] || [];
 
       if (results.length === 0) {
         if (await openFromCatalogs()) return;
-        showToast('Album not found', 'error');
-        setLoadingRelease(false);
+        showNotFound();
         return;
       }
 
-      // Find best match - prefer studio albums over singles/live/compilations
-      const isStudioAlbum = (r) => {
-        const primaryType = r['primary-type']?.toLowerCase();
-        const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
-        // Must be an album (not single, EP, etc)
-        if (primaryType !== 'album') return false;
-        // Must not be live, compilation, remix, etc
-        const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
-        return !secondaryTypes.some(t => nonStudioTypes.includes(t));
-      };
-
-      const artistMatches = results.filter(r =>
-        r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
-      );
+      // The album asked for, by title and artist (a joint credit written
+      // "A, B" by the source and "A & B" by MusicBrainz still matches).
+      let pool = results;
 
       // An album with local files (#1532) only takes a result with its own
       // title (store suffix dropped): a search for a home recording returns
       // whatever MusicBrainz has nearby, and the page would show someone
-      // else's album. With no such result, its files' catalog opens it.
+      // else's album. The artist must match too, as everywhere else — a file
+      // tagged with one artist of a joint credit is still that album — and
+      // with no such result, its files' catalog opens it.
       if (localSourceId) {
-        const wanted = albumIdentity(album.artist, album.title);
-        const titled = results.filter(r => albumIdentity(r['artist-credit']?.[0]?.name || '', r.title) === wanted);
+        const wantedTitle = normalizeAlbumTitle(album.title);
+        const titled = results.filter(r => normalizeAlbumTitle(r.title) === wantedTitle
+          && creditMatches(album.artist, releaseGroupCredit(r)));
         if (titled.length === 0) {
           if (await openFromCatalogs()) return;
         } else {
-          artistMatches.splice(0, artistMatches.length, ...titled);
+          pool = titled;
         }
       }
 
-      // Priority: 1) Studio album with artist match, 2) Any album with artist match, 3) Studio album, 4) First result
-      const match = artistMatches.find(isStudioAlbum)
-        || artistMatches[0]
-        || results.find(isStudioAlbum)
-        || results[0];
+      const match = pickReleaseGroupForAlbum(pool, { artist: album.artist, title: album.title });
+      // No MusicBrainz result is this album (and none has exactly its title):
+      // the catalogs get their turn, then the page says why instead of
+      // pointing at another artist's album.
+      if (!match) {
+        if (await openFromCatalogs()) return;
+        showNotFound();
+        return;
+      }
 
       releaseGroupPicksRef.current.set(album.artist, album.title, match);
       // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)
@@ -22515,10 +22532,14 @@ ${trackListXml}
       } catch (catalogError) {
         console.warn('Album catalog fallback failed:', catalogError);
       }
-      showToast('Failed to load album', 'error');
-      setLoadingRelease(false);
+      // A failed search or load, not "not found": let describeMusicBrainzError
+      // word it (an outage says so), and keep the retry.
+      showReleaseLoadError(collectionPlaceholderId, error, {
+        run: () => handleCollectionAlbumClickRef.current?.(album)
+      });
     }
   };
+  handleCollectionAlbumClickRef.current = handleCollectionAlbumClick;
 
   // Validate cached sources in background and update if changed
   const validateCachedSources = async (track, artistName, cachedSources, cacheKey, trackKey) => {
@@ -28994,7 +29015,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
           );
           if (!searchResp.ok) return null;
-          const match = pickReleaseGroup((await searchResp.json())['release-groups'], artist);
+          const match = pickReleaseGroup((await searchResp.json())['release-groups'], artist, title);
           if (!match) return null;
           // Opening this album later reuses the lookup (openAlbumForTrack,
           // handleCollectionAlbumClick, fetchReleaseData).

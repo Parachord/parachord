@@ -25,7 +25,11 @@ const helpersSrc = extract('window.pickAlbumNameForTrack = ', '// Coalesce burst
 const win = {};
 const { isPlaceholderAlbum } = require('../../src/renderer/lib/collection-ids');
 new Function('window', 'normalizeStr', 'isPlaceholderAlbum', helpersSrc)(win, normalizeStr, isPlaceholderAlbum);
-const { pickAlbumNameForTrack, pickReleaseGroupForAlbum } = win;
+const { pickAlbumNameForTrack } = win;
+// The release-group pick is shared with every other album opener
+// (album-catalog.js); the window helper is a thin alias so a track's album
+// click picks the same result as a card's.
+const { pickReleaseGroupForAlbum } = require('../../src/renderer/lib/album-catalog');
 
 describe('pickAlbumNameForTrack', () => {
   test('uses the track\'s own album first', () => {
@@ -51,23 +55,20 @@ describe('pickAlbumNameForTrack', () => {
 });
 
 describe('pickReleaseGroupForAlbum', () => {
+  // The picker itself (joint credits, title closeness, the fallback order) is
+  // tested in tests/renderer/album-catalog.test.js; this pins that the
+  // playbar's window helper is that pick, called with the album's title, so a
+  // track's album click opens what every other opener opens.
   const rg = (title, artist, type) => ({ id: `${artist}-${title}`, title, 'primary-type': type, 'artist-credit': [{ name: artist }] });
-  test('prefers an Album by the right artist over an earlier same-title album by someone else', () => {
+  test('a studio edition of the album, not a same-titled album by someone else', () => {
     const results = [rg('Black Star', 'Someone Else', 'Album'), rg('Black Star', 'Lustmord', 'Single'), rg('Black Star', 'Lustmord', 'Album')];
-    expect(pickReleaseGroupForAlbum(results, 'Lustmord').id).toBe('Lustmord-Black Star');
-    expect(pickReleaseGroupForAlbum(results, 'Lustmord')['primary-type']).toBe('Album');
+    expect(pickReleaseGroupForAlbum(results, { artist: 'Lustmord', title: 'Black Star' }).id).toBe('Lustmord-Black Star');
+    expect(pickReleaseGroupForAlbum([], { artist: 'A' })).toBeNull();
+    expect(pickReleaseGroupForAlbum(undefined, { artist: 'A' })).toBeNull();
   });
-  test('takes the right artist\'s single when they have no album, then any Album, then the first result', () => {
-    expect(pickReleaseGroupForAlbum([rg('X', 'A', 'Album'), rg('X', 'B', 'Single')], 'B').id).toBe('B-X');
-    expect(pickReleaseGroupForAlbum([rg('X', 'A', 'Single'), rg('X', 'C', 'Album')], 'B').id).toBe('C-X');
-    expect(pickReleaseGroupForAlbum([rg('X', 'A', 'Single')], 'B').id).toBe('A-X');
-  });
-  test('artist matching is normalized containment ("The Beatles" vs "Beatles")', () => {
-    expect(pickReleaseGroupForAlbum([rg('Help!', 'Beatles', 'Album')], 'The Beatles').id).toBe('Beatles-Help!');
-  });
-  test('empty input gives null', () => {
-    expect(pickReleaseGroupForAlbum([], 'A')).toBeNull();
-    expect(pickReleaseGroupForAlbum(undefined, 'A')).toBeNull();
+  test('app.js\'s window helper delegates to it with the title', () => {
+    expect(app).toMatch(/window\.pickReleaseGroupForAlbum = \(results, artist, title = ''\) =>\s*pickReleaseGroupForAlbum\(results, \{ artist, title \}\);/);
+    expect(app).toMatch(/window\.pickReleaseGroupForAlbum\(data\['release-groups'\], artist, albumName\)/);
   });
 });
 

@@ -58,6 +58,47 @@ describe('fetchReleaseData', () => {
 });
 
 describe('openers', () => {
+  test('every release-group search is picked by the shared matcher, never by "first studio album"', () => {
+    // The title and the artist decide (album-catalog.js), a joint credit
+    // written "A, B" by the source and "A & B" by MusicBrainz included; the
+    // opener that still had its own chain opened an unrelated tribute album
+    // for Ozzy Osbourne & Black Sabbath's "Back to the Beginning" (2026-11-20).
+    expect(app).not.toMatch(/artistMatches\.find\(isStudioAlbum\)/);
+    expect(fnBody('const handleCollectionAlbumClick = async (album) => {'))
+      .toMatch(/pickReleaseGroupForAlbum\([^;]*\{ artist: album\.artist, title: album\.title \}\)/);
+    const protocol = app.slice(app.indexOf("case 'album': {"), app.indexOf("case 'library': {"));
+    expect(protocol).toMatch(/pickReleaseGroupForAlbum\(results, \{ artist: artistName, title: albumTitle \}\)/);
+    expect(fnBody('const loadAlbumTrackList = async (')).toMatch(/pickReleaseGroup\(\(await searchResp\.json\(\)\)\['release-groups'\], artist, title\)/);
+  });
+
+  test('an album found nowhere shows the reason and a retry, not a stranded skeleton', () => {
+    const body = fnBody('const handleCollectionAlbumClick = async (album) => {');
+    // The placeholder stays on screen (title and cover) with ReleasePage's
+    // ErrorState; a toast used to leave its track skeleton up forever.
+    expect(body).toMatch(/showReleaseLoadError\(collectionPlaceholderId, (notFound|error), \{\s*\n?\s*run: \(\) => handleCollectionAlbumClickRef\.current\?\.\(album\)/);
+    expect(body).not.toMatch(/showToast\(['"]Album not found/);
+    // The retry calls the LATEST opener, not the render's closure
+    expect(app).toContain('const handleCollectionAlbumClickRef = useRef(null);');
+    expect(app).toContain('handleCollectionAlbumClickRef.current = handleCollectionAlbumClick;');
+    // ...and the opener does not skip a page that is showing a load error
+    expect(body).toMatch(/currentArtist\?\.name === album\.artist && !currentRelease\?\._loadError/);
+    // The protocol opener does the same, through the same ref
+    const protocol = app.slice(app.indexOf("case 'album': {"), app.indexOf("case 'library': {"));
+    expect(protocol).toMatch(/showReleaseLoadError\(linkPlaceholderId, notFound, \{\s*\n?\s*run: \(\) => handleCollectionAlbumClickRef\.current\?\.\(/);
+  });
+
+  test('a local album takes a joint-credit result for its own album, not only one credited to its first artist', () => {
+    // #1532: an album with local files only takes a MusicBrainz result with
+    // its own title, else its files' catalog opens it. The title is compared
+    // through normalizeAlbumTitle and the artist through the shared credit
+    // rule, so a file tagged with one artist of a joint credit still matches
+    // (the old first-credit string compare missed the other direction).
+    const body = fnBody('const handleCollectionAlbumClick = async (album) => {');
+    expect(body).toMatch(/const wantedTitle = normalizeAlbumTitle\(album\.title\);/);
+    expect(body).toMatch(/normalizeAlbumTitle\(r\.title\) === wantedTitle\s*&& creditMatches\(album\.artist, releaseGroupCredit\(r\)\)/);
+    expect(body).not.toMatch(/albumIdentity\(r\['artist-credit'\]/);
+  });
+
   test('collection albums show a placeholder, then the catalogs on not-found and on error', () => {
     const body = fnBody('const handleCollectionAlbumClick = async (album) => {');
     expect(body).toMatch(/setCurrentRelease\(\{\s*id: collectionPlaceholderId,/);
