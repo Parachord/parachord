@@ -66,7 +66,7 @@ describe('who uses which lane', () => {
   });
 
   test('cover lookups that search resolvers go in the background lane', () => {
-    expect(app).toMatch(/searchResolvers\(`\$\{artist\} \$\{album\}`, \{ earlyReturn: true, requireAlbumArt: true, lane: 'background' \}\)/);
+    expect(app).toMatch(/searchResolvers\(coverQuery\(\{ artist, album \}\), \{\s*earlyReturn: true, requireAlbumArt: true, lane: 'background',/);
     const body = fnBody(app, 'const searchResolvers = async (query, options = {}) => {');
     expect(body).toMatch(/resolver\.search\(query, lane \? \{ \.\.\.config, __lane: lane \} : config\)/);
   });
