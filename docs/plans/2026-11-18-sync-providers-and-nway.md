@@ -3,6 +3,7 @@
 **Status:** proposal for the maintainer to decide on · **Date:** 2026-11-18 · **Base:** `main` at c5911482
 **Covers:** #1515, #1518, #1519, #1445, #802, #790, #801, #911, #945; the Amazon library item touches #1494
 **Revised:** 2026-11-18, after @theli-ua's review on #1525: host adapters are a first step, not the end state (a new M15 moves the built-ins into their `.axe`); the first library plug-in is Subsonic, then Plex; no Jellyfin plug-in; `contract` is an API level; Amazon's library entities spelled out.
+**Revised:** 2026-11-24. Loves (M5) come first, before M1, on the contract in #1559; see "M5" and Appendix A. The maintainer's answers: Parachord never removes a love on any service, Import stays a button, and loves are tracks only. Not started.
 **Out of scope:** the player adapter (#1517), except one note in "Risks".
 
 This is a decision document. Each decision below has options, a recommendation and what it costs if the recommendation is wrong. The sequence at the end is the order to build it in. Read `docs/architecture/sync.md` before implementing any milestone: its rules came from data-loss incidents, and the table in D5 points into it.
@@ -10,12 +11,12 @@ This is a decision document. Each decision below has options, a recommendation a
 ## Summary
 
 - **Where plug-in provider code runs:** in the renderer, like every `.axe`, behind a main-process proxy. The sync engines, the scheduler, the safety rules and all stored state stay in main. Main calls the plug-in through a request/response bridge, page by page.
-- **How the built-ins become plug-in providers:** each plug-in's manifest declares its sync. Spotify, Apple Music and ListenBrainz first name a **host adapter** (the existing main-side code, wrapped), as `embedPlayer.adapter` does today: a pure move with no behaviour change. That's a step, not the end state. The goal is no plug-in-specific code in core, so a later milestone (M15) moves each built-in provider's code into its `.axe`, keeping native code only where it's genuinely better (MusicKit on Android). Last.fm and ListenBrainz loves use renderer-side host adapters over the existing scrobbler classes.
-- **The contract:** a data **descriptor** in the manifest (`capabilities.librarySync` / `playlistSync` / `lovedTracks` as booleans, details in a top-level `sync` block), plus token-free async methods. A failure always throws; nothing is ever `null`; "unchanged" is said explicitly. The host computes collection ids; a plug-in never does.
-- **Engines:** playlists go through N-way. The library stays on `calculateDiff` (it is already a per-provider set union). Loves stay on their own append-only model. All three call the same provider contract.
+- **How the built-ins become plug-in providers:** each plug-in's manifest declares its sync. Spotify, Apple Music and ListenBrainz first name a **host adapter** (the existing main-side code, wrapped), as `embedPlayer.adapter` does today: a pure move with no behaviour change. That's a step, not the end state. The goal is no plug-in-specific code in core, so a later milestone (M15) moves each built-in provider's code into its `.axe`, keeping native code only where it's genuinely better (MusicKit on Android). Last.fm's and ListenBrainz's loves stay on the existing scrobbler classes, registered as love providers (#1559).
+- **The contract:** a data **descriptor** in the manifest (`capabilities.librarySync` / `playlistSync` as booleans, details in a top-level `sync` block), plus token-free async methods. A failure always throws; nothing is ever `null`; "unchanged" is said explicitly. The host computes collection ids; a plug-in never does.
+- **Engines:** playlists go through N-way. The library stays on `calculateDiff` (it is already a per-provider set union). Loves stay on their own append-only model, with their own contract (#1559) and no main-process part. Playlists and the library call the provider contract here.
 - **N-way's remaining work:** `new` mode cannot create a mirror or import a playlist (both platforms), drops renames, Achordion submits and dead-mirror flags, and may leave false conflicts on a switch back to `legacy`. The desktop executor has no recorded live run. #945 is open.
 - **Gate for `new` as default:** those gaps closed, #945 and shared JSON vectors green on both engines, two release cycles of recorded clean cycles on real libraries, and mobile ready to flip in the same window. Legacy is deleted two to three releases after that.
-- **Milestones:** M1 Contract and registry · M2 Renderer asks the provider · M3 Plug-in bridge · M4 First library plug-in (Subsonic, then Plex) · M5 Loves through the contract · M6 N-way creates and imports · M7 N-way feature parity · M8 Validation record and shared vectors · M9 Live validation window · M10 Default flip · M11 Plug-in playlist providers · M12 Legacy removal · M13 Scheduler to main · M14 More library plug-ins (Amazon) and social reads · M15 Built-in providers move into their `.axe`.
+- **Milestones:** M1 Contract and registry · M2 Renderer asks the provider · M3 Plug-in bridge · M4 First library plug-in (Subsonic, then Plex) · M5 Loves through their own contract (#1559; first, before M1) · M6 N-way creates and imports · M7 N-way feature parity · M8 Validation record and shared vectors · M9 Live validation window · M10 Default flip · M11 Plug-in playlist providers · M12 Legacy removal · M13 Scheduler to main · M14 More library plug-ins (Amazon) and social reads · M15 Built-in providers move into their `.axe`.
 
 ## 1. Why
 
@@ -127,7 +128,7 @@ Full signatures are in Appendix A. The shape:
 - A top-level `sync` block holds the rest:
   - `contract: 1`: the API level of the sync-provider interface the plug-in implements (like an Android API level). A host that doesn't know the level ignores the plug-in's sync instead of calling it wrongly;
   - `adapter` (optional): names a host adapter;
-  - `kinds`: per kind (tracks, albums, artists, playlists, loves), whether it can be read and written and how it fetches incrementally;
+  - `kinds`: per kind (tracks, albums, artists, playlists), whether it can be read and written and how it fetches incrementally;
   - the playlist capabilities (the existing ones, plus `snapshots`, `importAll` and `mirrorOutByDefault`);
   - `nativeId`: the field that holds the provider's id (for example `plexRatingKey`), read from a row and from its `sources[providerId]`;
   - `defaults` for the setup dialog.
@@ -146,7 +147,7 @@ Full signatures are in Appendix A. The shape:
   - `createPlaylist`, `addPlaylistTracks`, `removePlaylistTracksByNativeId`, `removePlaylistTracksByPosition`, `replacePlaylistTracks`;
   - `updatePlaylistDetails`, `deletePlaylist`, `getPlaylistSnapshot`, `searchForTrackId`;
   - `remotePlaylistExists`, which returns false only on a definite 404.
-- Loves: `fetchLovesPage(cursor)` and `pushLove(track)`. There is no unlove method, so nothing can call one.
+- Loves have their own contract (`loves` in the manifest, `loveTrack` and `getLovedPage`; M5 and #1559), not methods here. It has no unlove method, so nothing can call one.
 
 **Failure.** Any failure throws a `SyncProviderError` with a `code`: `auth`, `rate-limited` (with `retryAfterMs`), `not-ready`, `unsupported` or `failed`. An empty array is an answer that means "there is none". The engine never derives a removal from a throw. A `rate-limited` throw starts a per-provider pause that every sync path checks. That generalizes `sync-providers/spotify-pause.js`, which stays as Spotify's own process-shared pause.
 
@@ -163,7 +164,7 @@ A provider never writes local state.
 - "Enable X" stays the plug-in's on/off. A disabled plug-in's sync is paused, never removed.
 - The account row is unchanged.
 - "Sync your library" is a nested `SettingRow` for every plug-in whose descriptor has any kind, drawn by the shared `renderLibrarySync`, never inside a per-service section. Its switch is the existing pause (`resolver_sync_settings[id].enabled`), with Set up, Manage and Remove sync….
-- The setup dialog offers one choice per declared kind, defaulted from `sync.defaults`. "Loved tracks" is one of them (#1445), and it reads and writes the same `scrobbler_love_push_enabled[id]` as the card's "Push newly loved tracks": one setting, two places.
+- The setup dialog offers one choice per declared kind, defaulted from `sync.defaults`, and "Loved tracks" for a plug-in that declares `loves` (#1445). That choice reads and writes the same `scrobbler_love_push_enabled[id]` as the plug-in's "Push loves to X" switch: one setting, two places.
 - What a plug-in syncs from (Plex's libraries) stays in the plug-in's own settings, which define the scopes.
 
 **Cost if wrong:** the descriptor carries an API level (`contract: 1`). A host that doesn't know the level ignores the plug-in's sync, so a wrong shape costs a v2 and adapter updates, never data.
@@ -178,9 +179,9 @@ A provider never writes local state.
 - The library's protections (tombstones, the mass-removal safeguard, the tiered matching in `sync-engine/track-identity.js`) already work and stay.
 - The one rule borrowed from N-way: a library fetch is complete or it throws.
 
-**Loves:** stay on their append-only model (`src/renderer/lib/love-import.js`, `love_pushed_keys`, the `love-import` tombstones). They never remove, so neither engine fits them.
+**Loves:** stay on their append-only model (`src/renderer/lib/love-import.js`, `love_pushed_keys`, the `love-import` tombstones). They never remove, so neither engine fits them. They also have their own contract (#1559): they run in the renderer, where the plug-in does, so they need neither the registry in main (M1) nor the bridge (M3).
 
-**Recommendation:** three engines, one contract.
+**Recommendation:** three engines; playlists and the library on one contract, loves on theirs.
 **Cost if wrong:** if a set merge is ever needed (two devices saving and unsaving the same album), it goes inside `calculateDiff`. The contract is unaffected.
 
 ### D5. How every safety rule holds when the provider is a plug-in
@@ -194,7 +195,7 @@ The principle: every rule that protects user data is enforced by the host, never
 | Failure is never an empty answer | each provider by convention | Contract (`SyncProviderError`) plus engine checks: `complete` must be true for a full listing; a timeout or bridge failure is a throw. |
 | Partial-fetch floor, total-wipe guard, missingStreak, pending augmentation, source authority | `sync-engine/playlist-reconcile.js`, `playlist-materialize.js` | Unchanged. Plug-ins only declare `trackRemoveMode` and report an authoritative `trackCount`. |
 | Push-loop guards: provider-scoped `syncedFrom`, the id prefix, `relevantMirrors`, `recordPushToSource` | both legacy renderer loops, pinned by `tests/sync/push-loop-guard-parity.test.js` | Kept until the loops are deleted (M12). Plug-in providers never join the legacy loops. |
-| Never unlove on any service | renderer love paths | The contract has no unlove method. |
+| Never unlove on any service, a music server's star included | renderer love paths | The loves contract (#1559) has no unlove method. Confirmed 2026-11-24, when #1658 asked for one. |
 | No love sent back to its origin; the import cursor advances only on a confirmed write | `love_pushed_keys`, `love_import_cursor`, `love-import.js` | Unchanged; host. |
 | Save payloads keep every sync field (`buildPlaylistSavePayload`) | renderer | Unchanged. Providers never write playlists. |
 | A save never erases a live mirror link (`keepDroppedLinks`) | `playlists-save`, `sync:start` | Unchanged; N-way's own write path must keep calling it (M6 test). |
@@ -220,7 +221,7 @@ The principle: every rule that protects user data is enforced by the host, never
 The migration is a code move, not a data move. Three rules keep it that way:
 1. **Never rename a provider id.** A new id reads every row as new: re-imports, duplicates, and the startup heal misreading prefixes.
 2. **A provider that isn't loaded is paused, not empty.** Uninstalling, disabling or failing to load a plug-in freezes its state. No path treats a missing provider's library as "everything removed". Only Remove sync… removes anything.
-3. **The love setting has one home.** `scrobbler_love_push_enabled` stays the key (mobile uses the same name). The sync dialog reads and writes it.
+3. **The love setting has one home.** `scrobbler_love_push_enabled` stays the key, for every love provider: it's already keyed by plug-in id, mobile uses the same name, and nothing migrates (#1559 had moved it into each plug-in's config). The sync dialog reads and writes it.
 
 **N-way's own migration** is the existing preview, approve or report flow. M10 adds one change: an existing user whose preview is a no-op (everything converged) is switched to `new` without a dialog, because the first cycle writes nothing. Anyone else sees the dialog once, outside Developer. Switching back stays available.
 
@@ -246,7 +247,7 @@ The migration is a code move, not a data move. Three rules keep it that way:
 
 ## 5. Sequence
 
-Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with its docs updated in the same PR (`sync.md`, `plugins.md`, CLAUDE.md where an invariant changes). Two tracks run in parallel after M1: plug-in providers (M2 to M5) and finishing N-way (M6 to M8). They meet at M10.
+Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with its docs updated in the same PR (`sync.md`, `plugins.md`, CLAUDE.md where an invariant changes). Two tracks run in parallel after M1: plug-in providers (M2 to M4) and finishing N-way (M6 to M8). They meet at M10. **M5 (loves) comes before all of it** (2026-11-24): it depends on none of it.
 
 **M1. Contract and registry (no behavior change).** Advances #1515, #1518.
 - `sync-providers/contract.js` holds the typedefs, `validateDescriptor` and the error class.
@@ -281,14 +282,41 @@ Each milestone is one PR (M9 is a time window, not a PR), shippable alone, with 
 - **Live:** a Subsonic server (Navidrome) and the maintainer's Plex server with two libraries: first sync, an added file, a deleted file, a library deselected, the window minimized during a sync.
 - **Mobile:** Subsonic is mobile-capable, so this is where mobile's plug-in provider question (section 6) stops being hypothetical: file the contract ticket here, and a ticket for mobile running a plug-in library provider (it may land later than desktop's). No ticket for Plex (`mobile: false`).
 
-**M5. Loves through the contract.** Closes #1445 and #1519's loved-tracks part.
-- Renderer-side adapters over the two scrobbler classes.
-- `runLoveBackfill`, `runLoveImport` and `pushLoveToScrobblers` call the provider found through the registry.
-- The sync dialog's "Loved tracks" choice and the Sync menu's pause gate love pushes.
-- Last.fm gets a loves-only row in the Sync menu.
-- Also fix the stale "lands with its stacked slice" line in `sync.md`.
-- **Tests:** the existing love tests, plus a paused service gets no push.
-- **Mobile:** update parachord-mobile#669 and #699 with the shape.
+**M5. Loves through their own contract. First, before M1.** Closes #1559 (its Last.fm, ListenBrainz and Subsonic steps), #1658, #1445 and #1519's loved-tracks part. **Not started** (2026-11-24).
+
+**Why first:**
+- It depends on none of the rest. Loves only ever add, have their own stored state, and run entirely in the renderer. The plug-in loader already finds plug-ins by capability, so love providers need neither main's registry (M1) nor the bridge (M3).
+- It's the safest rehearsal for plug-in sync: with no unlove, a bad plug-in can add wrong loves but can't empty anything.
+- Subsonic users asked for it (#1658), and mobile hasn't built its import yet.
+
+**The cost:** it delays N-way by about five PRs. If mobile's legacy sync can still damage playlists, do that first.
+
+**Decided by the maintainer (2026-11-24):**
+1. **Un-hearting never removes a love on a service.** #1658 asks for `unstar`; the rule stays, because one mistaken removal could spread to every service.
+2. **Import stays a button.** Automatic import is easy to add later, since each service remembers where its last import stopped (`love_import_cursor`).
+3. **Tracks only.** Starred albums and artists are a separate feature. Spotify stays out: Liked Songs is its library, and a heart already goes there.
+
+**Which document wins:** the contract is in Appendix A and #1559, which agree as of 2026-11-24. Where they differed, this is what was chosen:
+
+| | #1559 had | This plan had | Chosen |
+|---|---|---|---|
+| Manifest | top-level `loves` | `sync.kinds.loves` | `loves`: loves aren't part of the sync registry |
+| Loving a track | `loveTrack(track)`, with its source there | `pushLove({ artist, title, album, mbid })` | `loveTrack`: Subsonic's `star` needs the song's server id, which `pushLove` didn't carry |
+| The push setting | each plug-in's config | `scrobbler_love_push_enabled` | `scrobbler_love_push_enabled`: keyed by plug-in id already, shared with mobile, nothing to migrate |
+| An imported love | names and MBID | names and MBID | plus `source`, so it arrives with the source it came from |
+
+**The PRs, in order:**
+1. The loves code moves into a hook, no behaviour change (#1487's "Scrobbling and Loves"). It's one block in `src/renderer/app.js` (`pushLoveToScrobblers` to the end of `runLoveImport`, 564 lines at e80b0c4e, 27 of them naming a service).
+2. The contract. Last.fm and ListenBrainz register as love providers from `scrobbler-loader.js` (their writes stay there, `docs/architecture/scrobbling.md`), and push, Send and Import go through providers. No stored key changes. Users see one change: the import's "will also be loved on…" confirmation lists every service with push on, not "the other one".
+3. Subsonic: `loveTrack` through `star`, `getLovedPage` through `getStarred2`. #1559 preferred this after #1515's library; it doesn't need it.
+4. A service's pause covers its loves, and the sync dialog offers "Loved tracks" (#1445). Last.fm gets a loves-only row in the Sync menu.
+
+Then M1. Apple Music (#1553), Amazon and Plex follow when their open questions in #1559 are answered.
+
+- **Settings:** the three rows from #1646 (Import, Push loves to X, Send N), drawn for any plug-in that declares `loves`; Import only when `canImport`. Push reads off and locked while signed out (#1614).
+- **Docs:** `sync.md` "Loved Tracks", `plugins.md`, `scrobbling.md`.
+- **Tests:** the existing love tests; a provider no code knows by name; a failed push is never success; `no-match` never loves; an imported love is never sent back to where it came from; a paused service gets no push.
+- **Mobile:** see section 6's tickets.
 
 **M6. N-way creates and imports.** Advances #911.
 - Extract the three-layer dedup into `createOrLinkRemotePlaylist`. In `new` mode, each cycle starts with three steps:
@@ -373,7 +401,7 @@ Desktop and mobile write the same remote playlists and libraries. A drift in ide
 - **Failure semantics:** a failure throws, and nothing returns `null`. Mobile's `SyncProvider.fetchTracks` returns `null` for "not supported", where desktop's meant "unchanged". Both move to explicit answers.
 - **Capability names and meanings:** `trackRemoveMode`, `canReorder`, `supportsPlaylistDelete`, `supportsPlaylistRename`, and `snapshots` (mobile's `SnapshotKind`, which desktop adopts). `capabilities` stays all booleans.
 - **N-way:** the same create, import and seed steps in `new` (mobile has the same gap); the rename and rollback fixes; the default flip in the same window.
-- **Loves in sync:** the dialog choice, and the pause covering loves (#1445).
+- **Loves:** the contract in Appendix A and #1559, shared code, one implementation for both apps; the dialog choice, and the pause covering loves (#1445).
 
 **Shared test vectors** (the #911 parity mechanism):
 - **Already shared:** `canonical-fixtures.json` (merge), `key-unify-fixtures.json` (unification), `no-false-drop-scenarios.json`.
@@ -385,7 +413,7 @@ Desktop and mobile write the same remote playlists and libraries. A drift in ide
 | When | Ticket |
 |---|---|
 | M1 merges | Sync provider contract: ids, failure and `null` semantics, capability names, the manifest `sync` block (informational; mobile's Kotlin providers stay, nothing to port yet). |
-| M5 merges | Update parachord-mobile#669 and #699: loves as part of each service's sync, one setting, the pause covers loves. |
+| M5's contract PR merges | Update parachord-mobile#829 (the import; #669 is closed into it) and #699: the love-provider contract, one setting, the pause covers loves. Mobile hadn't built its import by 2026-11-24, so it can build on the contract once. |
 | M6 merges | N-way `new` mode imports, creates mirrors and seeds state each cycle. |
 | M7 merges | Rename propagation and the switch-back test (dead mirrors excluded on purpose). |
 | M8 | Vendor the new shared vectors and run them in Kotlin. |
@@ -409,7 +437,7 @@ Desktop and mobile write the same remote playlists and libraries. A drift in ide
 
 ```js
 // Manifest (plugins-src/<id>/manifest.json), alongside the existing keys.
-"capabilities": { "librarySync": true, "playlistSync": true, "lovedTracks": true },
+"capabilities": { "librarySync": true, "playlistSync": true },
 "sync": {
   "contract": 1,
   "adapter": "spotify",              // optional: a host adapter; absent = the .axe implements the methods
@@ -427,13 +455,12 @@ Desktop and mobile write the same remote playlists and libraries. A drift in ide
       "importAll": false,                  // ListenBrainz: true
       "mirrorOutByDefault": true,          // ListenBrainz: false (re-export is opt-in)
       "folders": false
-    },
-    "loves": { "read": true, "push": true }
+    }
   },
   "nativeId": { "tracks": "spotifyUri", "albums": "spotifyId", "artists": "spotifyId" },
   "scopes": false,                         // Plex: true
   "defaults": { "tracks": true, "albums": true, "artists": true, "playlists": true,
-                "loves": false, "pushLocalPlaylists": true }
+                "pushLocalPlaylists": true }
 }
 ```
 
@@ -476,11 +503,33 @@ updatePlaylistDetails(externalId, { name, description }, ctx)  // -> { applied: 
 deletePlaylist(externalId, ctx)                 // -> { deleted: boolean, reason?: 'unsupported' }
 remotePlaylistExists(externalId, ctx)           // -> boolean; false ONLY on a definite 404
 searchForTrackId({ title, artist, album, isrc }, ctx)  // -> nativeId | null (null = catalog miss)
+```
 
-// ── Loves (never an unlove) ──
-fetchLovesPage({ cursor }, ctx)
-  // -> { loves: [{ artist, title, album?, mbid?, lovedAt }], nextCursor, complete }
-pushLove({ artist, title, album, mbid }, ctx)   // -> { mbid?: string }
+### Loves (their own contract, #1559)
+
+```js
+// Manifest, beside "capabilities": { "lovedTracks": true }
+"loves": {
+  "contract": 1,          // API level, as in `sync`
+  "verb": "Love",         // the UI's word: "Love", "Star", "Like"
+  "needs": "mbid",        // what identifies a track there: 'mbid' | 'name' | 'serviceId'
+  "canImport": true       // whether the service can list your loves
+}
+
+// In the renderer: on the plug-in, or on the object that registers as a love
+// provider (Last.fm's and ListenBrainz's scrobblers).
+loveTrack(track, config)
+  // -> { ok: true, ref? }                     ref: what the service stored (ListenBrainz's recording MBID)
+  // -> { ok: false, reason: 'no-match' }      can't identify it; never loves a guess
+  // throws on a failed or refused request (retried), never reads as success
+  // `track` carries its verified source there: track.sources[pluginId]
+getLovedPage({ cursor, account }, config)      // only when canImport
+  // -> { items: [{ artist, title, album?, mbid?, lovedAt /* seconds */, source? }], next, total? }
+  // newest first; `account` is the username whose loves to read, where that
+  // is enough (Last.fm, ListenBrainz: no sign-in needed, #1646)
+  // `source`: the item's own source record there (a starred Subsonic song's
+  // id), so an imported love arrives with the source it came from
+// No unlove method.
 ```
 
 **Host rules on replies:**
