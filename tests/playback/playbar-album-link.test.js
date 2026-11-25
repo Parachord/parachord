@@ -68,7 +68,7 @@ describe('pickReleaseGroupForAlbum', () => {
   });
   test('app.js\'s window helper delegates to it with the title', () => {
     expect(app).toMatch(/window\.pickReleaseGroupForAlbum = \(results, artist, title = ''\) =>\s*pickReleaseGroupForAlbum\(results, \{ artist, title \}\);/);
-    expect(app).toMatch(/window\.pickReleaseGroupForAlbum\(data\['release-groups'\], track\.artist, albumName\)/);
+    expect(app).toMatch(/window\.pickReleaseGroupForAlbum\(data\['release-groups'\], artist, albumName\)/);
   });
 });
 

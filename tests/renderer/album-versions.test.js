@@ -294,7 +294,7 @@ describe('the app wiring (source markers)', () => {
     // card actions, the hover prefetch and the playbar open
     expect(app).toMatch(/const pickEdition = editionPickFor\(\{/);
     expect(app).toMatch(/const prefetchedEdition = editionPickFor\(\{/);
-    expect(app).toMatch(/const pickedEdition = editionPickFor\(\{ artist: track\.artist, title: albumName \}\)/);
+    expect(app).toMatch(/const pickedEdition = editionPickFor\(\{ artist: albumArtist, title: albumName \}\)/);
   });
 
   test('the artist page feeds ReleasePage the versions and the two handlers', () => {

@@ -153,8 +153,10 @@ describe('app.js wiring', () => {
     expect(openForTrack.indexOf('release-group?query=')).toBeLessThan(openForTrack.indexOf('if (!releaseMbid) await askMapper();'));
   });
   test('openAlbumForTrack reuses and records release-group picks', () => {
-    expect(openForTrack).toContain('releaseGroupPicksRef.current.get(track.artist, albumName)');
-    expect(openForTrack).toContain('releaseGroupPicksRef.current.set(track.artist, albumName, album)');
+    // By the album's artist, then the track's (tests/playback/compilation-album-link.test.js).
+    expect(openForTrack).toContain('for (const artist of new Set([albumArtist, track.artist])) {');
+    expect(openForTrack).toContain('releaseGroupPicksRef.current.get(artist, albumName)');
+    expect(openForTrack).toContain('releaseGroupPicksRef.current.set(artist, albumName, album)');
     expect(openForTrack).toContain('handleAlbumClick({ ...album, isReleaseGroup: true })');
   });
   test('handleAlbumClick passes the release-group flag through', () => {

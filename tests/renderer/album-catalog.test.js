@@ -201,6 +201,9 @@ describe('pickReleaseGroupForAlbum', () => {
     // "Exact" is the title as written, not edition-stripped: another act's
     // "Hits (Deluxe)" is not this album's "Hits".
     expect(pickReleaseGroupForAlbum([group('x', 'Hits (Deluxe)', ['B'])], { artist: 'A', title: 'Hits' })).toBeNull();
+    // A romanised or renamed credit with a store's typographic apostrophe
+    // still answers the album ("Don't…" against "Don’t…").
+    expect(pickReleaseGroupForAlbum([group('d', 'Don’t Look Back', ['Ye'])], { artist: 'Kanye West', title: "Don't Look Back" }).id).toBe('d');
     // The incident: a search that found no exact title at all.
     const incident = [
       group('a', "Tomorrow's Another Day", ['CMA']),

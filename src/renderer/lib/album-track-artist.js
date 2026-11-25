@@ -56,9 +56,27 @@ function playableAlbumTrack(track, { albumArtist, album, albumArt } = {}) {
     ...track,
     id: trackSlug(artist || 'unknown', (track && track.title) || 'untitled', album || 'noalbum'),
     artist,
+    // Whose album it is, on a track with its own artist only (local files use
+    // the same field): what opens the album from the track again
+    // (albumArtistForTrack).
+    ...(track && track.trackArtist && albumArtist ? { albumArtist } : {}),
     album,
     albumArt,
   };
+}
+
+// Whose album `albumName` is, for a lookup by artist and album that starts
+// from a track (the playbar's album link, a missing cover): the track's
+// `albumArtist` when it has one and `albumName` is the track's own album,
+// else the track's artist. An album name that came from a resolved source or
+// the mapper isn't the album the field describes, and "Unknown Artist" is the
+// scanner's stand-in for a file with no tag.
+function albumArtistForTrack(track, albumName) {
+  const clean = (s) => (typeof s === 'string' ? s.trim() : '');
+  const own = clean(track && track.albumArtist);
+  const usable = own && !/^unknown( artist)?$/i.test(own)
+    && clean(track.album) && clean(track.album) === clean(albumName);
+  return usable ? own : (track && track.artist);
 }
 
 // The same rule for a service's catalog (Spotify's lookupAlbum, whose tracks
@@ -88,4 +106,4 @@ function isVariousArtists(artist) {
   return typeof name === 'string' && /^various( artists)?$/i.test(name.trim());
 }
 
-module.exports = { creditName, ownTrackArtist, albumTrackArtist, hasTrackArtists, playableAlbumTrack, isVariousArtists, ownCatalogTrackArtist, VARIOUS_ARTISTS_MBID };
+module.exports = { creditName, ownTrackArtist, albumTrackArtist, hasTrackArtists, playableAlbumTrack, albumArtistForTrack, isVariousArtists, ownCatalogTrackArtist, VARIOUS_ARTISTS_MBID };

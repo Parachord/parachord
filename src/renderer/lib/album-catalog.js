@@ -296,7 +296,11 @@ function pickReleaseGroupForAlbum(results, { artist = '', title = '' } = {}) {
   //
   // "A title was given" is the string, not its folded form: "÷" folds to
   // nothing but is a title, and the artist alone must not decide.
-  const asWritten = (s) => stripMarks(s).replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+  const asWritten = (s) => stripMarks(s)
+    .replace(/[\u2018\u2019\u02bc]/g, "'")
+    .replace(/&/g, 'and')
+    .replace(/\s+/g, ' ')
+    .trim();
   const hasTitle = !!String(title || '').trim();
   const hasArtist = String(artist || '').trim().length > 0;
   const byArtist = hasArtist

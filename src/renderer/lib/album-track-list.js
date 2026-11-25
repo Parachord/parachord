@@ -38,8 +38,13 @@ function firstNonEmptyList(promises) {
   });
 }
 
+// A compilation's tracks keep their own artists (lib/album-track-artist.js).
+const { ownTrackArtist } = require('./album-track-artist');
+const ownArtistField = (trackArtist) => (trackArtist ? { trackArtist } : {});
+
 // MusicBrainz release (a /release lookup or a release-group browse's release,
-// with recordings) → { position, title, length (ms), recordingId } per track.
+// with recordings) → { position, title, length (ms), recordingId } per track,
+// and `trackArtist` on a track with its own artist.
 function entriesFromMusicBrainzRelease(release) {
   const out = [];
   for (const medium of (release && release.media) || []) {
@@ -49,6 +54,7 @@ function entriesFromMusicBrainzRelease(release) {
         title: track.title || (track.recording && track.recording.title) || 'Unknown Track',
         length: track.length || null,
         recordingId: (track.recording && track.recording.id) || null,
+        ...ownArtistField(ownTrackArtist(track, release['artist-credit'])),
       });
     }
   }
@@ -62,6 +68,7 @@ function entriesFromCatalogRelease(release) {
     title: t.title,
     length: t.length || null,
     recordingId: null,
+    ...ownArtistField(t.trackArtist),
   }));
 }
 

@@ -1369,8 +1369,10 @@ const {
   VirtualizedQueueList, VirtualizedTrackList, TrackRow, sourceColumnWidth,
 } = require('./components/track-lists');
 const { countOf } = require('./lib/plural');
+// "Various Artists" isn't an artist and has no page (lib/artist-page-name.js).
+const { hasArtistPage } = require('./lib/artist-page-name');
 // A track's own artist on an album (a compilation's tracks): lib/album-track-artist.js.
-const { ownTrackArtist, playableAlbumTrack } = require('./lib/album-track-artist');
+const { ownTrackArtist, playableAlbumTrack, albumArtistForTrack } = require('./lib/album-track-artist');
 const { summarizeToolResults } = require('./lib/tool-summary');
 const { movePriority, priorityMoves } = require('./lib/priority-order');
 const { timeAgo } = require('./lib/time-ago');
@@ -6635,14 +6637,14 @@ const Parachord = () => {
     // Reset and proactively load artist concerts for the On Tour tab
     setArtistConcerts([]);
     setArtistConcertsLoaded(false);
-    if (currentArtist?.name) {
+    if (hasArtistPage(currentArtist)) {
       loadArtistConcerts(currentArtist.name);
     }
   }, [currentArtist]);
 
   // Fetch tab data when restored to biography or related artists tab
   useEffect(() => {
-    if (!currentArtist) return;
+    if (!currentArtist || !hasArtistPage(currentArtist)) return;
 
     if (artistPageTab === 'biography') {
       // Fetch bio if not already loaded
@@ -9499,7 +9501,9 @@ const Parachord = () => {
         id: `scraped-album-${insertedAt}-${index}`,
         position: track.position,
         title: track.title,
-        artist: artistName,
+        // A compilation's track keeps its own artist (lib/album-track-artist.js).
+        artist: track.albumArtist ? track.artist : artistName,
+        ...(track.albumArtist ? { albumArtist: artistName } : {}),
         album: albumTitle,
         duration: track.duration,
         recordingId: track.recordingId,
@@ -12223,7 +12227,7 @@ const Parachord = () => {
               if (tab && ['music', 'biography', 'related', 'on-tour'].includes(tab)) {
                 pendingProtocolTabRef.current = tab;
               }
-              setActiveView('artist');
+              if (hasArtistPage(artistName)) setActiveView('artist');
               fetchArtistData(artistName);
             }
             break;
@@ -15086,6 +15090,7 @@ ${trackListXml}
 
   // Add artist to collection
   const addArtistToCollection = useCallback((artist) => {
+    if (!hasArtistPage(artist)) return;
     const artistId = generateArtistId(artist.name);
 
     setCollectionData(prev => {
@@ -17721,7 +17726,7 @@ ${trackListXml}
                     switch (command) {
                       case 'artist':
                         if (segments[0]) {
-                          setActiveView('artist');
+                          if (hasArtistPage(segments[0])) setActiveView('artist');
                           fetchArtistData(segments[0]);
                         }
                         break;
@@ -18339,7 +18344,7 @@ ${trackListXml}
       if (cachedResults) {
         // Show cached results immediately
         setSearchResults(prev => ({
-          artists: cachedResults.artists || prev.artists,
+          artists: (cachedResults.artists || prev.artists).filter(a => hasArtistPage(a)),
           albums: cachedResults.albums || prev.albums,
           tracks: [...(prev.tracks.filter(t => t.isLocal) || []), ...(cachedResults.tracks || [])],
           playlists: prev.playlists
@@ -18629,7 +18634,7 @@ ${trackListXml}
       const derived = catalogArtistsFromResults({
         query, trackLists: trackLists(), albumLists: albumLists(), mbArtists: mb.artists || []
       });
-      const rows = stable('artists', reRankResults([...(mb.artists || []), ...derived], query, 'name'), artistIdentityKeys);
+      const rows = stable('artists', reRankResults([...(mb.artists || []), ...derived].filter(a => hasArtistPage(a)), query, 'name'), artistIdentityKeys);
       setSearchResults(prev => ({ ...prev, artists: rows }));
       if (mbOk.artists) cacheCategory('artists', rows);
     };
@@ -19397,7 +19402,7 @@ ${trackListXml}
         const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases', 'concerts'];
         if (validViews.includes(savedLastView.view)) {
           // For artist view, we need to restore the artist data
-          if (savedLastView.view === 'artist' && savedLastView.artistName) {
+          if (savedLastView.view === 'artist' && savedLastView.artistName && (savedLastView.releaseId || hasArtistPage(savedLastView.artistName))) {
             // Set the view first, then fetch artist data
             setActiveView('artist');
             setViewHistory(['library', 'artist']);
@@ -19425,6 +19430,10 @@ ${trackListXml}
               waitForBigCaches().then(() => fetchArtistData(savedLastView.artistName));
             }, 100);
             console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}${savedLastView.releaseTitle ? ` -> ${savedLastView.releaseTitle}` : ''}`);
+          } else if (savedLastView.view === 'artist') {
+            // A saved "Various Artists" page (from before it had none), or one
+            // with no name: there is nothing to reopen.
+            setActiveView('home');
           } else if (savedLastView.view === 'history') {
             // Restore history view with tab
             setActiveView('history');
@@ -20398,6 +20407,18 @@ ${trackListXml}
   const ARTIST_SLOW_FALLBACK_MS = 3000;
   const fetchArtistData = async (artistName, options = {}) => {
     console.log('Fetching artist data for:', artistName);
+    // "Various Artists" has no page (lib/artist-page-name.js). Nothing links
+    // here for it; a menu, a deep link or an old record still can. A restored
+    // compilation is the exception: its album opens once the page has an
+    // artist (the pendingReleaseLoad effect).
+    if (!hasArtistPage({ name: artistName, mbid: options.mbid })) {
+      if (pendingReleaseLoad.current) {
+        setCurrentArtist({ id: null, name: artistName });
+      } else if (artistName) {
+        showToast(`${artistName} isn’t an artist, so it has no page`);
+      }
+      return;
+    }
     const knownMbid = isMusicBrainzId(options.mbid) ? options.mbid : null;
 
     // Increment fetch ID to invalidate any in-flight requests for previous artists
@@ -20413,7 +20434,8 @@ ${trackListXml}
 
     // Only add to artist history if we're already on the artist view
     // This prevents search results from building up history
-    if (activeView === 'artist' && currentArtist && currentArtist.name !== artistName) {
+    // (nor a compilation's "Various Artists", which has no page to go back to)
+    if (activeView === 'artist' && hasArtistPage(currentArtist) && currentArtist.name !== artistName) {
       setArtistHistory(prev => [...prev, currentArtist.name]);
     } else if (activeView !== 'artist') {
       // Clear artist history when coming from a different view (like search)
@@ -22137,16 +22159,20 @@ ${trackListXml}
       } catch (e) { /* mapper down: carry on with what we have */ }
     };
     if (!albumName) await askMapper();
+    // A compilation's track plays under its own artist but the album is under
+    // "Various Artists": the album is looked up by the album's artist
+    // (lib/album-track-artist.js), the track's when it has no other.
+    const albumArtist = albumArtistForTrack(track, albumName);
 
     // With a name or a release id in hand, show the release page now; the
     // MusicBrainz lookups below wait in the limiter. Without either there is
     // nothing to show yet, and the toast below is the whole answer.
     const placeholderShown = !!(albumName || releaseMbid);
-    const placeholderId = releaseMbid || `pending-${track.artist}-${albumName}`.toLowerCase();
+    const placeholderId = releaseMbid || `pending-${albumArtist}-${albumName}`.toLowerCase();
     if (placeholderShown) {
       showReleasePlaceholder({
         id: placeholderId,
-        artist: track.artist,
+        artist: albumArtist,
         title: albumName || 'Album',
         albumArt: track.albumArt
       });
@@ -22156,16 +22182,28 @@ ${trackListXml}
       // services' catalogs (loadAlbumFromCatalogs) before the artist page.
       if (placeholderShown && albumName) {
         try {
-          const found = await loadAlbumFromCatalogs({ artist: track.artist, title: albumName });
+          const found = await loadAlbumFromCatalogs({ artist: albumArtist, title: albumName });
           if (found && showCatalogRelease({
             found,
             requested: { id: placeholderId, title: albumName, albumArt: track.albumArt, releaseType: 'album' },
-            artist: { id: null, name: track.artist },
+            artist: { id: null, name: albumArtist },
             canApply: (prev) => !!prev && prev.id === placeholderId && !prev.tracks
           })) return;
         } catch (catalogError) {
           console.warn('Album catalog fallback failed:', catalogError);
         }
+      }
+      if (!hasArtistPage(track.artist)) {
+        // No artist page to fall back to: the album's page says why.
+        const notFound = new Error(message);
+        notFound.userMessage = 'Couldn’t find this album’s tracks on MusicBrainz or your services.';
+        showReleaseLoadError(placeholderId, notFound, {
+          kind: 'release',
+          release: { id: placeholderId, title: albumName, releaseType: 'album', albumArt: track.albumArt },
+          artist: { id: null, name: track.artist }
+        });
+        if (!placeholderShown) showToast(message);
+        return;
       }
       showToast(message);
       if (placeholderShown) {
@@ -22184,14 +22222,14 @@ ${trackListXml}
       // the playbar has no release group to disambiguate a same-titled album
       // by the same artist, and a pick that knows its group opens that group.
       if (albumName) {
-        const pickedEdition = editionPickFor({ artist: track.artist, title: albumName });
+        const pickedEdition = editionPickFor({ artist: albumArtist, title: albumName });
         if (pickedEdition) {
           if (pickedEdition.groupId) {
             return handleAlbumClick({
               id: pickedEdition.groupId,
               title: albumName,
               'primary-type': 'Album',
-              'artist-credit': [{ name: track.artist, artist: { id: null } }],
+              'artist-credit': [{ name: albumArtist, artist: { id: null } }],
               isReleaseGroup: true
             });
           }
@@ -22200,27 +22238,30 @@ ${trackListXml}
           openingReleaseRef.current = true;
           setArtistHistory([]);
           setArtistReleases([]);
-          setCurrentArtist({ id: null, name: track.artist });
+          setCurrentArtist({ id: null, name: albumArtist });
           navigateTo('artist');
-          return fetchReleaseData({ id: placeholderId, title: albumName, releaseType: 'album', albumArt: track.albumArt }, { id: null, name: track.artist });
+          return fetchReleaseData({ id: placeholderId, title: albumName, releaseType: 'album', albumArt: track.albumArt }, { id: null, name: albumArtist });
         }
       }
 
       if (albumName) {
         // Queued or opened earlier this session: no search needed.
-        const known = releaseGroupPicksRef.current.get(track.artist, albumName);
-        if (known) return handleAlbumClick({ ...known, isReleaseGroup: true });
-        const query = encodeURIComponent(`"${albumName}" AND artist:"${track.artist}"`);
-        const response = await fetch(
-          `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
-          { headers: mbHeaders }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const album = window.pickReleaseGroupForAlbum(data['release-groups'], track.artist, albumName);
-          if (album) {
-            releaseGroupPicksRef.current.set(track.artist, albumName, album);
-            return handleAlbumClick({ ...album, isReleaseGroup: true });
+        // Nothing under the album's artist (a file's odd tag): the track's.
+        for (const artist of new Set([albumArtist, track.artist])) {
+          const known = releaseGroupPicksRef.current.get(artist, albumName);
+          if (known) return handleAlbumClick({ ...known, isReleaseGroup: true });
+          const query = encodeURIComponent(`"${albumName}" AND artist:"${artist}"`);
+          const response = await fetch(
+            `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
+            { headers: mbHeaders }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            const album = window.pickReleaseGroupForAlbum(data['release-groups'], artist, albumName);
+            if (album) {
+              releaseGroupPicksRef.current.set(artist, albumName, album);
+              return handleAlbumClick({ ...album, isReleaseGroup: true });
+            }
           }
         }
       }
@@ -26143,6 +26184,14 @@ ${tracks}
 
         if (releases.length === 0) {
           if (await openFromCatalogs()) return;
+          // A compilation has no artist page to fall back to: its page says
+          // why, with a retry.
+          if (!hasArtistPage(album.artist)) {
+            const notFound = new Error('Album not found in MusicBrainz or any catalog');
+            notFound.userMessage = 'Couldn’t find this album’s tracks on MusicBrainz or your services.';
+            showReleaseLoadError(placeholderId, notFound, { kind: 'chartsAlbum', album });
+            return;
+          }
           // Fallback: just navigate to artist page
           console.log('Release not found in MusicBrainz or the catalogs, navigating to artist page');
           setCurrentRelease(null);
@@ -26241,12 +26290,13 @@ ${tracks}
       releaseData.media?.forEach(medium => {
         medium.tracks?.forEach(track => {
           tracks.push({
-            id: track.recording?.id || track.id,
-            title: track.title,
-            // A compilation's track under its own artist (lib/album-track-artist.js).
-            artist: ownTrackArtist(track, releaseData['artist-credit']) || album.artist,
-            duration: track.length ? Math.round(track.length / 1000) : null,
-            albumArt: album.albumArt
+            ...playableAlbumTrack({
+              title: track.title,
+              trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+              recordingId: track.recording?.id,
+              duration: track.length ? Math.round(track.length / 1000) : null,
+            }, { albumArtist: album.artist, album: album.title, albumArt: album.albumArt }),
+            sources: {}
           });
         });
       });
@@ -28907,15 +28957,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // or null. artist/title are MusicBrainz's names when it matched by search.
   const loadAlbumTrackList = async ({ artist, title, albumArt = null, releaseGroupId = null, catalog = null, preferResolverId = null, skipMusicBrainz = false }) => {
     const toTracks = (entries) => entries.map(e => ({
-      id: trackSlug(artist || 'unknown', e.title || 'untitled', title || 'noalbum'),
-      position: e.position,
-      title: e.title,
-      artist,
-      album: title,
-      albumArt: albumArt || null,
-      length: e.length || 0,
-      duration: e.length ? Math.round(e.length / 1000) : 0,
-      recordingId: e.recordingId || undefined,
+      ...playableAlbumTrack({
+        position: e.position,
+        title: e.title,
+        trackArtist: e.trackArtist,
+        length: e.length || 0,
+        duration: e.length ? Math.round(e.length / 1000) : 0,
+        recordingId: e.recordingId || undefined,
+      }, { albumArtist: artist, album: title, albumArt: albumArt || null }),
       sources: {} // Empty sources triggers on-demand resolution
     }));
 
@@ -30978,16 +31027,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = trackSlug(album.artist, track.title || 'untitled', album.title);
               tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                recordingId: track.recording?.id,
-                artist: album.artist,
-                album: album.title,
-                albumArt: album.albumArt,
+                ...playableAlbumTrack({
+                  position: track.position,
+                  title: track.title || track.recording?.title || 'Unknown Track',
+                  length: track.length,
+                  recordingId: track.recording?.id,
+                  trackArtist: ownTrackArtist(track, releaseData['artist-credit']),
+                }, { albumArtist: album.artist, album: album.title, albumArt: album.albumArt }),
                 sources: {}
               });
             });
@@ -31338,7 +31385,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   useEffect(() => {
     if (currentTrack && !currentTrack.albumArt && currentTrack.artist && currentTrack.album) {
       const artKey = trackArtKey(currentTrack);
-      getAlbumArt(currentTrack.artist, currentTrack.album).catch(() => null).then(artUrl => {
+      getAlbumArt(albumArtistForTrack(currentTrack, currentTrack.album), currentTrack.album).catch(() => null).then(artUrl => {
         if (!artUrl) {
           setPlaybarArtMissKey(artKey);
         } else {
@@ -31530,7 +31577,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   const getArtistImage = async (artistName, { mbid = null } = {}) => {
-    if (!artistName) return null;
+    if (!hasArtistPage(artistName)) return null;
 
     const normalizedName = artistName.trim().toLowerCase();
     const cached = artistImageCache.current[normalizedName];
@@ -32816,7 +32863,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // close it and navigate back in one step.
     // Only do this when no discography is loaded — if artistReleases exist, the user
     // was browsing the artist's discography and BACK should just close the release.
-    if (activeView === 'artist' && currentRelease && artistHistory.length === 0 && artistReleases.length === 0 && viewHistory.length > 1) {
+    // A compilation's "artist" has no page to go back to (lib/artist-page-name.js).
+    if (activeView === 'artist' && currentRelease && viewHistory.length > 1
+      && ((artistHistory.length === 0 && artistReleases.length === 0) || !hasArtistPage(currentRelease.artist || currentArtist))) {
       setCurrentRelease(null);
       // Also navigate back to previous view (e.g., HOME or Collection)
       const newHistory = [...viewHistory];

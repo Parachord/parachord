@@ -207,7 +207,7 @@ describe('card click opens the release page before the lookup', () => {
     // every failure path tries the catalogs, then clears the placeholder it showed
     expect(b).toMatch(/const giveUp = async \(message\) => \{/);
     expect((b.match(/await giveUp\(/g) || []).length).toBe(2); // not-found and error paths
-    expect(b).toMatch(/loadAlbumFromCatalogs\(\{ artist: track\.artist, title: albumName \}\)/);
+    expect(b).toMatch(/loadAlbumFromCatalogs\(\{ artist: albumArtist, title: albumName \}\)/);
     expect(b).toMatch(/setCurrentRelease\(null\);\s*setLoadingRelease\(false\);\s*fetchArtistData\(track\.artist\)/);
   });
 
