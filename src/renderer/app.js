@@ -1369,6 +1369,8 @@ const {
   VirtualizedQueueList, VirtualizedTrackList, TrackRow, sourceColumnWidth,
 } = require('./components/track-lists');
 const { countOf } = require('./lib/plural');
+// Which service search result is an album's cover (lib/resolver-cover.js).
+const { pickResolverCover, coverQuery, dropUnmatchedCovers } = require('./lib/resolver-cover');
 // "Various Artists" isn't an artist and has no page (lib/artist-page-name.js).
 const { hasArtistPage } = require('./lib/artist-page-name');
 // A track's own artist on an album (a compilation's tracks): lib/album-track-artist.js.
@@ -16916,9 +16918,12 @@ ${trackListXml}
     // requireAlbumArt: with earlyReturn, keep walking resolvers until one returns
     // a result that carries albumArt (the album-art pipeline's use), instead of
     // stopping at the first resolver that returns anything.
+    // accept: with earlyReturn, a test on one resolver's results; only results
+    // that pass it end the walk (a cover lookup stops at this album's cover,
+    // not at anyone's, #1665).
     // lane: the resolver lane for these searches (laneRunOptions in
     // resolver-limiter.js); 'background' for a cover lookup.
-    const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false, lane = null } = options;
+    const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false, accept = null, lane = null } = options;
     const allResolvers = loadedResolversRef.current || [];
     // A cover lookup skips plug-ins whose metadata is switched off (#1505).
     const activeIds = (activeResolversRef.current || []).filter(id => !(requireAlbumArt && metadataOffRef.current.includes(id)));
@@ -16963,8 +16968,8 @@ ${trackListXml}
               if (hasExactMatch) {
                 return results;
               }
-            } else if (!requireAlbumArt || taggedTracks.some(t => t.albumArt)) {
-              // No target specified, return early with any results
+            } else if (accept ? accept(taggedTracks) : (!requireAlbumArt || taggedTracks.some(t => t.albumArt))) {
+              // No target specified, return early with any results (or an accepted one)
               return results;
             }
           }
@@ -19075,6 +19080,7 @@ ${trackListXml}
         const mbidMapperData = dCaches['cache_mbid_mapper'];
 
         const now = Date.now();
+      let droppedCovers = new Set(); // images dropUnmatchedCovers dropped
       // Load album art cache (keep full { url, timestamp } structure)
       if (albumArtData) {
         // Filter out expired and null entries — only keep valid URLs
@@ -19084,8 +19090,12 @@ ${trackListXml}
         // Heal: drop guessed Cover Art Archive URLs persisted as hits (see
         // window.isUnverifiedCoverArtUrl). They are re-verified on demand.
         const validEntries = liveEntries.filter(([_, entry]) => !window.isUnverifiedCoverArtUrl(entry.url));
-        albumArtCache.current = Object.fromEntries(validEntries);
-        console.log(`📦 Loaded ${validEntries.length} album art entries from cache${liveEntries.length !== validEntries.length ? ` (dropped ${liveEntries.length - validEntries.length} unverified cover-art URLs)` : ''}`);
+        // Covers saved before a service's result had to be the album's (#1665).
+        const cleaned = dropUnmatchedCovers(Object.fromEntries(validEntries));
+        droppedCovers = cleaned.dropped;
+        if (droppedCovers.size > 0) console.log(`📦 Dropped ${validEntries.length - Object.keys(cleaned.kept).length} saved covers no one checked; they are looked up again`);
+        albumArtCache.current = cleaned.kept;
+        console.log(`📦 Loaded ${Object.keys(cleaned.kept).length} album art entries from cache${liveEntries.length !== validEntries.length ? ` (dropped ${liveEntries.length - validEntries.length} unverified cover-art URLs)` : ''}`);
       }
 
       // Load artist data cache
@@ -19154,7 +19164,7 @@ ${trackListXml}
         // Deduped (fewer than 4 covers), the entry no longer satisfies the
         // cache-hit check and the next view recomputes real per-album covers.
         const dedupeCovers = (entry) =>
-          (entry && Array.isArray(entry.covers)) ? [...new Set(entry.covers)] : entry;
+          (entry && Array.isArray(entry.covers)) ? [...new Set(entry.covers)].filter(url => !droppedCovers.has(url)) : entry;
         const validEntries = Object.entries(playlistCoverData)
           .filter(([_, entry]) => now - entry.timestamp < CACHE_TTL.playlistCover)
           .map(([id, entry]) => [id, { ...entry, covers: dedupeCovers(entry) }]);
@@ -19198,7 +19208,11 @@ ${trackListXml}
         // Hydrate albumArt from albumArtCache for releases missing art. A
         // guessed CAA URL persisted with the release is treated as missing;
         // the Fresh Drops art pass verifies or replaces it (window.hydrateReleaseArt).
-        const hydratedReleases = filteredReleases.map(release => window.hydrateReleaseArt(release, albumArtCache.current));
+        // A release keeps its cover on its own record too: one of the dropped
+        // images goes with them.
+        const hydratedReleases = filteredReleases
+          .map(release => (droppedCovers.has(release.albumArt) ? { ...release, albumArt: null } : release))
+          .map(release => window.hydrateReleaseArt(release, albumArtCache.current));
         // Populate state immediately so Fresh Drops preview shows on Home
         if (hydratedReleases.length > 0) {
           setNewReleases(hydratedReleases);
@@ -26108,7 +26122,10 @@ ${tracks}
     for (const track of tracks) {
       if (track.albumArt) continue;
       try {
-        const artUrl = await getAlbumArt(track.artist, track.album || track.title);
+        // With no album on the chart, a release named like the track, else
+        // the cover of the album it's on.
+        const artUrl = await getAlbumArt(track.artist, track.album || track.title)
+          || (track.album ? null : await getTrackArt(track.artist, track.title));
         if (artUrl) {
           setSongsCharts(prev => prev.map(t =>
             t.id === track.id ? { ...t, albumArt: artUrl } : t
@@ -31121,27 +31138,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     };
 
     try {
-      // Walk resolvers in priority order until one returns a result WITH art;
-      // stopping at the first resolver that returned anything (the old
-      // behaviour) let an art-less hit from a higher-priority resolver hide
-      // Spotify's or Bandcamp's cover.
+      // Walk resolvers in priority order until one returns THIS album's cover
+      // (lib/resolver-cover.js). Stopping at any result, or at any result with
+      // art, let a higher-priority resolver's miss hide another's right cover,
+      // and took another artist's (#1665).
       // Background lane: a cover waits behind track resolution.
-      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true, requireAlbumArt: true, lane: 'background' });
+      const results = await searchResolvers(coverQuery({ artist, album }), {
+        earlyReturn: true, requireAlbumArt: true, lane: 'background',
+        accept: (found) => !!pickResolverCover(found, { artist, album })
+      });
 
-      // Find best match - prefer exact artist+album match
-      const normalizedAlbum = album.toLowerCase();
-      const normalizedArtist = artist.toLowerCase();
-
-      const bestMatch = (results || []).find(r =>
-        r.albumArt &&
-        r.artist?.toLowerCase() === normalizedArtist &&
-        r.album?.toLowerCase() === normalizedAlbum
-      ) || (results || []).find(r =>
-        r.albumArt &&
-        r.artist?.toLowerCase() === normalizedArtist
-      ) || (results || []).find(r => r.albumArt);
-
-      if (bestMatch?.albumArt) return remember(bestMatch.albumArt, 'resolver');
+      const url = pickResolverCover(results, { artist, album });
+      if (url) return remember(url, 'service');
     } catch (err) {
       console.error('Resolver album art lookup failed:', err);
       return null;
@@ -31206,9 +31214,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // THE album-art pipeline. Every surface that shows a cover (playbar, queue,
   // Recommendations, Fresh Drops, chat cards, playlist mosaics, ...) goes
   // through this one function so coverage and caching are identical:
-  //   1. caches (albumArtCache by MB id, resolver:/catalog: keys)
+  //   1. caches (albumArtCache by MB id, service:/catalog: keys)
   //   2. MusicBrainz release search → Cover Art Archive (release-group, then release)
-  //   3. enabled resolvers' search results (getAlbumArtFromResolvers)
+  //   3. enabled resolvers' search results, this album's only
+  //      (getAlbumArtFromResolvers, lib/resolver-cover.js)
   //   4. iTunes Search → Deezer catalog chain (album-art-catalog.js)
   // Don't add a surface-specific shortcut; the chat card had one ("fast",
   // resolvers only) and it is why AI-recommended tracks rendered without art.
@@ -31330,7 +31339,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (artist && album) {
       const lookupKey = `${artist}-${album}`.toLowerCase();
       // Resolver / catalog hits are stored under prefixed keys (no MB id)
-      const fallbackHit = albumArtCache.current[`resolver:${lookupKey}`]?.url
+      const fallbackHit = albumArtCache.current[`service:${lookupKey}`]?.url
         || albumArtCache.current[`catalog:${lookupKey}`]?.url;
       if (fallbackHit) return fallbackHit;
       const cachedLookup = albumToReleaseIdCache.current[lookupKey];
