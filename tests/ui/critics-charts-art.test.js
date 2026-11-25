@@ -59,7 +59,7 @@ describe('Critical Darlings restored from cache', () => {
   });
 
   test('it runs after the album-art cache is hydrated', () => {
-    expect(idle.indexOf('albumArtCache.current = Object.fromEntries(validEntries);')).toBeGreaterThan(-1);
-    expect(idle.indexOf('albumArtCache.current = Object.fromEntries(validEntries);')).toBeLessThan(idle.indexOf('const criticsMissingArt'));
+    expect(idle.indexOf('albumArtCache.current = cleaned.kept;')).toBeGreaterThan(-1);
+    expect(idle.indexOf('albumArtCache.current = cleaned.kept;')).toBeLessThan(idle.indexOf('const criticsMissingArt'));
   });
 });
