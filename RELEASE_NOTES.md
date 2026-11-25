@@ -10,6 +10,7 @@
 
 - **Compilations play, and say who's on each track.** A Various Artists album, a soundtrack or a DJ mix looked up every track as "Various Artists", which matched nothing, so its tracks couldn't find a source. Each track now plays under its own artist, whether you play it from the album's page or from its card, and the tracklist has an artist column, each name opening that artist. The cover in the playbar opens the compilation the track came from. An album by one artist looks as before.
 - **Various Artists isn't an artist.** It had an artist page, with hundreds of unrelated albums, a bio and tour dates. It no longer does: its name on a compilation is plain text, and search doesn't list it. Acts with a similar name, such as Various, keep their pages.
+- **An album opens the album you clicked.** An album by two artists ("Jay-Z, Kanye West" on one service, "Jay-Z & Kanye West" on another) could open an unrelated one, and so could an album MusicBrainz doesn't have. Both now open the right album, from your services when MusicBrainz doesn't have it. If nobody has it, the page says so and offers Try again. A live album's other editions are listed too. Thanks to @theli-ua.
 - **A new album opens with its tracks.** Days after release, MusicBrainz can list empty placeholder editions of an album, and an album opened from Pop of the Tops or Critical Darlings could land on one and show no tracks (Grand Theft Auto VI: The Album did). It now opens the edition that has the track list.
 
 ## Discovery
