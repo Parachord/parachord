@@ -11,6 +11,10 @@
 // reject silently.
 const validMbid = (m) => typeof m === 'string' && /^[a-f0-9-]{36}$/i.test(m);
 
+// How long a scrobble waits for its scrobble-time MBID lookup
+// (ListenBrainzScrobbler._ensureMbidIdentity) before it goes out without one.
+const MBID_LOOKUP_BUDGET_MS = 5000;
+
 // ============================================================================
 // ScrobbleManager - Manages scrobbling state and dispatches to enabled plugins
 // ============================================================================
@@ -593,13 +597,29 @@ class ListenBrainzScrobbler extends BaseScrobbler {
   // pins LB to the exact recording and release, and LB skips its own mapping
   // hop. Best-effort by contract: nothing here may fail or slow the scrobble
   // beyond the one lookup — a mapper that can't be reached submits the listen
-  // without MBIDs, exactly as before.
+  // without MBIDs, exactly as before. The lookup gets MBID_LOOKUP_BUDGET_MS:
+  // the manager scrobbles to each plug-in in turn, ListenBrainz first, so a
+  // mapper that takes the connection and never answers would otherwise hold
+  // this listen and the Last.fm / Libre.fm scrobbles behind it. An answer
+  // that lands after the budget is dropped, so it never changes the track
+  // once the listen has gone.
   async _ensureMbidIdentity(track) {
     if (!track || !track.artist || !track.title) return;
     if (validMbid(track.mbid) && validMbid(track.releaseMbid)) return;
     if (typeof window === 'undefined' || typeof window.resolveRecordingMbid !== 'function') return;
     try {
-      const { status, result } = await window.resolveRecordingMbid(track.artist, track.title, track.album, { background: true });
+      let timer;
+      const outOfTime = new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ status: 'timeout', result: null }), MBID_LOOKUP_BUDGET_MS);
+      });
+      const lookup = window.resolveRecordingMbid(track.artist, track.title, track.album, { background: true });
+      let answer;
+      try {
+        answer = await Promise.race([lookup, outOfTime]);
+      } finally {
+        clearTimeout(timer);
+      }
+      const { status, result } = answer || {};
       if (status !== 'hit' || !result) return;
       if (!validMbid(track.mbid) && validMbid(result.recording_mbid)) track.mbid = result.recording_mbid;
       if (!validMbid(track.releaseMbid) && validMbid(result.release_mbid)) track.releaseMbid = result.release_mbid;
@@ -1517,6 +1537,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ListenBrainzScrobbler,
     LastFmScrobbler,
     LibreFmScrobbler,
-    formatSubmissionClientVersion
+    formatSubmissionClientVersion,
+    MBID_LOOKUP_BUDGET_MS
   };
 }
