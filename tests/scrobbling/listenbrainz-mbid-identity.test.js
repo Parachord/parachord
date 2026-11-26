@@ -21,7 +21,7 @@
  * never sent it).
  */
 
-const { ListenBrainzScrobbler, LastFmScrobbler } = require('../../scrobbler-loader');
+const { ListenBrainzScrobbler, LastFmScrobbler, MBID_LOOKUP_BUDGET_MS } = require('../../scrobbler-loader');
 
 const RECORDING = 'b2f3dc71-0f80-4b22-a1a4-d8f8cbd9e5f0';
 const RELEASE = 'ed286309-6e64-48e3-835b-61aaf86cdb86';
@@ -129,6 +129,52 @@ describe('ListenBrainz listen MBID identity', () => {
     const absent = installWindow();
     await expect(lb.scrobble({ title: 'T2', artist: 'A', duration: 200 }, 1700000060)).resolves.toBe(true);
     expect(lbInfoOf(absent[0]).recording_mbid).toBeUndefined();
+  });
+
+  // The manager scrobbles to each plug-in in turn, ListenBrainz first, so a
+  // mapper that takes the connection and never answers would hold this
+  // listen and the Last.fm / Libre.fm scrobbles behind it. The lookup gets
+  // MBID_LOOKUP_BUDGET_MS, then the listen goes out without MBIDs.
+  describe('a mapper that never answers', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    test('the scrobble goes out without MBIDs once the budget runs out', async () => {
+      const bodies = installWindow({ resolveRecordingMbid: () => new Promise(() => {}) });
+      const lb = new ListenBrainzScrobbler();
+      let done = false;
+      const p = lb.scrobble({ title: 'T', artist: 'A', duration: 200 }, 1700000000).then((v) => { done = true; return v; });
+      await jest.advanceTimersByTimeAsync(MBID_LOOKUP_BUDGET_MS - 1);
+      expect(done).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(p).resolves.toBe(true);
+      expect(bodies).toHaveLength(1);
+      expect(lbInfoOf(bodies[0]).recording_mbid).toBeUndefined();
+      expect(lbInfoOf(bodies[0]).release_mbid).toBeUndefined();
+    });
+
+    test('an answer that arrives after the budget does not change the track', async () => {
+      let answer;
+      installWindow({ resolveRecordingMbid: () => new Promise((resolve) => { answer = resolve; }) });
+      const lb = new ListenBrainzScrobbler();
+      const track = { title: 'T', artist: 'A', duration: 200 };
+      const p = lb.scrobble(track, 1700000000);
+      await jest.advanceTimersByTimeAsync(MBID_LOOKUP_BUDGET_MS);
+      await p;
+      answer(mapperHit);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(track.mbid).toBeUndefined();
+      expect(track.releaseMbid).toBeUndefined();
+      expect(track.artistMbids).toBeUndefined();
+    });
+
+    test('a quick answer is used and leaves no timer behind', async () => {
+      const bodies = installWindow({ resolveRecordingMbid: async () => mapperHit });
+      const lb = new ListenBrainzScrobbler();
+      await lb.scrobble({ title: 'T', artist: 'A', duration: 200 }, 1700000000);
+      expect(lbInfoOf(bodies[0]).recording_mbid).toBe(RECORDING);
+      expect(jest.getTimerCount()).toBe(0);
+    });
   });
 
   test('a garbage MBID on the track is not sent and does not block the lookup', async () => {
