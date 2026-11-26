@@ -620,8 +620,16 @@ class ListenBrainzScrobbler extends BaseScrobbler {
         clearTimeout(timer);
       }
       const { status, result } = answer || {};
-      if (status !== 'hit' || !result) return;
-      if (!validMbid(track.mbid) && validMbid(result.recording_mbid)) track.mbid = result.recording_mbid;
+      if (status !== 'hit' || !result || !validMbid(result.recording_mbid)) return;
+      // The lookup goes by artist and title, so the answer can be another
+      // recording of the song. Its release and artists belong to that
+      // recording: take them only when the track had no recording of its own
+      // (it takes the answer's) or the answer is the track's recording.
+      // Otherwise leave them out and LB picks the release from the recording,
+      // rather than pinning the listen to an album the played recording may
+      // not be on (#1670).
+      if (!validMbid(track.mbid)) track.mbid = result.recording_mbid;
+      if (track.mbid.toLowerCase() !== result.recording_mbid.toLowerCase()) return;
       if (!validMbid(track.releaseMbid) && validMbid(result.release_mbid)) track.releaseMbid = result.release_mbid;
       if (!Array.isArray(track.artistMbids) && Array.isArray(result.artist_credit_mbids) && result.artist_credit_mbids.length > 0) {
         track.artistMbids = result.artist_credit_mbids;

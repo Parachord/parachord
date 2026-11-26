@@ -103,6 +103,34 @@ describe('ListenBrainz listen MBID identity', () => {
     expect(info.release_mbid).toBe(RELEASE);
   });
 
+  // #1670: the lookup goes by artist and title, so its answer can be another
+  // recording of the song. Its release and artists belong to that recording:
+  // pairing them with the track's own recording would pin the listen to an
+  // album the played recording may not be on. They're taken only with their
+  // recording (mobile: parachord-mobile#854, withLookedUpMbids).
+  test("another recording's release and artists are never paired with the track's recording", async () => {
+    const OTHER = '0f3c1a5e-9d2b-4c7a-8e61-2b9d4f7a3c10';
+    const bodies = installWindow({ resolveRecordingMbid: async () => mapperHit });
+    const lb = new ListenBrainzScrobbler();
+    const track = { title: 'T', artist: 'A', album: 'Al', duration: 200, mbid: OTHER };
+    await expect(lb.scrobble(track, 1700000000)).resolves.toBe(true);
+    const info = lbInfoOf(bodies[0]);
+    expect(info.recording_mbid).toBe(OTHER);
+    expect(info.release_mbid).toBeUndefined();
+    expect(info.artist_mbids).toBeUndefined();
+    expect(track.releaseMbid).toBeUndefined();
+    expect(track.artistMbids).toBeUndefined();
+  });
+
+  test("the answer's release is taken when its recording is the track's, whatever the case", async () => {
+    const bodies = installWindow({ resolveRecordingMbid: async () => mapperHit });
+    const lb = new ListenBrainzScrobbler();
+    await lb.scrobble({ title: 'T', artist: 'A', duration: 200, mbid: RECORDING.toUpperCase() }, 1700000000);
+    const info = lbInfoOf(bodies[0]);
+    expect(info.release_mbid).toBe(RELEASE);
+    expect(info.artist_mbids).toEqual([ARTIST]);
+  });
+
   test('a track with both MBIDs never asks the mapper', async () => {
     const resolveRecordingMbid = jest.fn(async () => mapperHit);
     const bodies = installWindow({ resolveRecordingMbid });
