@@ -85,6 +85,31 @@ const planRefusalExplained = new Set();
 // (auth, catalog, MPD); documented in plugins.md.
 const PLUGIN_MANIFEST_BUDGET_MS = 10000;
 
+// The MBID Mapper enrichment (app.js enrichTrackWithMbid) writes the track's
+// MBID identity — recording (`mbid`), release (`releaseMbid`) and artist
+// (`artistMbids`) MBIDs — on the track record (the queue / collection /
+// playlist object), never on the source record the engine plays. The played
+// track is built from `...sourceToPlay` plus named identity fields, so
+// without this spread those MBIDs were dropped on every play (the local-file
+// art revalidation below was the one path that re-added them), and almost no
+// listen carried recording_mbid / release_mbid / artist_mbids in its
+// scrobble payload (scrobbler-loader.js _deriveSourceEnrichment reads them
+// off the played track). Spread into every trackToSet build, after
+// ...sourceToPlay so the track record's identity wins: the one resolver that
+// stamps its own `mbid` on a source record (Plex, from its library metadata)
+// deliberately loses to it, because the mapper's identity is the one every
+// other surface (the Achordion submit, loves, MB links) already treats as
+// the track's.
+const mbidIdentity = (track) => {
+  const out = {};
+  if (track) {
+    if (track.mbid) out.mbid = track.mbid;
+    if (track.releaseMbid) out.releaseMbid = track.releaseMbid;
+    if (Array.isArray(track.artistMbids)) out.artistMbids = track.artistMbids;
+  }
+  return out;
+};
+
 function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   volume,        // useVolume's return object
   queue,         // usePlaybackQueue's return object
@@ -1548,6 +1573,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         console.log('🎵 Track duration from source:', duration, 'sourceToPlay.duration:', sourceToPlay.duration, 'trackOrSource.duration:', trackOrSource.duration);
         const trackToSet = trackOrSource.sources ? {
           ...sourceToPlay,
+          ...mbidIdentity(trackOrSource),
           id: trackOrSource.id,
           artist: trackOrSource.artist,
           title: trackOrSource.title,
@@ -1782,6 +1808,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         const duration = (started && started.durationSeconds) || playbackDurationSeconds(sourceToPlay, trackOrSource);
         const trackToSet = trackOrSource.sources ? {
           ...sourceToPlay,
+          ...mbidIdentity(trackOrSource),
           id: trackOrSource.id,
           artist: trackOrSource.artist,
           title: trackOrSource.title,
@@ -2132,6 +2159,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const duration = sourceToPlay.duration || trackOrSource.duration || 0;
       const trackToSet = trackOrSource.sources ? {
         ...sourceToPlay,
+        ...mbidIdentity(trackOrSource),
         id: trackOrSource.id,
         artist: trackOrSource.artist,
         title: trackOrSource.title,
@@ -2309,6 +2337,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         const duration = sourceToPlay.duration || trackOrSource.duration || 0;
         const trackToSet = trackOrSource.sources ? {
           ...sourceToPlay,
+          ...mbidIdentity(trackOrSource),
           id: trackOrSource.id,
           artist: trackOrSource.artist,
           title: trackOrSource.title,
@@ -2402,6 +2431,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const trackToSet = trackOrSource.sources ?
         {
           ...sourceToPlay,
+          ...mbidIdentity(trackOrSource),
           id: trackOrSource.id,  // MUST preserve queue ID
           artist: trackOrSource.artist,
           title: trackOrSource.title,
@@ -2510,6 +2540,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         const trackToSet = trackOrSource.sources ?
           {
             ...sourceToPlay,
+            ...mbidIdentity(trackOrSource),
             id: trackOrSource.id,  // MUST preserve queue ID
             artist: trackOrSource.artist,
             title: trackOrSource.title,
@@ -2602,6 +2633,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
             const trackToSet = trackOrSource.sources ? {
               ...sourceToPlay,
+              ...mbidIdentity(trackOrSource),
               id: trackOrSource.id,
               artist: trackOrSource.artist,
               title: trackOrSource.title,
