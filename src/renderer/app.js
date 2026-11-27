@@ -1383,7 +1383,7 @@ const { chartLoadView } = require('./lib/chart-load-view');
 const { userError, errorText } = require('./lib/error-copy');
 const { OWN_KEY_REFUSED_NOTICE: LASTFM_OWN_KEY_REFUSED_NOTICE, OWN_KEY_REFUSED_HINT: LASTFM_OWN_KEY_REFUSED_HINT, RATE_LIMIT_NOTICE: LASTFM_RATE_LIMIT_NOTICE } = require('./lib/lastfm-key');
 const { trackDurationLabel } = require('./lib/track-duration');
-const { contextPlaylistTarget, playlistRef } = require('./lib/playlist-context');
+const { contextPlaylistTarget, playlistRef, playlistPlaybackContext, withLinkFetch } = require('./lib/playlist-context');
 const { pulledOpenPlaylist } = require('./lib/playlist-sync-banner');
 const { SERVICE_REFRESH_MS, playlistUpdateMode, isPolledHostedXspf, serviceRefreshDue, hostedListForMode } = require('./lib/playlist-update-mode');
 const { refreshedTracks } = require('./lib/hosted-refresh');
@@ -32461,7 +32461,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return;
       }
     } else {
-      playlist = playlistOrId;
+      // A recommended playlist reopened from a reference ("Playing from" in
+      // the queue, #1653) has lost its fetchTracks: look its tracks up again
+      // from its link, through the same lookup its card used.
+      playlist = withLinkFetch(playlistOrId, (link) => recommendationPlaylistTracks({ url: link, name: playlistOrId.title }));
       console.log('🖱️ Playlist clicked, ID:', playlist.id);
     }
 
@@ -35521,13 +35524,16 @@ useEffect(() => {
   // or one of Home's history mixes): its tracks from the one shared lookup
   // (recommendationPlaylistTracks), nothing imported. `context` is the
   // playback context; Home passes a 'mix' one so Jump back in can tell the
-  // mix is playing or queued.
+  // mix is playing or queued. Without one, the context is the one its page
+  // plays with (playlistPlaybackContext of the same record), so "Playing
+  // from" in the queue reopens the playlist (#1653); it used to carry only
+  // the name, and the click did nothing.
   const playServicePlaylist = async (item, context) => {
     if (!item || !item.url) return;
     setTrackLoading(true);
     try {
       const tracks = await recommendationPlaylistTracks(item);
-      playTrackCollection(tracks, context || { type: 'playlist', name: item.name });
+      playTrackCollection(tracks, context || playlistPlaybackContext(servicePlaylistRecord(item)));
     } catch (error) {
       setTrackLoading(false);
       showToast(error?.message || `Could not load ${item.name}`, 'error');
@@ -35537,7 +35543,7 @@ useEffect(() => {
     if (!item || !item.url) return;
     try {
       const tracks = await recommendationPlaylistTracks(item);
-      addToQueue(tracks, context || { type: 'playlist', name: item.name });
+      addToQueue(tracks, context || playlistPlaybackContext(servicePlaylistRecord(item)));
     } catch (error) {
       showToast(error?.message || `Could not load ${item.name}`, 'error');
     }
@@ -35573,8 +35579,14 @@ useEffect(() => {
   const openServicePlaylist = (item, sourceName) => {
     if (!item || !item.url) return;
     cancelRecommendationPlaylistPrefetch(item);
-    const resolverName = sourceName || 'the service';
-    loadPlaylist({
+    loadPlaylist(servicePlaylistRecord(item, sourceName));
+  };
+  // The ephemeral playlist a service playlist opens as, and the one its
+  // card's Play and Add to queue build their context from, so both name the
+  // same playlist. `sourceName` defaults to the plug-in's name.
+  const servicePlaylistRecord = (item, sourceName) => {
+    const resolverName = sourceName || pluginName(item.resolverId, 'the service');
+    return {
       id: `${item.resolverId}-rec-${item.id}`,
       title: item.name || item.title,
       creator: resolverName,
@@ -35590,7 +35602,7 @@ useEffect(() => {
       sourceUrl: item.url,
       addedAt: Date.now(),
       fetchTracks: () => recommendationPlaylistTracks(item)
-    });
+    };
   };
 
   // "Playing from" a history mix opens the mix (#1592): the one on Home
