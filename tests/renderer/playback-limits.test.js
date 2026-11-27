@@ -298,8 +298,9 @@ describe('app wiring', () => {
     // The Amazon-only key is gone; the clear is per resolver.
     expect(app).not.toMatch(/amazonmusic_last_plan/);
     expect(app).toMatch(/const clearResolverMisses = \(resolverId, \{ sources: dropFound = false \} = \{\}\) => \{/);
-    expect(app).toMatch(/window\.__parachordClearAmazonNoMatch = \(\) => clearResolverMisses\('amazonmusic'\);/);
-    const clear = between(app, 'const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {', "window.__parachordClearAmazonNoMatch = ");
+    // A sign-in clears the signed-in plug-in's misses, whichever it is (#1624).
+    expect(app).toMatch(/onSignedIn: \(id\) => clearResolverMisses\(id\),/);
+    const clear = between(app, 'const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {', '\n  };');
     expect(clear).not.toMatch(/amazonmusic/);
   });
 

@@ -218,7 +218,7 @@ Each dialog's open state lives in `src/renderer/app.js` (a `show`/`open` boolean
 
 - `confirmDialog`: simple OK dialog `{ show, type, title, message, onConfirm }`, rendered by `ConfirmModal` (`showConfirmDialog`)
 - `syncDeleteDialog`: multi-action dialog `{ show, playlist }`, rendered by `SyncDeleteDialog` (`sync-delete-dialog.js`); the remote copies it offers to clean up come from `lib/playlist-mirrors.js`
-- `amazonManageDialog`: promise-based sign-in dialog `{ show, onResolve, relaunching }`, rendered by `AmazonManageDialog` (`amazon-manage-dialog.js`)
+- `pluginSignInDialog`: promise-based sign-in question for any plug-in on the status surface `{ show, pluginId, name, hint, refused, signingIn, onResolve }`, rendered by `PluginSignInDialog` (`plugin-sign-in-dialog.js`); `lib/plugin-sign-in-flow.js` decides when it shows (#1624)
 
 ## Releasing
 
