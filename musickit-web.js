@@ -234,6 +234,20 @@ class MusicKitWeb {
       window.dispatchEvent(new CustomEvent('musickit-playback-state', {
         detail: { state }
       }));
+      // A natural end of track is state 5 (PlaybackStates.ended): the SDK
+      // sets it only from the media element's own "ended" event, and skips
+      // that once the element was cleaned up for a track change, so a pause,
+      // stop, seek or skip never produces it. app.js advances the queue on
+      // musickit-track-ended. The SDK the app loads has no
+      // mediaItemDidEndPlaying event (the name isn't in the bundle), which is
+      // what this used to listen for, so an Apple Music track playing here
+      // just stopped at its end (#1672). Don't add that listener back as a
+      // fallback: if Apple restored the event, both would fire on every end
+      // and the queue would skip a track.
+      if (state === 5) {
+        console.log('[MusicKitWeb] Track ended');
+        window.dispatchEvent(new CustomEvent('musickit-track-ended'));
+      }
     });
 
     // Now playing item changed
@@ -253,12 +267,6 @@ class MusicKitWeb {
           duration: this.musicKit.currentPlaybackDuration
         }
       }));
-    });
-
-    // Playback ended
-    this.musicKit.addEventListener('mediaItemDidEndPlaying', (event) => {
-      console.log('[MusicKitWeb] Track ended');
-      window.dispatchEvent(new CustomEvent('musickit-track-ended'));
     });
   }
 
