@@ -22123,6 +22123,12 @@ ${trackListXml}
     // Back from the album fetches this artist's releases only when none are
     // loaded; the previous artist's would show as this one's discography.
     setArtistReleases([]);
+    // And Back leaves the album for the page it was opened from in one step
+    // only with no artist history: one left from artist pages visited
+    // before (leaving them by the sidebar keeps it) made Back close the album
+    // onto a blank artist page, and the next Back open that earlier artist
+    // (#1651). Every other album opener starts a fresh history too.
+    setArtistHistory([]);
     setCurrentArtist(placeholderArtist);
     setCurrentRelease({
       id,
