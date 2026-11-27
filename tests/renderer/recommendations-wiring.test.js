@@ -145,13 +145,17 @@ describe('recommendations wiring', () => {
   test('opening a recommended playlist is provider-neutral (creator/source from the item and section, trackSlug ids)', () => {
     // One opener for the Recommendations cards and Home's service mixes.
     expect(app).toContain('const openRecommendationPlaylist = (item, section) => openServicePlaylist(item, itemSourceName(item, section));');
-    const i = app.indexOf('const openServicePlaylist = (item, sourceName) => {');
+    // It opens the one record a card's Play and Add to queue build their
+    // context from too (#1653).
+    expect(app).toContain('loadPlaylist(servicePlaylistRecord(item, sourceName));');
+    const i = app.indexOf('const servicePlaylistRecord = (item, sourceName) => {');
     expect(i).toBeGreaterThan(-1);
     const fn = app.slice(i, app.indexOf('\n  };', i));
     // The record's identity comes from the item's resolver and that source's
-    // name on the row (rows are blended) — never a hard-coded service.
+    // name on the row (rows are blended), else the plug-in's own name —
+    // never a hard-coded service.
     expect(fn).toContain('id: `${item.resolverId}-rec-${item.id}`');
-    expect(fn).toContain("const resolverName = sourceName || 'the service';");
+    expect(fn).toContain("const resolverName = sourceName || pluginName(item.resolverId, 'the service');");
     const name = app.slice(app.indexOf('const itemSourceName = (item, row) => {'), app.indexOf('const openRecommendationPlaylist = async'));
     expect(name).toContain('const src = ((row && row.sources) || []).find(x => x.id === item.resolverId);');
     expect(fn).toContain('creator: resolverName');
@@ -177,8 +181,11 @@ describe('opening a recommended playlist is responsive', () => {
     // No waiting before the view changes: no await, no global spinner.
     expect(body).not.toContain('await ');
     expect(body).not.toContain('setTrackLoading');
-    expect(body).toContain('tracks: [],');
-    expect(body).toContain('tracksLoaded: false,');
+    const recordAt = app.indexOf('const servicePlaylistRecord = (item, sourceName) => {');
+    const record = app.slice(recordAt, app.indexOf('\n  };', recordAt));
+    expect(record).not.toContain('await ');
+    expect(record).toContain('tracks: [],');
+    expect(record).toContain('tracksLoaded: false,');
     const load = app.slice(app.indexOf('const loadPlaylist = async (playlistOrId'));
     const branch = load.slice(load.indexOf("typeof playlist.fetchTracks === 'function'"), load.indexOf('} else if (playlist.isEphemeral && playlist.listenbrainzId'));
     expect(branch).toContain('tracks = await playlist.fetchTracks();');

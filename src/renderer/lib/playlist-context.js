@@ -8,9 +8,12 @@
 // loadPlaylist needs to open and refetch it, never its tracks, because the
 // context is copied onto every queued track and persisted with the queue
 // (`saved_playback_context`, `saved_queue`). No functions either: a
-// recommended playlist's `fetchTracks` can't cross the store's IPC, so only a
-// playlist with a ListenBrainz id can be reopened from the bar; the others
-// fall back to Recommendations, where they live.
+// recommended playlist's `fetchTracks` can't cross the store's IPC. So a
+// reference reopens by what it does keep: a ListenBrainz id (loadPlaylist's
+// ListenBrainz branch), or the playlist's link, `sourceUrl`, whose tracks
+// loadPlaylist looks up again through the plug-in registry (withLinkFetch,
+// #1653: "Playing from" a service's recommended playlist only closed the
+// drawer). A reference with neither falls back to Recommendations.
 //
 // Pure, no React, loads under plain Node.
 
@@ -20,12 +23,18 @@ const REF_FIELDS = [
 ];
 
 // The reopenable reference for an ephemeral playlist; undefined for a saved one.
+// The cover the playlist was shown with rides along when it's a web link
+// (the reopened view shows the same image); never a data URI, which would
+// be copied onto every queued track.
+const isWebLink = (v) => typeof v === 'string' && /^https?:\/\//i.test(v);
+
 function playlistRef(playlist) {
   if (!playlist || !playlist.isEphemeral) return undefined;
   const ref = { tracks: [], tracksLoaded: false };
   for (const key of REF_FIELDS) {
     if (playlist[key] !== undefined) ref[key] = playlist[key];
   }
+  if (isWebLink(playlist.coverArt)) ref.coverArt = playlist.coverArt;
   return ref;
 }
 
@@ -40,9 +49,27 @@ function playlistPlaybackContext(playlist) {
   };
 }
 
-// Whether a reference can load its tracks again (loadPlaylist's ListenBrainz
-// branch).
-const canReload = (ref) => !!ref && !!ref.id && !!ref.listenbrainzId;
+// The link a recommended playlist's tracks are looked up from again: an
+// ephemeral playlist's own web link, when it isn't a ListenBrainz one (those
+// reload by id).
+const reloadLink = (ref) => (ref && ref.isEphemeral && !ref.listenbrainzId && isWebLink(ref.sourceUrl) ? ref.sourceUrl : null);
+
+// Whether a reference can load its tracks again: by ListenBrainz id
+// (loadPlaylist's ListenBrainz branch) or by its link (withLinkFetch).
+const canReload = (ref) => !!ref && !!ref.id && (!!ref.listenbrainzId || !!reloadLink(ref));
+
+// A reference reopened by its link: the playlist with its lookup back, so
+// loadPlaylist's fetchTracks branch opens it on skeleton rows and fills
+// them when `fetchByLink(link)` lands. Anything else (a saved playlist, one
+// that still has its fetchTracks or its tracks, a ListenBrainz one, one with
+// no link) comes back as it was.
+function withLinkFetch(playlist, fetchByLink) {
+  if (!playlist || typeof playlist.fetchTracks === 'function') return playlist;
+  if (Array.isArray(playlist.tracks) && playlist.tracks.length > 0) return playlist;
+  const link = reloadLink(playlist);
+  if (!link) return playlist;
+  return { ...playlist, fetchTracks: () => fetchByLink(link) };
+}
 
 // The playlist the context bar opens: the saved playlist with the context's
 // id, else the context's ephemeral reference when it can still load; null
@@ -59,4 +86,4 @@ function contextPlaylistTarget(context, playlists) {
   return canReload(context.playlist) ? context.playlist : null;
 }
 
-module.exports = { playlistRef, playlistPlaybackContext, contextPlaylistTarget };
+module.exports = { playlistRef, playlistPlaybackContext, contextPlaylistTarget, withLinkFetch };

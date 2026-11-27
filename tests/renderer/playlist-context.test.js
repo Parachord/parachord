@@ -10,6 +10,7 @@ const {
   playlistRef,
   playlistPlaybackContext,
   contextPlaylistTarget,
+  withLinkFetch,
 } = require('../../src/renderer/lib/playlist-context');
 
 const weekly = {
@@ -58,6 +59,60 @@ describe('playlistPlaybackContext', () => {
   });
 });
 
+// A service's recommended playlist (Apple Music's "Get Up", #1653), as
+// openServicePlaylist builds it: its tracks come from a lookup of its link.
+const recommended = {
+  id: 'applemusic-rec-pl.123',
+  title: 'Get Up',
+  creator: 'Apple Music',
+  description: 'Recommended by Apple Music',
+  coverArt: 'https://is1-ssl.mzstatic.com/image/thumb/get-up.jpg',
+  tracks: [],
+  tracksLoaded: false,
+  isExternal: true,
+  isEphemeral: true,
+  source: 'applemusic',
+  sourceUrl: 'https://music.apple.com/us/playlist/get-up/pl.123',
+  fetchTracks: () => Promise.resolve([]),
+};
+
+describe('a recommended playlist reopens from its link (#1653)', () => {
+  test('its reference keeps the link and the cover it was shown with', () => {
+    const ref = playlistRef(recommended);
+    expect(ref).toMatchObject({ id: 'applemusic-rec-pl.123', source: 'applemusic', sourceUrl: recommended.sourceUrl, coverArt: recommended.coverArt });
+    expect(ref.fetchTracks).toBeUndefined();
+  });
+
+  test('a cover that is not a web link stays off the persisted reference', () => {
+    expect(playlistRef({ ...recommended, coverArt: 'data:image/png;base64,AAAA' }).coverArt).toBeUndefined();
+  });
+
+  test("the queue's context bar finds it, from its page's play context", () => {
+    expect(contextPlaylistTarget(playlistPlaybackContext(recommended), [])).toMatchObject({ id: 'applemusic-rec-pl.123', sourceUrl: recommended.sourceUrl });
+  });
+
+  test('withLinkFetch gives the reference its lookup again, by its link', async () => {
+    const fetchByLink = jest.fn(async (link) => [{ title: 'T', artist: 'A', link }]);
+    const reopened = withLinkFetch(playlistRef(recommended), fetchByLink);
+    expect(typeof reopened.fetchTracks).toBe('function');
+    await expect(reopened.fetchTracks()).resolves.toEqual([{ title: 'T', artist: 'A', link: recommended.sourceUrl }]);
+    expect(fetchByLink).toHaveBeenCalledWith(recommended.sourceUrl);
+  });
+
+  test('withLinkFetch leaves everything else as it was', () => {
+    const fetchByLink = jest.fn();
+    const saved = { id: 'p1', title: 'Mine', tracks: [{ id: 't' }] };
+    const withOwnFetch = recommended;
+    const loaded = { ...playlistRef(recommended), tracks: [{ id: 't' }] };
+    const noLink = playlistRef({ ...recommended, sourceUrl: undefined });
+    const weeklyRef = playlistRef({ ...weekly, sourceUrl: 'https://listenbrainz.org/playlist/abc' });
+    for (const p of [saved, withOwnFetch, loaded, noLink, weeklyRef, null]) {
+      expect(withLinkFetch(p, fetchByLink)).toBe(p);
+    }
+    expect(fetchByLink).not.toHaveBeenCalled();
+  });
+});
+
 describe('contextPlaylistTarget', () => {
   const saved = [{ id: 'p1', title: 'Mine' }];
 
@@ -99,5 +154,19 @@ describe('call sites', () => {
     const app = require('../helpers/renderer-source').appWithPages(); // app.js and the pages moved out of it (#1451)
     expect(app).toMatch(/const contextPlaylist = contextPlaylistTarget\(playbackContext, playlists\);/);
     expect(app).toMatch(/playTrackCollection\(tracks, \{ type: item\.weekly\.contextType, name, playlist: playlistRef\(playlist\) \}\)/);
+  });
+
+  // #1653: Play or Add to queue on a recommended playlist's card stamped
+  // the queue with its name alone, so "Playing from" had nothing to open.
+  test("a recommended playlist card's play and queue carry the same reference its page does", () => {
+    const app = require('../helpers/renderer-source').appWithPages();
+    expect(app.match(/context \|\| playlistPlaybackContext\(servicePlaylistRecord\(item\)\)/g)).toHaveLength(2);
+    expect(app).not.toMatch(/context \|\| \{ type: 'playlist', name: item\.name \}/);
+    expect(app).toMatch(/loadPlaylist\(servicePlaylistRecord\(item, sourceName\)\)/);
+  });
+
+  test('loadPlaylist reopens a reference by its link through the shared playlist lookup', () => {
+    const app = require('../helpers/renderer-source').appWithPages();
+    expect(app).toMatch(/playlist = withLinkFetch\(playlistOrId, \(link\) => recommendationPlaylistTracks\(\{ url: link, name: playlistOrId\.title \}\)\);/);
   });
 });
