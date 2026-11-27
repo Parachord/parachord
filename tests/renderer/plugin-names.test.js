@@ -64,7 +64,8 @@ test("an import source maps to its plug-in: the part before -sync / -import", ()
 });
 
 test('the sites read the registry, not a written-out name', () => {
-  const app = read('src/renderer/app.js');
+  // app.js and the loves hook moved out of it (#1559 step 1).
+  const app = read('src/renderer/app.js') + read('src/renderer/hooks/use-loves.js');
   const page = read('src/renderer/components/playlist-view-page.js');
   // app.js hands over its registry lookup; window.resolverLabelById is the same one.
   expect(app).toContain('setPluginLookup((id) => findLoadedResolver(id)');

@@ -413,7 +413,7 @@ describe('planAlbumRemoval', () => {
 });
 
 describe('app.js wiring', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const src = require('../helpers/renderer-source').appWithPages();
   const fnBody = (name) => {
     const start = src.indexOf(`const ${name} = useCallback(`);
     expect(start).toBeGreaterThan(-1);
