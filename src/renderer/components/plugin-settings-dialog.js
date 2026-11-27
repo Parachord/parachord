@@ -32,6 +32,7 @@ const { Disclosure } = require('./disclosure');
 const { EmptyState, ErrorState } = require('./states');
 const { ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, PlaybackQualityRow, settingsOf, configurableOf, authTypeOf } = require('./plugin-extras');
 const { playbackQualityLine } = require('../lib/playback-quality-line');
+const { canPromptPlugin } = require('../lib/plugin-sign-in-flow');
 
 const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'fetchDynamicModels',
@@ -43,7 +44,7 @@ const PLUGIN_SETTINGS_DIALOG_HANDLERS = [
   'handleRescanAll',
   'handleRescanFolder',
   'handleUninstallResolver',
-  'manageAmazonMusic',
+  'promptPluginSignIn',
   'openPlaybackQualitySettings',
   'openSyncSetupModal',
   'refreshPluginStatus',
@@ -91,7 +92,7 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
     loveImportProgress,
     loveImportRunning,
     lovePushedKeysRef,
-    manageAmazonMusic,
+    promptPluginSignIn,
     openPlaybackQualitySettings,
     marketplaceManifest,
     metaServiceConfigs,
@@ -426,24 +427,14 @@ React.createElement('div', {
                     }
                   } : undefined,
                 onSignIn: canSignIn ? async () => {
-                    // A web-session plug-in (settings.authType 'web-session')
-                    // signs in through the host's prompt flow (the consent
-                    // dialog, single-flight, the 10-minute quiet after a
-                    // decline, the hiccup retry); every other plugin's signIn
-                    // is the window itself.
-                    //
-                    // TODO(#1440 review, note 3, before a second web-session
-                    // plugin): the host has one web-session instance
-                    // (main-process/amazon-web-session.js), and its prompt
-                    // flow (manageAmazonMusic) still reads
-                    // getResolver('amazonmusic'), as does the tile badge's
-                    // needsConfiguration arm. A second web-session plug-in
-                    // needs that flow to take the plug-in's id (its own
-                    // prompt decision, like signInPromptDecision), so the
-                    // row, the tile and the prompt read the plugin, never the id.
-                    if (authTypeOf(selectedResolver) === 'web-session') {
-                      await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
-                      return; // the flow refreshes the status itself
+                    // A plug-in on the status surface signs in through the
+                    // one prompt flow (#1624, lib/plugin-sign-in-flow.js:
+                    // "Sign in to X?" with its own tip, single-flight, the
+                    // quiet after a Not now); it reads the status again
+                    // itself. Any other plug-in's signIn is the window itself.
+                    if (canPromptPlugin(selectedResolver)) {
+                      await promptPluginSignIn(selectedResolver.id, { explicit: true, reason: 'not-signed-in', forcePrompt: true });
+                      return;
                     }
                     await selectedResolver.signIn().catch(() => null);
                     refreshPluginStatus(selectedResolver.id);

@@ -2070,7 +2070,8 @@ const { StopSyncDialog } = require('./components/stop-sync-dialog');
 const { SyncChannelDisableDialog } = require('./components/sync-channel-disable-dialog');
 const { NwayMigrationDialog } = require('./components/nway-migration-dialog');
 const { SyncDeleteDialog } = require('./components/sync-delete-dialog');
-const { AmazonManageDialog } = require('./components/amazon-manage-dialog');
+const { PluginSignInDialog } = require('./components/plugin-sign-in-dialog');
+const { createPluginSignInFlow, newSignInState } = require('./lib/plugin-sign-in-flow');
 const { UrlImportDialog } = require('./components/url-import-dialog');
 const { QueueSaveDialog } = require('./components/queue-save-dialog');
 const { NewPlaylistDialog } = require('./components/new-playlist-dialog');
@@ -3374,16 +3375,20 @@ const Parachord = () => {
   }, []);
   const seekingRef = useRef(false); // True while user is dragging the progress slider
   const seekTimeoutRef = useRef(null); // Debounce timeout for clearing seeking state
-  // Amazon Music sign-in dialog (promise-based).
-  // { show, onResolve: callback(true|false), relaunching: boolean }
-  const [amazonManageDialog, setAmazonManageDialog] = useState({
-    show: false,
-    onResolve: null,
-    relaunching: false
-  });
-  const amazonManageInFlightRef = useRef(null);
-  const amazonManageDeclinedUntilRef = useRef(0);
-  const amazonSignInHiccupRef = useRef({ firstAt: 0, lastAt: 0 }); // not-signed-in while the cookies say signed in (the plugin's signInPromptDecision)
+  // A plug-in's sign-in question (#1624, components/plugin-sign-in-dialog.js),
+  // promise-based: { show, pluginId, name, hint, refused, signingIn,
+  // onResolve(true|false) }. lib/plugin-sign-in-flow.js decides when it
+  // shows; what the flow remembers per plug-in (its quiet period after a Not
+  // now, its prompt in flight, its hiccup streak) lives in the ref, because
+  // the flow is built each render over that render's functions.
+  const [pluginSignInDialog, setPluginSignInDialog] = useState({ show: false });
+  const pluginSignInStateRef = useRef(null);
+  if (!pluginSignInStateRef.current) pluginSignInStateRef.current = newSignInState();
+  // Plug-ins whose play was refused as signed out while their status still
+  // read signed in (the flow's onSignedOut): out of playback until they sign
+  // in (lib/playback-limits.js pluginStatusLimits). Not saved: a restart
+  // reads the status afresh.
+  const [pluginsSignedOut, setPluginsSignedOut] = useState([]);
 
   // Track main content width for responsive layouts
   const [mainContentWidth, setMainContentWidth] = useState(800);
@@ -6236,8 +6241,12 @@ const Parachord = () => {
   // deleted).
   const playbackLimits = useMemo(() => ({
     applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected }),
-    ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
-  }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
+    // A signed-out plug-in (its status says so, or a play it refused did)
+    // leaves playback like a signed-out Apple Music (#1624).
+    ...PlaybackLimits.pluginStatusLimits(pluginStatuses, pluginName, pluginsSignedOut)
+  }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses, pluginsSignedOut]);
+  const playbackLimitsRef = useRef(playbackLimits);
+  playbackLimitsRef.current = playbackLimits;
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   // Signed out for sync: the sync check's verdict, or the account's own
   // sign-in check. The sync check only runs when a sync does, so after a
@@ -7554,142 +7563,59 @@ const Parachord = () => {
   }, []);
 
 
-  // Sign in to Amazon Music inside Parachord. Playback uses the shared
-  // Widevine player and the CDM built into this Electron build; the session
-  // itself is the plugin's since #1356 M10 — the flow below is the renderer's
-  // prompt UX (the consent dialog, single-flight, the decline quiet, the
-  // hiccup retry) over the plugin's methods: getStatus (the CDM verdict and
-  // the signed-in fact), signInPromptDecision (the hiccup rule) and signIn
-  // (the visible window with the plugin's own decide rule). The desktop app
-  // is not launched. explicit:true always shows the dialog (play button,
-  // settings). explicit:false is the background-resolve prompt: one at a
-  // time, skipped during radio/auto-advance, and not repeated for 10 minutes
-  // after a decline. A second caller shares the in-flight promise so it
-  // cannot overwrite onResolve.
-  const manageAmazonMusic = async (opts = {}) => {
-    const loaded = resolverLoaderRef.current && typeof resolverLoaderRef.current.getResolver === 'function'
-      ? resolverLoaderRef.current.getResolver('amazonmusic')
-      : null;
-    // No prompt without the plugin (not loaded, or an old .axe with no
-    // session surface): the prompt IS the plugin's UX.
-    if (!loaded || typeof loaded.signIn !== 'function') return false;
-    const explicit = opts.explicit !== false;
-    if (!explicit && Date.now() < amazonManageDeclinedUntilRef.current) return false;
-    // Settings → Sign in passes explicit:true. Radio must not swallow that.
-    if (!explicit && (isAdvancingTrackRef.current || spinoffModeRef.current)) {
-      console.log('Skipping Amazon connect prompt during auto-advance');
-      return false;
-    }
-    if (!explicit && typeof document !== 'undefined' && document.hidden) return false;
-    if (amazonManageInFlightRef.current) return amazonManageInFlightRef.current;
-
-    let finishInFlight;
-    const inFlight = new Promise((resolve) => { finishInFlight = resolve; });
-    amazonManageInFlightRef.current = inFlight;
-
-    const run = (async () => {
-      // The plugin's status reply: the signed-in fact and this build's CDM
-      // verdict (the plugin's EME probe — the old host read died with the IPC
-      // status). Feeds the tile/settings row on the way by; a read that fails
-      // outright (the loader itself) is no verdict, like the old IPC catch.
-      const status = await refreshPluginStatus('amazonmusic').catch(() => null);
-      if (status && status.cdm === false) {
-        showToast('This Parachord build has no Widevine CDM, so Amazon Music cannot play.', 'error');
-        return false;
-      }
-      // A not-signed-in while the auth cookies say the session is live is
-      // usually Amazon's periodic session-token refresh catching a page load:
-      // retry quietly instead of prompting. Only a streak lasting a minute
-      // (most likely the profile picker) prompts. Settings' Sign in button
-      // passes forcePrompt and always gets the window. The rule is the
-      // plugin's (signInPromptDecision); an old .axe without the method
-      // prompts at once, the pre-#1172 behavior.
-      if (!opts.forcePrompt) {
-        const verdict = typeof loaded.signInPromptDecision === 'function'
-          ? loaded.signInPromptDecision({
-              reason: opts.reason,
-              cookiesSignedIn: !!(status && status.signedIn),
-              streak: amazonSignInHiccupRef.current,
-              now: Date.now()
-            })
-          : { prompt: true, streak: { firstAt: 0, lastAt: 0 } };
-        amazonSignInHiccupRef.current = verdict.streak;
-        if (!verdict.prompt) {
-          console.log('[Amazon] not signed in, but the session cookies are live: retrying quietly instead of prompting');
-          await new Promise(r => setTimeout(r, 2000));
-          return true;
-        }
-      }
-      const granted = await new Promise((resolve) => {
-        setAmazonManageDialog({ show: true, onResolve: resolve, relaunching: false });
-      });
-      if (!granted) {
-        amazonManageDeclinedUntilRef.current = Date.now() + 10 * 60 * 1000;
-        return false;
-      }
-      setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
-      const login = await loaded.signIn();
-      setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-      refreshPluginStatus('amazonmusic');
-      if (login && login.signedIn) {
-        amazonSignInHiccupRef.current = { firstAt: 0, lastAt: 0 };
-        showToast('Signed in to Amazon Music', 'success');
-        if (typeof window.__parachordClearAmazonNoMatch === 'function') window.__parachordClearAmazonNoMatch();
-        return true;
-      }
-      // The sign-in window closed without a session: the same quiet period as
-      // declining the prompt. Without it the next background search's
-      // not-signed-in reopened the prompt at once, and again after every close.
-      amazonManageDeclinedUntilRef.current = Date.now() + 10 * 60 * 1000;
-      return false;
-    })().catch((error) => {
-      setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
-      console.error('Amazon Music sign-in failed:', error);
-      return false;
-    });
-
-    try {
-      const ok = await run;
-      finishInFlight(ok);
-      return ok;
-    } finally {
-      amazonManageInFlightRef.current = null;
-    }
-  };
-  window.__parachordManageAmazonMusic = manageAmazonMusic;
-
-  // The playback engine's "this plug-in needs sign-in" prompt (#1523): a play
-  // refused with reason 'not-signed-in' asks the plug-in that refused,
-  // routed by the registry, never by name. Only a plug-in on the status
-  // surface (capabilities.status) with a signIn method can be prompted. A
-  // plug-in whose sign-in carries host UX of its own runs that flow (Amazon's
-  // consent dialog, hiccup rule and CDM gate, manageAmazonMusic above, which
-  // the plug-in dialog's Sign in and connectPlugin also use); any other runs
-  // its own signIn() and reports whether it ended signed in.
-  const hostSignInFlows = { amazonmusic: manageAmazonMusic };
-  const promptablePlugin = (resolverId) => {
-    const plugin = resolverLoaderRef.current && typeof resolverLoaderRef.current.getResolver === 'function'
-      ? resolverLoaderRef.current.getResolver(resolverId)
-      : null;
-    return plugin && plugin.capabilities && plugin.capabilities.status && typeof plugin.signIn === 'function' ? plugin : null;
-  };
-  const promptPluginSignIn = async (resolverId, opts = {}) => {
-    const plugin = promptablePlugin(resolverId);
-    if (!plugin) return false;
-    const flow = hostSignInFlows[resolverId];
-    if (flow) return flow(opts);
-    try {
-      const login = await plugin.signIn();
-      return !!(login && login.signedIn);
-    } catch (error) {
-      console.error(`${plugin.name} sign-in failed:`, error);
-      return false;
-    } finally {
-      refreshPluginStatus(resolverId).catch(() => {});
-    }
-  };
-  promptPluginSignIn.canPrompt = (resolverId) => !!promptablePlugin(resolverId);
+  // The sign-in prompt for every plug-in on the status surface (#1624):
+  // lib/plugin-sign-in-flow.js, the one flow wherever a plug-in's sign-in
+  // starts. The playback engine's not-signed-in refusal (#1523, routed by
+  // the registry: one plug-in's refusal never opens another's sign-in), the
+  // plug-in dialog's Sign in, Home's Connect, and a plug-in's own search or
+  // import when it finds it's signed out. For any plug-in it gates background
+  // prompts (auto-advance, Spinoff, a hidden window, 10 minutes after a Not
+  // now), runs one prompt per plug-in at a time, says so when the build has
+  // no Widevine CDM (the plug-in's status reply), runs the plug-in's own
+  // hiccup rule when it has one (signInPromptDecision: Amazon's quiet retry
+  // over a session-token refresh, #1172), then asks "Sign in to X?" with the
+  // plug-in's own tip (settings.signInPromptHint) before its sign-in window opens.
+  // It was Amazon's alone (manageAmazonMusic), and another plug-in's window
+  // opened mid-play with no question first. Only a plug-in on the status
+  // surface with a signIn method is asked (canPrompt).
+  const promptPluginSignIn = (() => {
+    const flow = createPluginSignInFlow({
+      getPlugin: (id) => (resolverLoaderRef.current && typeof resolverLoaderRef.current.getResolver === 'function'
+        ? resolverLoaderRef.current.getResolver(id)
+        : null),
+      // The status reply feeds the tile and the settings row on the way by.
+      readStatus: (id) => refreshPluginStatus(id),
+      askConsent: (request) => new Promise((resolve) => {
+        setPluginSignInDialog({ show: true, ...request, signingIn: false, onResolve: resolve });
+      }),
+      showSigningIn: () => setPluginSignInDialog(prev => ({ ...prev, show: true, signingIn: true, onResolve: null })),
+      closeDialog: () => setPluginSignInDialog({ show: false }),
+      backgroundBlocked: () => !!(isAdvancingTrackRef.current || spinoffModeRef.current
+        || (typeof document !== 'undefined' && document.hidden)),
+      // Signed in: the plug-in's cached misses no longer hold (a search it
+      // refused while signed out was cached as found-nothing), and it plays
+      // again.
+      onSignedIn: (id) => {
+        setPluginsSignedOut(prev => (prev.includes(id) ? prev.filter(x => x !== id) : prev));
+        clearResolverMisses(id);
+      },
+      // A refusal that ended signed out: out of playback until it signs in.
+      onSignedOut: (id) => setPluginsSignedOut(prev => (prev.includes(id) ? prev : [...prev, id])),
+      showToast: (message, type) => showToast(message, type),
+    }, pluginSignInStateRef.current);
+    const prompt = (resolverId, opts) => flow.prompt(resolverId, opts);
+    prompt.canPrompt = flow.canPrompt;
+    // Out of playback because it's signed out, and this flow can sign it in:
+    // the playback engine asks for a track only it has.
+    prompt.isSignedOut = (resolverId) => PlaybackLimits.isSignedOutLimit(playbackLimitsRef.current[resolverId])
+      && flow.canPrompt(resolverId);
+    return prompt;
+  })();
   window.__parachordPromptPluginSignIn = promptPluginSignIn;
+  // Installed Amazon Music plug-ins ask through this name from their own
+  // search and playlist import (plugins-src/amazonmusic/implementation.js):
+  // the same flow, for that plug-in.
+  window.__parachordManageAmazonMusic = (opts) => promptPluginSignIn('amazonmusic', opts);
 
   // The generic plugin-status surface (capabilities.status, #1356): a plugin
   // that can report its sign-in/playback-limit state implements getStatus,
@@ -7707,7 +7633,7 @@ const Parachord = () => {
   // null; each is stored as-is — a failure is no verdict for the limit map
   // (lib/playback-limits.js pluginStatusLimit) and the honest error row
   // (pluginStatusRow), and a null (never asked) stays "Checking…".
-  // Returns the reply's promise (manageAmazonMusic reads it for the CDM gate),
+  // Returns the reply's promise (the sign-in flow reads it for the CDM gate),
   // so a caller can both await the verdict and let it feed the map.
   const refreshPluginStatus = (resolverId) => {
     const loader = resolverLoaderRef.current;
@@ -8058,7 +7984,6 @@ const Parachord = () => {
       return newData;
     });
   };
-  window.__parachordClearAmazonNoMatch = () => clearResolverMisses('amazonmusic');
 
   // A resolver whose plan stopped blocking it (an upgrade) and whose searches
   // were held back meanwhile (Amazon) searches again. Its last state is kept
@@ -35971,7 +35896,7 @@ useEffect(() => {
     applemusic: { nativeApp: appleMusicNativeAvailable },
   }), [appleMusicNativeAvailable]);
   const pluginSettingsDialogHandlers = useStableHandlers({
-    clearMetaServiceConfig, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, manageAmazonMusic, openPlaybackQualitySettings, openSyncSetupModal, refreshPluginStatus, saveMetaServiceConfig, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
+    clearMetaServiceConfig, fetchDynamicModels, getServiceColor, handleAddWatchFolder, handleInstallFromMarketplace, handleRemoveMissingFiles, handleRemoveWatchFolder, handleRescanAll, handleRescanFolder, handleUninstallResolver, openPlaybackQualitySettings, promptPluginSignIn, openSyncSetupModal, refreshPluginStatus, saveMetaServiceConfig, setProviderSyncEnabled, setResolverMetadataOn, setResolverPlaybackOn, setResolverRecommendationsOn, showConfirmDialog, toggleResolver,
   });
 
   // The accounts the app itself signs in to, for the plug-in settings
@@ -36192,11 +36117,10 @@ useEffect(() => {
       spotify: pluginSetupNeeded.spotify ? null : connectSpotify,
       soundcloud: soundcloudCredentialsSource !== 'none' ? connectSoundcloud : null,
       applemusic: connectAppleMusic,
-      // Amazon's sign-in carries its own prompt flow, as in the plug-in
-      // dialog; the flow refreshes the status itself.
-      amazonmusic: () => manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true })
-    }[pluginId] || (plugin.capabilities?.status && typeof plugin.signIn === 'function'
-      ? () => Promise.resolve(plugin.signIn()).catch(() => null).then(() => refreshPluginStatus(pluginId))
+    }[pluginId] || (promptPluginSignIn.canPrompt(pluginId)
+      // A plug-in on the status surface signs in through the one prompt
+      // flow (#1624), which reads its status again itself.
+      ? () => promptPluginSignIn(pluginId, { explicit: true, reason: 'not-signed-in', forcePrompt: true })
       : null);
     // Switched on only when the sign-in runs here: a plug-in that still needs
     // setup opens its panel as it is, where you set it up and turn it on.
@@ -37137,12 +37061,12 @@ useEffect(() => {
       onCancel: () => answerUpdateModeAsk(null)
     }),
 
-    // Amazon Music sign-in dialog. Opens music.amazon.com inside Parachord.
-    // The standard dialog (components/modal.js). While the sign-in window
-    // opens it can't be dismissed.
-    /* AmazonManageDialog (components/amazon-manage-dialog.js), a memo'd dialog. */ amazonManageDialog.show && React.createElement(AmazonManageDialog, {
-      amazonManageDialog,
-      setAmazonManageDialog
+    // A plug-in's sign-in question (#1624). The standard dialog
+    // (components/modal.js). While the sign-in window is open it can't be
+    // dismissed.
+    /* PluginSignInDialog (components/plugin-sign-in-dialog.js), a memo'd dialog. */ pluginSignInDialog.show && React.createElement(PluginSignInDialog, {
+      pluginSignInDialog,
+      setPluginSignInDialog
     }),
 
     // Synced Playlist Delete Dialog

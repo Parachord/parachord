@@ -147,9 +147,9 @@ describe('renderer', () => {
   test('background searches skip the cache but never open the sign-in dialog', () => {
     const fn = between(app, 'window.__parachordNoteAmazonNotReady = (error) => {', '\n  };');
     expect(fn).toMatch(/code === 'plan-ineligible'/);
-    expect(fn).not.toMatch(/manageAmazonMusic/);
+    expect(fn).not.toMatch(/manageAmazonMusic|promptPluginSignIn/);
     // The only non-explicit caller was this one.
-    expect(app).not.toMatch(/manageAmazonMusic\(\{ explicit: false/);
+    expect(app).not.toMatch(/promptPluginSignIn\([^)]*explicit: false/);
   });
   // The playback-limit wiring Amazon shares with Spotify (playbackResolvers,
   // the Settings grid, the upgrade re-search, the engine's refusal) is pinned

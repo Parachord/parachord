@@ -130,48 +130,91 @@ describe('the engine\'s sign-in prompt: routed by capability', () => {
     expect(engine).not.toMatch(/resolverId === 'amazonmusic'/);
     expect(engine).not.toContain('__parachordManageAmazonMusic');
     expect(engine).toMatch(/error\.reason === 'not-signed-in' && typeof window\.__parachordPromptPluginSignIn === 'function'\s*&& window\.__parachordPromptPluginSignIn\.canPrompt\(resolverId\)/);
-    expect(engine).toContain('await window.__parachordPromptPluginSignIn(resolverId, { explicit: true, reason: error.reason });');
+    expect(engine).toContain('await window.__parachordPromptPluginSignIn(resolverId, { explicit: true, reason: error.reason, ask: !hasOtherSource });');
   });
 
-  // promptPluginSignIn's body from app.js, run against fakes.
-  const build = ({ resolvers, manageAmazonMusic = jest.fn(async () => true), refreshPluginStatus = jest.fn(async () => null) }) => {
-    const start = app.indexOf('  const hostSignInFlows = {');
+  // app.js's promptPluginSignIn, run against fakes: the real flow
+  // (lib/plugin-sign-in-flow.js), with the dialog setter, the refs and the
+  // status read stubbed. Every plug-in on the status surface asks first
+  // (#1624); Amazon's flow is no longer a separate one.
+  const { createPluginSignInFlow, newSignInState } = require('../../src/renderer/lib/plugin-sign-in-flow');
+  const build = ({ resolvers }) => {
+    const start = app.indexOf('  const promptPluginSignIn = (() => {');
     const end = app.indexOf('  window.__parachordPromptPluginSignIn = promptPluginSignIn;', start);
     expect(start).toBeGreaterThan(0);
     const body = app.slice(start, end);
-    const resolverLoaderRef = { current: { getResolver: (id) => resolvers[id] || null } };
-    const fn = new Function('resolverLoaderRef', 'manageAmazonMusic', 'refreshPluginStatus', `${body}\nreturn promptPluginSignIn;`);
-    return { prompt: fn(resolverLoaderRef, manageAmazonMusic, refreshPluginStatus), manageAmazonMusic, refreshPluginStatus };
+    const dialogs = [];
+    const fakes = {
+      resolverLoaderRef: { current: { getResolver: (id) => resolvers[id] || null } },
+      refreshPluginStatus: jest.fn(async () => ({ signedIn: false, cdm: true })),
+      setPluginSignInDialog: (next) => dialogs.push(typeof next === 'function' ? next(dialogs[dialogs.length - 1] || {}) : next),
+      isAdvancingTrackRef: { current: false },
+      spinoffModeRef: { current: false },
+      clearResolverMisses: jest.fn(),
+      showToast: jest.fn(),
+      pluginSignInStateRef: { current: newSignInState() },
+      setPluginsSignedOut: jest.fn(),
+      PlaybackLimits: require('../../src/renderer/lib/playback-limits'),
+      playbackLimitsRef: { current: {} },
+    };
+    const names = Object.keys(fakes);
+    const fn = new Function(...names, 'createPluginSignInFlow', `${body}\nreturn promptPluginSignIn;`);
+    return { prompt: fn(...names.map((n) => fakes[n]), createPluginSignInFlow), dialogs, ...fakes };
   };
+  const tick = () => new Promise((r) => setImmediate(r));
+  const answerLast = (dialogs, yes) => dialogs.filter((d) => d.onResolve).pop().onResolve(yes);
 
-  test('Amazon keeps its own flow (the consent dialog), with the engine\'s options', async () => {
-    const amazon = { id: 'amazonmusic', capabilities: manifest('amazonmusic').capabilities, signIn: jest.fn() };
+  test('Amazon asks "Sign in to Amazon Music?" with its manifest\'s tip before its window opens', async () => {
+    const m = manifest('amazonmusic');
+    const amazon = { id: 'amazonmusic', name: m.manifest.name, capabilities: m.capabilities, settings: m.settings, signIn: jest.fn(async () => ({ signedIn: true })) };
     expect(amazon.capabilities.status).toBe(true);
-    const { prompt, manageAmazonMusic } = build({ resolvers: { amazonmusic: amazon } });
+    const { prompt, dialogs, clearResolverMisses } = build({ resolvers: { amazonmusic: amazon } });
     expect(prompt.canPrompt('amazonmusic')).toBe(true);
-    await expect(prompt('amazonmusic', { explicit: true, reason: 'not-signed-in' })).resolves.toBe(true);
-    expect(manageAmazonMusic).toHaveBeenCalledWith({ explicit: true, reason: 'not-signed-in' });
+    const run = prompt('amazonmusic', { explicit: true, reason: 'not-signed-in' });
+    await tick();
+    expect(dialogs[0]).toMatchObject({ show: true, pluginId: 'amazonmusic', name: 'Amazon Music', refused: true, hint: m.settings.signInPromptHint });
     expect(amazon.signIn).not.toHaveBeenCalled();
+    answerLast(dialogs, true);
+    await expect(run).resolves.toBe(true);
+    expect(amazon.signIn).toHaveBeenCalledTimes(1);
+    expect(clearResolverMisses).toHaveBeenCalledWith('amazonmusic');
+    expect(dialogs[dialogs.length - 1]).toEqual({ show: false });
   });
 
-  test('any other plug-in on the status surface runs its own signIn', async () => {
+  test('any other plug-in on the status surface asks the same way before its own signIn (the issue)', async () => {
     const other = { id: 'some-web-player', name: 'Some Web Player', capabilities: { resolve: true, status: true }, signIn: jest.fn(async () => ({ signedIn: true })) };
-    const { prompt, manageAmazonMusic, refreshPluginStatus } = build({ resolvers: { 'some-web-player': other } });
+    const { prompt, dialogs, refreshPluginStatus, clearResolverMisses } = build({ resolvers: { 'some-web-player': other } });
     expect(prompt.canPrompt('some-web-player')).toBe(true);
-    await expect(prompt('some-web-player', { explicit: true, reason: 'not-signed-in' })).resolves.toBe(true);
+    const run = prompt('some-web-player', { explicit: true, reason: 'not-signed-in' });
+    await tick();
+    expect(other.signIn).not.toHaveBeenCalled(); // no window before the question
+    expect(dialogs[0]).toMatchObject({ pluginId: 'some-web-player', name: 'Some Web Player', hint: null });
+    answerLast(dialogs, true);
+    await expect(run).resolves.toBe(true);
     expect(other.signIn).toHaveBeenCalled();
-    expect(manageAmazonMusic).not.toHaveBeenCalled();
     expect(refreshPluginStatus).toHaveBeenCalledWith('some-web-player');
+    expect(clearResolverMisses).toHaveBeenCalledWith('some-web-player');
   });
 
   test('a plug-in without the status surface or a signIn is never prompted', async () => {
     const noStatus = { id: 'a', capabilities: { resolve: true }, signIn: jest.fn() };
     const noSignIn = { id: 'b', capabilities: { status: true } };
-    const { prompt } = build({ resolvers: { a: noStatus, b: noSignIn } });
+    const { prompt, dialogs } = build({ resolvers: { a: noStatus, b: noSignIn } });
     expect(prompt.canPrompt('a')).toBe(false);
     expect(prompt.canPrompt('b')).toBe(false);
     expect(prompt.canPrompt('missing')).toBe(false);
     await expect(prompt('a', {})).resolves.toBe(false);
     expect(noStatus.signIn).not.toHaveBeenCalled();
+    expect(dialogs).toEqual([]);
+  });
+
+  test('every sign-in for a status plug-in goes through it: Settings, Home\'s Connect, and the plug-in\'s own search', () => {
+    const dialog = read('src/renderer/components/plugin-settings-dialog.js');
+    expect(dialog).toMatch(/if \(canPromptPlugin\(selectedResolver\)\) \{\s*await promptPluginSignIn\(selectedResolver\.id, \{ explicit: true, reason: 'not-signed-in', forcePrompt: true \}\);/);
+    expect(dialog).not.toMatch(/manageAmazonMusic/);
+    expect(app).toMatch(/\? \(\) => promptPluginSignIn\(pluginId, \{ explicit: true, reason: 'not-signed-in', forcePrompt: true \}\)/);
+    // Installed Amazon plug-ins still call their old name; it is the same flow.
+    expect(app).toContain("window.__parachordManageAmazonMusic = (opts) => promptPluginSignIn('amazonmusic', opts);");
+    expect(app).not.toMatch(/const manageAmazonMusic|hostSignInFlows/);
   });
 });

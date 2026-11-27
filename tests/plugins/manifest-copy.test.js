@@ -50,6 +50,10 @@ function textOffenders() {
       if (typeof v !== 'string') continue;
       for (const [re, why] of DEV_TEXT) if (re.test(v)) out.push(`${id}.${field}: ${why}`);
     }
+    // The sign-in question's tip (#1624, settings.signInPromptHint), shown under
+    // "Sign in to X?".
+    const hint = m.settings && m.settings.signInPromptHint;
+    if (typeof hint === 'string') for (const [re, why] of DEV_TEXT) if (re.test(hint)) out.push(`${id}.settings.signInPromptHint: ${why}`);
     // The "Playback quality" line's own words (#1608, settings.playbackQuality).
     const quality = (m.settings && m.settings.playbackQuality) || {};
     for (const field of ['summary', 'nativeApp']) {

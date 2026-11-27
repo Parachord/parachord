@@ -14,6 +14,8 @@ const {
   appleMusicPlaybackLimit,
   pluginStatusLimit,
   pluginStatusLimits,
+  signedOutPlaybackLimit,
+  isSignedOutLimit,
   pluginStatusRow,
   planBlockedIds,
   playbackResolverIds,
@@ -79,7 +81,7 @@ describe('Apple Music: signed out leaves playback until it connects (2026-11)', 
   test('the app feeds it the startup check and the connection', () => {
     const map = between(app, 'const playbackLimits = useMemo(() => ({', '}), [');
     expect(map).toMatch(/applemusic: PlaybackLimits\.appleMusicPlaybackLimit\(\{ checked: appleMusicAuthChecked, connected: appleMusicConnected \}\)/);
-    expect(app).toMatch(/\}\), \[appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
+    expect(app).toMatch(/\}\), \[appleMusicAuthChecked, appleMusicConnected, pluginStatuses, pluginsSignedOut\]\);/);
     // The check marks itself finished whatever it decided.
     const check = between(app, 'const checkMusicKitAvailable = async () => {', 'checkMusicKitAvailable();');
     expect(check).toMatch(/finally \{\s*setAppleMusicAuthChecked\(true\);/);
@@ -240,7 +242,7 @@ describe('app wiring', () => {
     expect(map).not.toMatch(/amazonmusic:/); // Amazon's entry is the plugin's reply
     // The plugin entries spread after the mappers through the
     // null-dropping helper (a no-verdict reply never lands over a mapper).
-    expect(map).toMatch(/\.\.\.PlaybackLimits\.pluginStatusLimits\(pluginStatuses\)/);
+    expect(map).toMatch(/\.\.\.PlaybackLimits\.pluginStatusLimits\(pluginStatuses, pluginName, pluginsSignedOut\)/);
     expect(app).toMatch(/const planBlockedResolverIds = useMemo\(\(\) => PlaybackLimits\.planBlockedIds\(playbackLimits\), \[playbackLimits\]\);/);
     expect(app).toMatch(/PlaybackLimits\.notPlayingIds\(planBlockedResolverIds, playbackOffResolvers\)/);
     expect(app).toMatch(/PlaybackLimits\.playbackResolverIds\(activeResolvers, notPlayingResolverIds\)/);
@@ -298,8 +300,12 @@ describe('app wiring', () => {
     // The Amazon-only key is gone; the clear is per resolver.
     expect(app).not.toMatch(/amazonmusic_last_plan/);
     expect(app).toMatch(/const clearResolverMisses = \(resolverId, \{ sources: dropFound = false \} = \{\}\) => \{/);
-    expect(app).toMatch(/window\.__parachordClearAmazonNoMatch = \(\) => clearResolverMisses\('amazonmusic'\);/);
-    const clear = between(app, 'const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {', "window.__parachordClearAmazonNoMatch = ");
+    // A sign-in clears the signed-in plug-in's misses, whichever it is, and
+    // puts it back in playback (#1624).
+    const onSignedIn = between(app, 'onSignedIn: (id) => {', '\n      },');
+    expect(onSignedIn).toMatch(/setPluginsSignedOut\(prev => \(prev\.includes\(id\) \? prev\.filter\(x => x !== id\) : prev\)\);/);
+    expect(onSignedIn).toMatch(/clearResolverMisses\(id\);/);
+    const clear = between(app, 'const clearResolverMisses = (resolverId, { sources: dropFound = false } = {}) => {', '\n  };');
     expect(clear).not.toMatch(/amazonmusic/);
   });
 
@@ -323,13 +329,16 @@ describe('app wiring', () => {
 
 describe('engine: a play refused for the plan', () => {
   const fn = between(engine, 'const handlePlanRefusal = (err, refusedId, label) => {', '\n    };');
+  // The fallback is shared with a signed-out refusal (#1624).
+  const fallback = between(engine, 'const playOtherSource = (refusedId, explain, action = null) => {', '\n    };');
 
   test('is shared by every resolver, recorded with the app, and falls back to another source', () => {
     expect(fn).toMatch(/err\.reason !== 'plan-ineligible'/);
     expect(fn).toMatch(/window\.__parachordNotePlanRefusal\(refusedId, err\.planKey\)/);
-    expect(fn).toMatch(/handlePlay\(\{\s*\.\.\.trackOrSource,\s*sources: Object\.fromEntries\(Object\.entries\(trackOrSource\.sources\)\.filter\(\(\[id\]\) => id !== refusedId\)\)/);
+    expect(fn).toMatch(/if \(playOtherSource\(refusedId, \(fallbackName\) => `\$\{message\} Playing via \$\{fallbackName\}\.`\)\) return true;/);
+    expect(fallback).toMatch(/handlePlay\(\{\s*\.\.\.trackOrSource,\s*sources: Object\.fromEntries\(Object\.entries\(trackOrSource\.sources\)\.filter\(\(\[id\]\) => id !== refusedId\)\)/);
     // The fallback toast is explained once per resolver per session.
-    expect(fn).toMatch(/if \(!planRefusalExplained\.has\(refusedId\)\)/);
+    expect(fallback).toMatch(/if \(!planRefusalExplained\.has\(refusedId\)\)/);
   });
 
   test('Widevine (Amazon): before the sign-in path, and after a sign-in retry', () => {
@@ -406,5 +415,76 @@ describe('the user\'s "Play from" choice joins the plan limits (#1505)', () => {
     expect(PL.tileStatus(limits, 'amazonmusic', ['amazonmusic']).statusLabel).toBe('Prime: no playback');
     expect(PL.tileStatus(limits, 'youtube', ['youtube']).statusLabel).toBe('Search and links only');
     expect(PL.tileStatus(limits, 'spotify', ['youtube']).statusLabel).toBe(null);
+  });
+});
+
+// A plug-in that needs a sign-in and is signed out leaves playback like a
+// signed-out Apple Music (#1624): a source it found while signed in is never
+// picked only to be refused.
+describe('a signed-out plug-in leaves playback', () => {
+  test('a status reply saying signedIn: false is the signed-out entry, named', () => {
+    const limit = pluginStatusLimit({ signedIn: false, playbackLimit: null, cdm: true }, 'Amazon Music');
+    expect(limit).toEqual(signedOutPlaybackLimit('Amazon Music'));
+    expect(limit).toMatchObject({ blocked: true, planKey: 'signed-out', label: 'Not signed in', searchesHeldBack: false });
+    expect(limit.message).toBe('Amazon Music isn’t signed in, so Parachord won’t play from it. Sign in to it in Settings › Plug-Ins › Amazon Music.');
+    expect(isSignedOutLimit(limit)).toBe(true);
+  });
+
+  test('a failed read is never signed out, and the plug-in\'s own verdict wins', () => {
+    expect(pluginStatusLimit({ failed: true, signedIn: false })).toBeNull();
+    expect(pluginStatusLimit({ signedIn: true })).toBeNull();
+    expect(pluginStatusLimit({ signedIn: false, playbackLimit: { blocked: false, planKey: 'free', searchesHeldBack: false } }, 'X'))
+      .toMatchObject({ blocked: false, planKey: 'free' });
+  });
+
+  test('the map takes each plug-in\'s name, and a refusal\'s verdict over a signed-in status', () => {
+    const limits = pluginStatusLimits(
+      { amazonmusic: { signedIn: true, playbackLimit: null }, other: { signedIn: false } },
+      (id) => ({ amazonmusic: 'Amazon Music', other: 'Other Player' }[id]),
+      ['amazonmusic']
+    );
+    expect(limits.amazonmusic).toEqual(signedOutPlaybackLimit('Amazon Music'));
+    expect(limits.other.message).toMatch(/^Other Player isn’t signed in/);
+    expect(planBlockedIds(limits)).toEqual(['amazonmusic', 'other']);
+    expect(playbackResolverIds(['spotify', 'amazonmusic', 'other'], planBlockedIds(limits))).toEqual(['spotify']);
+  });
+
+  test('signing out and back in keeps the plan it left: no purge, nothing remembered', () => {
+    const out = signedOutPlaybackLimit('Amazon Music');
+    expect(limitTransition('owned', out)).toEqual({ reresolve: false, purge: false, store: null });
+    expect(limitTransition('0', out)).toEqual({ reresolve: false, purge: false, store: null });
+    // Apple Music's signed-out entry is the same kind.
+    expect(isSignedOutLimit(appleMusicPlaybackLimit({ checked: true, connected: false }))).toBe(true);
+    expect(isSignedOutLimit(amazonLimit('prime'))).toBe(false);
+  });
+
+  test('the app feeds the map the names and the refusals, and the flow keeps the refusals', () => {
+    const flow = between(app, '  const promptPluginSignIn = (() => {', '  window.__parachordPromptPluginSignIn = promptPluginSignIn;');
+    expect(flow).toMatch(/onSignedOut: \(id\) => setPluginsSignedOut\(prev => \(prev\.includes\(id\) \? prev : \[\.\.\.prev, id\]\)\),/);
+    expect(flow).toMatch(/prompt\.isSignedOut = \(resolverId\) => PlaybackLimits\.isSignedOutLimit\(playbackLimitsRef\.current\[resolverId\]\)\s*&& flow\.canPrompt\(resolverId\);/);
+  });
+});
+
+describe('engine: a play refused as signed out (#1624)', () => {
+  const widevine = between(engine, "if (error && error.reason === 'not-signed-in' && typeof window.__parachordPromptPluginSignIn === 'function'", '// Sign-in closed without signing in: Play asks again.');
+  const pastSignedOut = between(engine, 'const playPastSignedOut = (refusedId) => {', '\n    };');
+
+  test('with another source it asks nothing and plays that one, with Sign in on the toast', () => {
+    expect(widevine).toMatch(/const hasOtherSource = otherPlayableSources\(resolverId\)\.length > 0;/);
+    expect(widevine).toMatch(/ask: !hasOtherSource/);
+    expect(widevine).toMatch(/if \(!ok && hasOtherSource && playPastSignedOut\(resolverId\)\) return;/);
+    // The quiet retry refused again moves on too.
+    expect(widevine).toMatch(/retryError\.reason === 'not-signed-in' && hasOtherSource\s*&& playPastSignedOut\(resolverId\)\) return;/);
+    expect(pastSignedOut).toMatch(/`You’re signed out of \$\{name\}\. Playing via \$\{fallbackName\}\.`/);
+    expect(pastSignedOut).toMatch(/label: 'Sign in',/);
+    expect(pastSignedOut).toMatch(/forcePrompt: true/);
+  });
+
+  test('a track only a signed-out plug-in has asks to sign in to it, never while the queue advances', () => {
+    const noSource = between(engine, "if (autoSkipIfAdvancing('no enabled source matches')) return;", "reportUnplayable('No enabled source'");
+    expect(noSource).toMatch(/availableResolvers\.find\(id => promptSignIn\.isSignedOut\(id\)\)/);
+    expect(noSource).toMatch(/promptSignIn\(signedOutId, \{ explicit: true, reason: 'not-signed-in', forcePrompt: true, refused: true \}\)/);
+    expect(noSource).toMatch(/if \(ok && await backInPlayback\(signedOutId\)\) \{[\s\S]*handlePlay\(trackOrSource\);/);
+    expect(noSource).toMatch(/holdFailedTrack\(\);/);
   });
 });

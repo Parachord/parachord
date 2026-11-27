@@ -33,7 +33,7 @@ const PAGE_MODULES = [
   'components/new-playlist-dialog.js',
   'components/queue-save-dialog.js',
   'components/url-import-dialog.js',
-  'components/amazon-manage-dialog.js',
+  'components/plugin-sign-in-dialog.js',
   'components/sync-delete-dialog.js',
   'components/nway-migration-dialog.js',
   'components/sync-channel-disable-dialog.js',

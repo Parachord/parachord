@@ -45,7 +45,7 @@ const { UnsavedFriendDialog, UNSAVED_FRIEND_DIALOG_HANDLERS } = require('../../s
 const { NewPlaylistDialog, NEW_PLAYLIST_DIALOG_HANDLERS } = require('../../src/renderer/components/new-playlist-dialog');
 const { QueueSaveDialog, QUEUE_SAVE_DIALOG_HANDLERS } = require('../../src/renderer/components/queue-save-dialog');
 const { UrlImportDialog, URL_IMPORT_DIALOG_HANDLERS } = require('../../src/renderer/components/url-import-dialog');
-const { AmazonManageDialog } = require('../../src/renderer/components/amazon-manage-dialog');
+const { PluginSignInDialog } = require('../../src/renderer/components/plugin-sign-in-dialog');
 const { SyncDeleteDialog, SYNC_DELETE_DIALOG_HANDLERS } = require('../../src/renderer/components/sync-delete-dialog');
 const { NwayMigrationDialog, NWAY_MIGRATION_DIALOG_HANDLERS } = require('../../src/renderer/components/nway-migration-dialog');
 const { SyncChannelDisableDialog } = require('../../src/renderer/components/sync-channel-disable-dialog');
@@ -81,7 +81,7 @@ const PAGES = [
   { component: 'NewPlaylistDialog', file: 'new-playlist-dialog.js', handlersVar: 'newPlaylistDialogHandlers', handlers: NEW_PLAYLIST_DIALOG_HANDLERS, memo: NewPlaylistDialog },
   { component: 'QueueSaveDialog', file: 'queue-save-dialog.js', handlersVar: 'queueSaveDialogHandlers', handlers: QUEUE_SAVE_DIALOG_HANDLERS, memo: QueueSaveDialog },
   { component: 'UrlImportDialog', file: 'url-import-dialog.js', handlersVar: 'urlImportDialogHandlers', handlers: URL_IMPORT_DIALOG_HANDLERS, memo: UrlImportDialog },
-  { component: 'AmazonManageDialog', file: 'amazon-manage-dialog.js', handlersVar: null, handlers: [], memo: AmazonManageDialog },
+  { component: 'PluginSignInDialog', file: 'plugin-sign-in-dialog.js', handlersVar: null, handlers: [], memo: PluginSignInDialog },
   { component: 'SyncDeleteDialog', file: 'sync-delete-dialog.js', handlersVar: 'syncDeleteDialogHandlers', handlers: SYNC_DELETE_DIALOG_HANDLERS, memo: SyncDeleteDialog },
   { component: 'NwayMigrationDialog', file: 'nway-migration-dialog.js', handlersVar: 'nwayMigrationDialogHandlers', handlers: NWAY_MIGRATION_DIALOG_HANDLERS, memo: NwayMigrationDialog },
   { component: 'SyncChannelDisableDialog', file: 'sync-channel-disable-dialog.js', handlersVar: null, handlers: [], memo: SyncChannelDisableDialog },
