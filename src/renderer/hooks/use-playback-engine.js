@@ -961,6 +961,61 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       });
     };
 
+    // A plug-in that just signed in is back in playback once the render with
+    // its new status lands (playbackResolvers is a ref of that render's
+    // list). Waits up to 3s for it.
+    const backInPlayback = async (id) => {
+      for (let waited = 0; waited <= 3000; waited += 100) {
+        if (activeResolversRef.current.includes(id)) return true;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return false;
+    };
+
+    // The track's other playable sources, best first, leaving out the one
+    // that refused it.
+    const otherPlayableSources = (refusedId) => {
+      const ids = trackOrSource.sources
+        ? Object.keys(trackOrSource.sources).filter(id => id !== refusedId
+          && isPlayableSource(trackOrSource.sources[id]) && activeResolversRef.current.includes(id))
+        : [];
+      const order = resolverOrderRef.current;
+      return ids.sort((x, y) => order.indexOf(x) - order.indexOf(y));
+    };
+
+    // A source refused the play: play the track from its next source, the
+    // way a refused SoundCloud track falls back. explain(fallbackName) is the
+    // toast, shown once per refusing plug-in a session (action: its button).
+    // False when the track has no other source. A "Play from" switch that
+    // failed goes back to the source it left instead, like every fallback.
+    const playOtherSource = (refusedId, explain, action = null) => {
+      if (recoverFailedSwitch(`${refusedId} refused the play`)) return true;
+      const fallbackSources = otherPlayableSources(refusedId);
+      if (fallbackSources.length === 0) return false;
+      if (!planRefusalExplained.has(refusedId)) {
+        planRefusalExplained.add(refusedId);
+        const fallbackName = window.resolverLabelById ? window.resolverLabelById(fallbackSources[0]) : fallbackSources[0];
+        showToast(explain(fallbackName), 'info', action, { duration: 8000 });
+      }
+      handlePlay({
+        ...trackOrSource,
+        sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== refusedId))
+      });
+      return true;
+    };
+
+    // A plug-in that needs a sign-in refused the play as signed out (#1624)
+    // and the track has another source: it plays from that one, with no
+    // question first; the sign-in flow has already taken the plug-in out of
+    // playback (onSignedOut). The toast says so and carries the Sign in.
+    const playPastSignedOut = (refusedId) => {
+      const name = window.resolverLabelById ? window.resolverLabelById(refusedId) : refusedId;
+      return playOtherSource(refusedId, (fallbackName) => `You’re signed out of ${name}. Playing via ${fallbackName}.`, {
+        label: 'Sign in',
+        onClick: () => window.__parachordPromptPluginSignIn?.(refusedId, { explicit: true, reason: 'not-signed-in', forcePrompt: true }),
+      });
+    };
+
     // The account's plan doesn't cover playback on this service
     // (reason 'plan-ineligible': Amazon off Music Unlimited, #1220, or a
     // plugin's play() on a plan its service can't play on demand). The app
@@ -974,24 +1029,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const message = noted || err.message;
       console.warn(`🔐 ${label}: ${message}`);
       if (recoverFailedSwitch(`plan refusal: ${message}`)) return true;
-      const fallbackSources = trackOrSource.sources
-        ? Object.keys(trackOrSource.sources).filter(id => id !== refusedId
-          && isPlayableSource(trackOrSource.sources[id]) && activeResolversRef.current.includes(id))
-        : [];
-      if (fallbackSources.length > 0) {
-        const order = resolverOrderRef.current;
-        fallbackSources.sort((x, y) => order.indexOf(x) - order.indexOf(y));
-        if (!planRefusalExplained.has(refusedId)) {
-          planRefusalExplained.add(refusedId);
-          const fallbackName = window.resolverLabelById ? window.resolverLabelById(fallbackSources[0]) : fallbackSources[0];
-          showToast(`${message} Playing via ${fallbackName}.`, 'info', null, { duration: 8000 });
-        }
-        handlePlay({
-          ...trackOrSource,
-          sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== refusedId))
-        });
-        return true;
-      }
+      if (playOtherSource(refusedId, (fallbackName) => `${message} Playing via ${fallbackName}.`)) return true;
       if (autoSkipIfAdvancing(`${label}: ${message}`)) return true;
       setTrackLoading(false);
       showToast(message, 'error', null, { duration: 8000 });
@@ -1410,6 +1448,25 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           };
         }));
         if (autoSkipIfAdvancing('no enabled source matches')) return;
+        // Its only sources are from a plug-in that's out of playback because
+        // it's signed out (#1624): ask to sign in to it, and play once it's
+        // back in playback. Never while the queue advances on its own (that
+        // skipped above).
+        const promptSignIn = window.__parachordPromptPluginSignIn;
+        const signedOutId = typeof promptSignIn?.isSignedOut === 'function'
+          ? availableResolvers.find(id => promptSignIn.isSignedOut(id)) : null;
+        if (signedOutId) {
+          // forcePrompt: the refusal is already known, so no hiccup retry.
+          const ok = await promptSignIn(signedOutId, { explicit: true, reason: 'not-signed-in', forcePrompt: true, refused: true });
+          if (playbackGenerationRef.current !== thisGeneration) return;
+          if (ok && await backInPlayback(signedOutId)) {
+            if (playbackGenerationRef.current === thisGeneration) handlePlay(trackOrSource);
+            return;
+          }
+          setTrackLoading(false);
+          holdFailedTrack();
+          return;
+        }
         setTrackLoading(false); // Clear loading state
         reportUnplayable('No enabled source', 'This track has sources, but none from the plug-ins you have enabled.');
         return;
@@ -2083,12 +2140,17 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           && window.__parachordPromptPluginSignIn.canPrompt(resolverId)) {
           // reason is what #1172's quiet-retry keys on. explicit skips the
           // radio/hidden gates; forcePrompt is NOT set, so live cookies
-          // retry once instead of opening the sign-in window.
-          const ok = await window.__parachordPromptPluginSignIn(resolverId, { explicit: true, reason: error.reason });
+          // retry once instead of opening the sign-in window. A track with
+          // another source asks nothing (ask: false): it plays from that one
+          // (#1624), and the question is only for a track this plug-in alone
+          // can play.
+          const hasOtherSource = otherPlayableSources(resolverId).length > 0;
+          const ok = await window.__parachordPromptPluginSignIn(resolverId, { explicit: true, reason: error.reason, ask: !hasOtherSource });
           if (playbackGenerationRef.current !== thisGeneration) {
             setTrackLoading(false);
             return;
           }
+          if (!ok && hasOtherSource && playPastSignedOut(resolverId)) return;
           if (ok) {
             try {
               await startWidevine();
@@ -2099,6 +2161,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
               }
               // Signed in, but to an account whose plan doesn't play.
               if (handlePlanRefusal(retryError, resolverId, streamLabel)) return;
+              // The quiet retry (a hiccup) was refused again: the next source.
+              if (retryError && retryError.reason === 'not-signed-in' && hasOtherSource
+                && playPastSignedOut(resolverId)) return;
               console.error(`❌ ${streamLabel} retry after sign-in failed:`, retryError);
               if (autoSkipIfAdvancing(`${streamLabel} playback: ${retryError.message}`)) return;
               setTrackLoading(false);

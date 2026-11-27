@@ -53,6 +53,23 @@ function appleMusicPlaybackLimit({ checked, connected }) {
   };
 }
 
+// A plug-in that needs a sign-in and is signed out (#1624): the same
+// "set up, can't play" entry as a signed-out Apple Music, for any plug-in on
+// the status surface. It leaves playback (selection, source icons, the
+// priority numbers) until it signs in, and its saved sources stay saved, so
+// a source found while it was signed in is never picked only to be refused.
+// `name` is the plug-in's name for the sentence.
+function signedOutPlaybackLimit(name) {
+  const who = typeof name === 'string' && name.trim() ? name.trim() : 'This plug-in';
+  return {
+    blocked: true,
+    planKey: 'signed-out',
+    label: 'Not signed in',
+    message: `${who} isn’t signed in, so Parachord won’t play from it. Sign in to it in Settings › Plug-Ins › ${who}.`,
+    searchesHeldBack: false
+  };
+}
+
 // The ids whose plan can't play, in a stable order.
 function planBlockedIds(limits) {
   return Object.keys(limits || {}).filter((id) => limits[id] && limits[id].blocked).sort();
@@ -96,9 +113,17 @@ function tileStatus(limits, id, playbackOffIds) {
 // plugin whose status call failed (resolver-loader.js getStatus answers its
 // failed marker, STATUS_READ_FAILED — the marker carries no playbackLimit)
 // must never end up unplugged from playback by a malformed answer.
-function pluginStatusLimit(status) {
-  const limit = status && typeof status === 'object' ? status.playbackLimit : null;
-  if (!limit || typeof limit !== 'object' || typeof limit.blocked !== 'boolean') return null;
+//
+// The plugin's own playbackLimit wins. Without one, a reply that says
+// signedIn: false is the signed-out entry (signedOutPlaybackLimit): a
+// signed-out plug-in plays nothing, whatever its plan (#1624). A failed read
+// (the loader's marker) is never read as signed out.
+function pluginStatusLimit(status, name) {
+  const reply = status && typeof status === 'object' ? status : null;
+  const limit = reply ? reply.playbackLimit : null;
+  if (!limit || typeof limit !== 'object' || typeof limit.blocked !== 'boolean') {
+    return reply && reply.failed !== true && reply.signedIn === false ? signedOutPlaybackLimit(name) : null;
+  }
   return {
     blocked: limit.blocked,
     planKey: typeof limit.planKey === 'string' && limit.planKey ? limit.planKey : null,
@@ -128,10 +153,25 @@ function limitMessage(limits, id) {
 // remove the host's block (a Prime account would go back into playback).
 // A status outage must not read as a blocked resolver, and it must not
 // remove the host's block either.
-function pluginStatusLimits(pluginStatuses) {
-  return Object.fromEntries(Object.entries(pluginStatuses || {})
-    .map(([id, status]) => [id, pluginStatusLimit(status)])
+//
+// nameOf(id) names each plug-in for the signed-out sentence. signedOutIds
+// are the plug-ins whose play was refused as signed out although their
+// status still reads signed in (a session Amazon ended while its cookies
+// stayed, #1624): the refusal is the newer verdict, so they get the
+// signed-out entry too, until they sign in.
+function pluginStatusLimits(pluginStatuses, nameOf, signedOutIds) {
+  const named = (id) => (typeof nameOf === 'function' ? nameOf(id) : id);
+  const out = Object.fromEntries(Object.entries(pluginStatuses || {})
+    .map(([id, status]) => [id, pluginStatusLimit(status, named(id))])
     .filter(([, limit]) => limit !== null));
+  for (const id of signedOutIds || []) out[id] = signedOutPlaybackLimit(named(id));
+  return out;
+}
+
+// A plug-in out of playback because it's signed out (either entry above, or
+// Apple Music's), not because of its plan.
+function isSignedOutLimit(limit) {
+  return !!(limit && limit.blocked && limit.planKey === 'signed-out');
 }
 
 // The Settings sign-in row for a status-capable plugin (capabilities.status,
@@ -172,8 +212,11 @@ function pluginStatusRow(status) {
 //     another plan may be a track the account doesn't own — and so
 //     re-resolve; its search now answers only owned tracks;
 //   - into '1': nothing; the resolver leaves playback whole.
+// A signed-out entry is no plan reading: it changes nothing and remembers
+// nothing, so signing back in finds the plan it left (an 'owned' account
+// isn't purged again, #1624). Its sign-in clears its misses itself.
 function limitTransition(lastStored, limit) {
-  if (!limit) return { reresolve: false, purge: false, store: null };
+  if (!limit || isSignedOutLimit(limit)) return { reresolve: false, purge: false, store: null };
   const now = limit.blocked ? '1' : (limit.ownedOnly ? 'owned' : '0');
   const purge = now === 'owned' && lastStored !== 'owned';
   const upgraded = now === '0' && (lastStored === '1' || lastStored === 'owned') && !!limit.searchesHeldBack;
@@ -190,6 +233,8 @@ module.exports = {
   appleMusicPlaybackLimit,
   pluginStatusLimit,
   pluginStatusLimits,
+  signedOutPlaybackLimit,
+  isSignedOutLimit,
   pluginStatusRow,
   planBlockedIds,
   notPlayingIds,

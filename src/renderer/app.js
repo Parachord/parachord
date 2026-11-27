@@ -3384,6 +3384,11 @@ const Parachord = () => {
   const [pluginSignInDialog, setPluginSignInDialog] = useState({ show: false });
   const pluginSignInStateRef = useRef(null);
   if (!pluginSignInStateRef.current) pluginSignInStateRef.current = newSignInState();
+  // Plug-ins whose play was refused as signed out while their status still
+  // read signed in (the flow's onSignedOut): out of playback until they sign
+  // in (lib/playback-limits.js pluginStatusLimits). Not saved: a restart
+  // reads the status afresh.
+  const [pluginsSignedOut, setPluginsSignedOut] = useState([]);
 
   // Track main content width for responsive layouts
   const [mainContentWidth, setMainContentWidth] = useState(800);
@@ -6236,8 +6241,12 @@ const Parachord = () => {
   // deleted).
   const playbackLimits = useMemo(() => ({
     applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected }),
-    ...PlaybackLimits.pluginStatusLimits(pluginStatuses)
-  }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses]);
+    // A signed-out plug-in (its status says so, or a play it refused did)
+    // leaves playback like a signed-out Apple Music (#1624).
+    ...PlaybackLimits.pluginStatusLimits(pluginStatuses, pluginName, pluginsSignedOut)
+  }), [appleMusicAuthChecked, appleMusicConnected, pluginStatuses, pluginsSignedOut]);
+  const playbackLimitsRef = useRef(playbackLimits);
+  playbackLimitsRef.current = playbackLimits;
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   // Signed out for sync: the sync check's verdict, or the account's own
   // sign-in check. The sync check only runs when a sync does, so after a
@@ -7584,12 +7593,22 @@ const Parachord = () => {
       backgroundBlocked: () => !!(isAdvancingTrackRef.current || spinoffModeRef.current
         || (typeof document !== 'undefined' && document.hidden)),
       // Signed in: the plug-in's cached misses no longer hold (a search it
-      // refused while signed out was cached as found-nothing).
-      onSignedIn: (id) => clearResolverMisses(id),
+      // refused while signed out was cached as found-nothing), and it plays
+      // again.
+      onSignedIn: (id) => {
+        setPluginsSignedOut(prev => (prev.includes(id) ? prev.filter(x => x !== id) : prev));
+        clearResolverMisses(id);
+      },
+      // A refusal that ended signed out: out of playback until it signs in.
+      onSignedOut: (id) => setPluginsSignedOut(prev => (prev.includes(id) ? prev : [...prev, id])),
       showToast: (message, type) => showToast(message, type),
     }, pluginSignInStateRef.current);
     const prompt = (resolverId, opts) => flow.prompt(resolverId, opts);
     prompt.canPrompt = flow.canPrompt;
+    // Out of playback because it's signed out, and this flow can sign it in:
+    // the playback engine asks for a track only it has.
+    prompt.isSignedOut = (resolverId) => PlaybackLimits.isSignedOutLimit(playbackLimitsRef.current[resolverId])
+      && flow.canPrompt(resolverId);
     return prompt;
   })();
   window.__parachordPromptPluginSignIn = promptPluginSignIn;

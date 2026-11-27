@@ -130,7 +130,7 @@ describe('the engine\'s sign-in prompt: routed by capability', () => {
     expect(engine).not.toMatch(/resolverId === 'amazonmusic'/);
     expect(engine).not.toContain('__parachordManageAmazonMusic');
     expect(engine).toMatch(/error\.reason === 'not-signed-in' && typeof window\.__parachordPromptPluginSignIn === 'function'\s*&& window\.__parachordPromptPluginSignIn\.canPrompt\(resolverId\)/);
-    expect(engine).toContain('await window.__parachordPromptPluginSignIn(resolverId, { explicit: true, reason: error.reason });');
+    expect(engine).toContain('await window.__parachordPromptPluginSignIn(resolverId, { explicit: true, reason: error.reason, ask: !hasOtherSource });');
   });
 
   // app.js's promptPluginSignIn, run against fakes: the real flow
@@ -153,6 +153,9 @@ describe('the engine\'s sign-in prompt: routed by capability', () => {
       clearResolverMisses: jest.fn(),
       showToast: jest.fn(),
       pluginSignInStateRef: { current: newSignInState() },
+      setPluginsSignedOut: jest.fn(),
+      PlaybackLimits: require('../../src/renderer/lib/playback-limits'),
+      playbackLimitsRef: { current: {} },
     };
     const names = Object.keys(fakes);
     const fn = new Function(...names, 'createPluginSignInFlow', `${body}\nreturn promptPluginSignIn;`);

@@ -274,9 +274,9 @@ describe('wiring', () => {
     // null-dropping helper: a plugin wins only when it actually gives a
     // verdict (the tests above); a no-verdict entry never lands over a
     // mapper's own.
-    expect(memo).toMatch(/\.\.\.PlaybackLimits\.pluginStatusLimits\(pluginStatuses\)/);
+    expect(memo).toMatch(/\.\.\.PlaybackLimits\.pluginStatusLimits\(pluginStatuses, pluginName, pluginsSignedOut\)/);
     // The memo recomputes when a reply lands.
-    expect(app).toMatch(/\}\), \[appleMusicAuthChecked, appleMusicConnected, pluginStatuses\]\);/);
+    expect(app).toMatch(/\}\), \[appleMusicAuthChecked, appleMusicConnected, pluginStatuses, pluginsSignedOut\]\);/);
   });
 
   test('an uninstall drops the plugin\u2019s status entry', () => {

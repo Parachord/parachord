@@ -26,6 +26,18 @@
 //   5. The question (askConsent): "Sign in to X?", with the plug-in's own
 //      tip from its manifest (settings.signInPromptHint). Then its signIn window,
 //      a toast, its cached misses cleared (onSignedIn), its status read again.
+//      With ask: false (a play that has another source to fall back to) it
+//      asks nothing and answers false: the play moves on, and the toast it
+//      shows carries the Sign in.
+//   6. A refusal that ends signed out (no question asked, Not now, or a
+//      sign-in window closed early) reports it (onSignedOut): the plug-in
+//      leaves playback until it signs in, so its saved sources are never
+//      picked only to be refused again (lib/playback-limits.js).
+//
+// opts: explicit (default true), reason (the refusal's, e.g. 'not-signed-in'),
+// forcePrompt (a Sign in the person chose: skip the hiccup rule), refused
+// (the play was refused: the dialog's wording, and step 6; default
+// !forcePrompt), ask (default true).
 //
 // Pure: every effect is a seam the caller passes; loads under plain Node.
 // What it remembers (each plug-in's quiet period, its prompt in flight, its
@@ -73,6 +85,7 @@ function createPluginSignInFlow({
   closeDialog,
   backgroundBlocked,
   onSignedIn,
+  onSignedOut = () => {},
   showToast,
   now = () => Date.now(),
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -103,10 +116,19 @@ function createPluginSignInFlow({
         return true;
       }
     }
-    const granted = await askConsent({ pluginId: id, name, hint: hintOf(plugin), refused: !opts.forcePrompt });
+    const refused = opts.refused !== undefined ? !!opts.refused : !opts.forcePrompt;
+    // Step 6: only a refusal says the plug-in can't play; a Sign in the
+    // person chose and then put off says nothing new.
+    const signedOut = () => { if (refused && opts.reason === 'not-signed-in') onSignedOut(id); };
+    if (opts.ask === false) {
+      signedOut();
+      return false;
+    }
+    const granted = await askConsent({ pluginId: id, name, hint: hintOf(plugin), refused });
     if (!granted) {
       closeDialog();
       quiet(id);
+      signedOut();
       return false;
     }
     showSigningIn(id);
@@ -127,6 +149,7 @@ function createPluginSignInFlow({
     // Without it the next background search's not-signed-in reopened the
     // prompt at once, and again after every close.
     quiet(id);
+    signedOut();
     return false;
   };
 

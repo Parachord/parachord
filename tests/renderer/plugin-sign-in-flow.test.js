@@ -37,7 +37,7 @@ const plugin = (over = {}) => ({
 
 // The flow over fakes: each seam records what it was asked.
 function harness({ plugins = { amazonmusic: plugin() }, status = async () => ({ signedIn: false, cdm: true }), blocked = false, start = 1_000_000 } = {}) {
-  const calls = { status: [], consent: [], signingIn: [], closed: 0, signedIn: [], toast: [] };
+  const calls = { status: [], consent: [], signingIn: [], closed: 0, signedIn: [], signedOut: [], toast: [] };
   let now = start;
   const flow = createPluginSignInFlow({
     getPlugin: (id) => plugins[id] || null,
@@ -47,6 +47,7 @@ function harness({ plugins = { amazonmusic: plugin() }, status = async () => ({ 
     closeDialog: () => { calls.closed += 1; },
     backgroundBlocked: () => (typeof blocked === 'function' ? blocked() : blocked),
     onSignedIn: (id) => calls.signedIn.push(id),
+    onSignedOut: (id) => calls.signedOut.push(id),
     showToast: (message, type) => calls.toast.push({ message, type }),
     now: () => now,
     sleep: () => Promise.resolve(),
@@ -313,5 +314,74 @@ describe("the dialog's words (components/plugin-sign-in-dialog.js)", () => {
       title: 'Sign in to Web Player?',
       description: 'Web Player’s sign-in page opens in a new window.',
     });
+  });
+});
+
+// A refused play that ends signed out takes the plug-in out of playback
+// (onSignedOut), so its saved sources are never picked only to be refused
+// again; a play with another source asks nothing (ask: false) and moves on.
+describe('a refusal that ends signed out', () => {
+  test('ask: false asks nothing, answers false and reports the plug-in signed out', async () => {
+    const { flow, calls } = harness();
+    await expect(flow.prompt('amazonmusic', { explicit: true, reason: 'not-signed-in', ask: false })).resolves.toBe(false);
+    expect(calls.consent).toHaveLength(0);
+    expect(calls.signedOut).toEqual(['amazonmusic']);
+    expect(calls.status).toEqual(['amazonmusic']); // the status is read: the tile and the map update
+  });
+
+  test('ask: false starts no quiet period: a Play of a track only it has still asks', async () => {
+    const { flow, calls, tick } = harness();
+    await flow.prompt('amazonmusic', { explicit: false, reason: 'not-signed-in', ask: false });
+    const run = flow.prompt('amazonmusic', { explicit: false, reason: 'not-signed-in' });
+    await tick();
+    expect(calls.consent).toHaveLength(1);
+    calls.consent[0].resolve(false);
+    await run;
+  });
+
+  test('ask: false still takes the hiccup rule\'s quiet retry', async () => {
+    const amazon = plugin({ signInPromptDecision: () => ({ prompt: false, streak: { firstAt: 1, lastAt: 1 } }) });
+    const { flow, calls } = harness({ plugins: { amazonmusic: amazon }, status: async () => ({ signedIn: true, cdm: true }) });
+    await expect(flow.prompt('amazonmusic', { explicit: true, reason: 'not-signed-in', ask: false })).resolves.toBe(true);
+    expect(calls.signedOut).toEqual([]);
+  });
+
+  test('Not now, or a sign-in window closed early, after a refusal reports it signed out', async () => {
+    const { flow, calls, tick } = harness();
+    const run = flow.prompt('amazonmusic', { explicit: true, reason: 'not-signed-in' });
+    await tick();
+    calls.consent[0].resolve(false);
+    await run;
+    expect(calls.signedOut).toEqual(['amazonmusic']);
+
+    const closedEarly = harness({ plugins: { amazonmusic: plugin({ signIn: jest.fn(async () => ({ signedIn: false })) }) } });
+    const run2 = closedEarly.flow.prompt('amazonmusic', { explicit: true, reason: 'not-signed-in' });
+    await closedEarly.tick();
+    closedEarly.calls.consent[0].resolve(true);
+    await run2;
+    expect(closedEarly.calls.signedOut).toEqual(['amazonmusic']);
+  });
+
+  test('a Sign in the person chose and then put off says nothing new', async () => {
+    const { flow, calls, tick } = harness();
+    const run = flow.prompt('amazonmusic', { explicit: true, reason: 'not-signed-in', forcePrompt: true });
+    await tick();
+    expect(calls.consent[0].refused).toBe(false);
+    calls.consent[0].resolve(false);
+    await run;
+    expect(calls.signedOut).toEqual([]);
+  });
+
+  test('refused: true keeps the refused wording without the hiccup rule (a track only it has)', async () => {
+    const decision = jest.fn(() => ({ prompt: false, streak: { firstAt: 1, lastAt: 1 } }));
+    const { flow, calls, tick } = harness({ plugins: { amazonmusic: plugin({ signInPromptDecision: decision }) } });
+    const run = flow.prompt('amazonmusic', { explicit: true, reason: 'not-signed-in', forcePrompt: true, refused: true });
+    await tick();
+    expect(decision).not.toHaveBeenCalled();
+    expect(calls.consent[0]).toMatchObject({ refused: true });
+    calls.consent[0].resolve(true);
+    await expect(run).resolves.toBe(true);
+    expect(calls.signedIn).toEqual(['amazonmusic']);
+    expect(calls.signedOut).toEqual([]);
   });
 });
