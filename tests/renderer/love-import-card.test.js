@@ -131,7 +131,7 @@ describe('the dialog', () => {
     expect(dialog).toContain('onImport: () => runLoveImport(id),');
     expect(dialog).toContain('importRunning: !!loveImportRunning[id],');
     expect(dialog).toContain('hasImported: !!loveImportCursorRef.current?.[id],');
-    // A plug-in that signs in (Apple Music) is ready when the app knows it's signed in (#1559 step 5).
+    // A plug-in that signs in (Apple Music, Amazon Music) is ready when the app knows it's signed in (#1559 steps 5–6).
     expect(dialog).toContain("state: loveRowState(selectedResolver, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: metaServiceConfigs[id], signedIn }),");
   });
 

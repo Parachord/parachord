@@ -56,7 +56,12 @@ function loveDescriptor(loves) {
   if (loves.contract !== LOVES_CONTRACT) return null;
   if (typeof loves.verb !== 'string' || !loves.verb.trim()) return null;
   if (!NEEDS.has(loves.needs)) return null;
-  return { contract: LOVES_CONTRACT, verb: loves.verb.trim(), needs: loves.needs, canImport: loves.canImport === true };
+  // The service's page size when it lists loves (Amazon replays its page's
+  // own request, firstLimit 50, live-verified): the provider's pageSize, so
+  // the import walk's cap reporting is honest. null when absent or not a
+  // sane number.
+  const pageSize = Number.isInteger(loves.pageSize) && loves.pageSize > 0 && loves.pageSize <= 1000 ? loves.pageSize : null;
+  return { contract: LOVES_CONTRACT, verb: loves.verb.trim(), needs: loves.needs, canImport: loves.canImport === true, pageSize };
 }
 
 // ── The registry ───────────────────────────────────────────────────────────
@@ -150,7 +155,9 @@ function pluginLoveProvider(plugin, { getConfig }) {
   return {
     id: plugin.id,
     fromPlugin: true,
-    pageSize: 500,
+    // The manifest's declared page size (Amazon's page's own request, 50),
+    // else the provider's default.
+    pageSize: (declared && declared.pageSize) || 500,
     isSignedIn: async () => {
       const config = await getConfig();
       return typeof plugin.isSignedIn === 'function' ? !!(await plugin.isSignedIn(config)) : configured(config);
@@ -184,8 +191,9 @@ function pluginLoveProvider(plugin, { getConfig }) {
 // line each says when it can't yet. A built-in provider answers from its
 // scrobbler's config; a plug-in's own, from whether it's set up.
 //   signedIn  what the app knows of a plug-in's own sign-in (app.js
-//             pluginAccounts, #1614: Apple Music's), when it knows: a plug-in
-//             that signs in is ready when signed in, not when set up.
+//             pluginAccounts, #1614: Apple Music's, Amazon Music's), when it
+//             knows: a plug-in that signs in is ready when signed in, not when
+//             set up.
 function loveRowState(service, { name, scrobblerConfig, pluginConfig, needsSetup, signedIn } = {}) {
   const provider = service ? getLoveProvider(service.id) : null;
   const label = name || (service && service.id) || '';

@@ -15,7 +15,7 @@ afterEach(() => LP.clearLoveProviders());
 describe('the manifest field', () => {
   test('a valid one, trimmed, canImport only when true', () => {
     expect(LP.loveDescriptor({ contract: 1, verb: ' Love ', needs: 'mbid', canImport: true }))
-      .toEqual({ contract: 1, verb: 'Love', needs: 'mbid', canImport: true });
+      .toEqual({ contract: 1, verb: 'Love', needs: 'mbid', canImport: true, pageSize: null });
     expect(LP.loveDescriptor({ contract: 1, verb: 'Like', needs: 'serviceId' }).canImport).toBe(false);
   });
 
@@ -30,9 +30,9 @@ describe('the manifest field', () => {
 
   test('Last.fm and ListenBrainz declare it', () => {
     expect(LP.loveDescriptor(require('../../plugins-src/lastfm/manifest.json').loves))
-      .toEqual({ contract: 1, verb: 'Love', needs: 'name', canImport: true });
+      .toEqual({ contract: 1, verb: 'Love', needs: 'name', canImport: true, pageSize: null });
     expect(LP.loveDescriptor(require('../../plugins-src/listenbrainz/manifest.json').loves))
-      .toEqual({ contract: 1, verb: 'Love', needs: 'mbid', canImport: true });
+      .toEqual({ contract: 1, verb: 'Love', needs: 'mbid', canImport: true, pageSize: null });
     // Libre.fm scrobbles but has no loves.
     expect(require('../../plugins-src/librefm/manifest.json').loves).toBeUndefined();
   });
@@ -55,7 +55,7 @@ describe('which plug-ins are love providers', () => {
 
   test('a plug-in installed before the field ships still loves, through the provider\'s own description', () => {
     LP.registerLoveProvider(provider('lastfm', { getLovedPage: async () => ({ items: [], next: null }), defaultLoves: { contract: 1, verb: 'Love', needs: 'name', canImport: true } }));
-    expect(LP.lovesOf({ id: 'lastfm', capabilities: { lovedTracks: true } })).toEqual({ contract: 1, verb: 'Love', needs: 'name', canImport: true });
+    expect(LP.lovesOf({ id: 'lastfm', capabilities: { lovedTracks: true } })).toEqual({ contract: 1, verb: 'Love', needs: 'name', canImport: true, pageSize: null });
     // Without lovedTracks, and without a provider, nothing.
     expect(LP.lovesOf({ id: 'lastfm', capabilities: {} })).toBeNull();
     expect(LP.lovesOf({ id: 'other', capabilities: { lovedTracks: true } })).toBeNull();
@@ -244,6 +244,52 @@ describe('a plug-in\'s own loves (#1559 step 3)', () => {
   test('its rows read set up from its own isConfigured', () => {
     expect(LP.loveRowState(plugin(), { name: 'My Server', pluginConfig: { serverUrl: 'x' } })).toMatchObject({ signedIn: true, importReady: true });
     expect(LP.loveRowState(plugin(), { name: 'My Server', pluginConfig: {} })).toMatchObject({ signedIn: false, importReady: false, signedOutHint: 'Set up My Server first' });
+  });
+
+  test('the manifest\'s pageSize is the provider\'s; absent or absurd means 500', () => {
+    const sized = LP.loveProviderFor(plugin({ loves: { contract: 1, verb: 'Love', needs: 'serviceId', canImport: true, pageSize: 50 } }), { getConfig: async () => ({}) });
+    expect(sized.pageSize).toBe(50);
+    expect(LP.loveProviderFor(plugin(), { getConfig: async () => ({}) }).pageSize).toBe(500);
+    expect(LP.loveDescriptor({ contract: 1, verb: 'Love', needs: 'name', canImport: true, pageSize: 'many' }).pageSize).toBeNull();
+    expect(LP.loveDescriptor({ contract: 1, verb: 'Love', needs: 'name', canImport: true, pageSize: 9999 }).pageSize).toBeNull();
+  });
+});
+
+describe('a plug-in that signs in itself (its own isSignedIn — Amazon Music)', () => {
+  const sessionPlugin = (over = {}) => ({
+    id: 'amazonmusic',
+    loves: { contract: 1, verb: 'Like', needs: 'serviceId', canImport: true },
+    isSignedIn: jest.fn(async () => true),
+    loveTrack: jest.fn(async () => ({ ok: true })),
+    getLovedPage: jest.fn(async () => ({ items: [], next: null })),
+    ...over,
+  });
+
+  test('its sign-in is its own isSignedIn, not its config (it has none that says)', async () => {
+    const p = sessionPlugin({ isSignedIn: jest.fn(async () => false) });
+    const provider = LP.loveProviderFor(p, { getConfig: async () => ({}) });
+    await expect(provider.isSignedIn()).resolves.toBe(false);
+    expect(p.isSignedIn).toHaveBeenCalledWith({});
+    const signedIn = LP.loveProviderFor(sessionPlugin(), { getConfig: async () => ({}) });
+    await expect(signedIn.isSignedIn()).resolves.toBe(true);
+    // Whose loves: its own account, never a config username (Amazon's list is
+    // the session's own — there is no public by-username list).
+    await expect(signedIn.importAccount()).resolves.toBe('amazonmusic');
+  });
+
+  test('a plug-in without isSignedIn falls back to configured (Subsonic)', async () => {
+    const p = sessionPlugin({ isSignedIn: undefined, isConfigured: (c) => !!(c && c.ready) });
+    const provider = LP.loveProviderFor(p, { getConfig: async () => ({ ready: true }) });
+    await expect(provider.isSignedIn()).resolves.toBe(true);
+    const providerOff = LP.loveProviderFor(p, { getConfig: async () => ({}) });
+    await expect(providerOff.isSignedIn()).resolves.toBe(false);
+  });
+
+  test('its rows read the sign-in the app knows: signed in means the import can read', () => {
+    expect(LP.loveRowState(sessionPlugin(), { name: 'Amazon Music', signedIn: true }))
+      .toMatchObject({ signedIn: true, importReady: true });
+    expect(LP.loveRowState(sessionPlugin(), { name: 'Amazon Music', signedIn: false }))
+      .toMatchObject({ signedIn: false, importReady: false, signedOutHint: 'Sign in to Amazon Music first' });
   });
 });
 

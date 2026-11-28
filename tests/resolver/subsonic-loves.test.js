@@ -44,9 +44,9 @@ afterEach(() => {
 describe('the manifest', () => {
   test('declares loves: by its own id, and it can list them', () => {
     expect(axe.capabilities.lovedTracks).toBe(true);
-    expect(LP.loveDescriptor(axe.loves)).toEqual({ contract: 1, verb: 'Love', needs: 'serviceId', canImport: true });
+    expect(LP.loveDescriptor(axe.loves)).toEqual({ contract: 1, verb: 'Love', needs: 'serviceId', canImport: true, pageSize: null });
     expect(subsonic.loves).toEqual(axe.loves);
-    expect(LP.lovesOf(subsonic)).toEqual({ contract: 1, verb: 'Love', needs: 'serviceId', canImport: true });
+    expect(LP.lovesOf(subsonic)).toEqual({ contract: 1, verb: 'Love', needs: 'serviceId', canImport: true, pageSize: null });
   });
 });
 

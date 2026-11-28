@@ -2,7 +2,7 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.24.3",
+    "version": "1.25.0",
     "minAppVersion": {
       "desktop": "0.9.14",
       "android": "0.9.13",
@@ -26,8 +26,10 @@
     "artistImage": true,
     "widevine": true,
     "recommendations": true,
-    "status": true
+    "status": true,
+    "lovedTracks": true
   },
+  "loves": { "contract": 1, "verb": "Like", "needs": "serviceId", "canImport": true, "pageSize": 50 },
   "urlPatterns": [
     "music.amazon.com/playlists/*",
     "music.amazon.com/my/playlists/*",
