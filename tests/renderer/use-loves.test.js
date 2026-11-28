@@ -43,7 +43,7 @@ const EXPECTED_KEYS = destructureKeysFrom(appSrc, CLOSE_MARKER);
 
 const BRIDGES = ['showToastRef', 'showConfirmDialogRef', 'saveCollectionRef'];
 const ARGS = ['collectionDataRef', 'collectionLoadingRef', 'setCollectionData', 'metaServicesRef',
-  'loadedResolversRef', 'getResolverConfigRef',
+  'loadedResolversRef', 'getResolverConfigRef', 'resolverSyncSettingsRef',
   'metaServiceConfigsRef', 'scrobblerConfigsRef', 'showSidebarBadge', ...BRIDGES];
 
 // ---------------------------------------------------------------------------
@@ -508,5 +508,56 @@ describe('a plug-in\'s own loves', () => {
     await h.out.runLoveImport('myserver');
     expect(inputs.showToastRef.current).toHaveBeenCalledWith('Set up My Server first', 'error');
     expect(plugin.getLovedPage).not.toHaveBeenCalled();
+  });
+});
+
+// Loves in sync (#1445): a service paused from the Sync menu gets no love
+// pushes and no Send; it isn't pending, and the import doesn't offer it.
+describe('a service paused with its sync', () => {
+  beforeEach(() => setPluginLookup((id) => ({ lastfm: { name: 'Last.fm' }, listenbrainz: { name: 'ListenBrainz' } }[id] || null)));
+  const paused = (settings) => {
+    const s = setup();
+    s.inputs.resolverSyncSettingsRef = { current: settings };
+    return { ...s, h: harness(s.inputs) };
+  };
+
+  test('gets no push, and the love isn\'t queued for it', async () => {
+    const { listenbrainzScrobbler, lastfmScrobbler } = stubWindow();
+    const { h } = paused({ listenbrainz: { enabled: false } });
+    await h.out.setLovePushEnabled('listenbrainz', true);
+    await h.out.setLovePushEnabled('lastfm', true);
+    h.runEffects();
+    await h.out.pushLoveToScrobblers(track('a'), { justAdded: true });
+    expect(listenbrainzScrobbler.loveTrack).not.toHaveBeenCalled();
+    expect(lastfmScrobbler.loveTrack).toHaveBeenCalledTimes(1); // the other service still gets it
+    expect(h.out.loveRetryQueueRef.current.has('a')).toBe(false);
+  });
+
+  test('Send says it\'s paused and sends nothing', async () => {
+    const { listenbrainzScrobbler } = stubWindow();
+    const { h, inputs } = paused({ listenbrainz: { enabled: false } });
+    await h.out.runLoveBackfill('listenbrainz');
+    expect(listenbrainzScrobbler.loveTrack).not.toHaveBeenCalled();
+    expect(inputs.showToastRef.current).toHaveBeenCalledWith('ListenBrainz sync is paused. Turn it on in the Collection’s Sync menu to send your loves.');
+  });
+
+  test('a sync removed (stopped) or never set up pauses nothing', async () => {
+    const { listenbrainzScrobbler } = stubWindow();
+    const { h } = paused({ listenbrainz: { enabled: false, stopped: true } });
+    await h.out.setLovePushEnabled('listenbrainz', true);
+    h.runEffects();
+    await h.out.pushLoveToScrobblers(track('a'), { justAdded: true });
+    expect(listenbrainzScrobbler.loveTrack).toHaveBeenCalledTimes(1);
+  });
+
+  test('the import doesn\'t offer to love on a paused service', async () => {
+    stubWindow();
+    const { h, inputs } = paused({ lastfm: { enabled: false } });
+    inputs.metaServiceConfigsRef.current = { listenbrainz: { username: 'someone' } };
+    await h.out.setLovePushEnabled('lastfm', true);
+    h.runEffects();
+    global.window.listenbrainzScrobbler.getLovedTracksPage = jest.fn(async () => ({ feedback: [], total_count: 0 }));
+    await h.out.runLoveImport('listenbrainz');
+    expect(inputs.showConfirmDialogRef.current).not.toHaveBeenCalled();
   });
 });

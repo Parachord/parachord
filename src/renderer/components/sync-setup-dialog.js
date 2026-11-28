@@ -14,16 +14,23 @@ const { FilterChips } = require('./filter-chips');
 const { Modal } = require('./modal');
 const { ProgressBar } = require('./progress-bar');
 const { Button } = require('./button');
-const { Checkbox } = require('./fields');
+const { Checkbox, SettingRow, Switch } = require('./fields');
+const { lovesPausedBySync } = require('../lib/love-providers');
 
 const SYNC_SETUP_DIALOG_HANDLERS = [
+  'setLovePushEnabled',
   'setProviderSyncEnabled',
   'startSync',
 ];
 
+// syncDialogLoves: loves for a service that also syncs a library (#1445,
+// app.js): { [id]: { name, words, signedIn, pushOn, signedOutHint } }, from
+// lib/love-providers.js loveSyncRows.
 const SyncSetupDialog = React.memo(function SyncSetupDialog(props) {
   const {
     resolverSyncSettings,
+    syncDialogLoves,
+    setLovePushEnabled,
     setProviderSyncEnabled,
     setSyncSetupModal,
     startSync,
@@ -133,6 +140,29 @@ React.createElement('div', {
               );
             })()
           ),
+
+          // Loved tracks (#1445): the service's "Push loves to X", the same
+          // setting as in its plug-in settings. It applies at once (it isn't
+          // part of what Start sync saves), and a paused sync pauses it too.
+          syncSetupModal.step === 'options' && syncDialogLoves && syncDialogLoves[syncSetupModal.providerId] && (() => {
+            const loves = syncDialogLoves[syncSetupModal.providerId];
+            const pausedSync = lovesPausedBySync(resolverSyncSettings[syncSetupModal.providerId]);
+            const noun = loves.words.tracksNoun;
+            const hint = !loves.signedIn ? loves.signedOutHint
+              : pausedSync ? `Paused with ${loves.name} sync`
+              : `${loves.words.verb} it on ${loves.name} when you love it here`;
+            return React.createElement('div', {
+              'data-section': 'sync-loves',
+              style: { marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }
+            },
+              React.createElement(SettingRow, { label: noun.charAt(0).toUpperCase() + noun.slice(1), hint, style: { padding: 0 } },
+                React.createElement(Switch, {
+                  checked: loves.signedIn && loves.pushOn,
+                  disabled: !loves.signedIn,
+                  onToggle: (v) => setLovePushEnabled(syncSetupModal.providerId, v),
+                  'aria-label': `Push ${loves.words.plural} to ${loves.name}`,
+                })));
+          })(),
 
           // Playlists step
           syncSetupModal.step === 'playlists' && React.createElement('div', {

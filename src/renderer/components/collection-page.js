@@ -54,9 +54,11 @@ const COLLECTION_PAGE_HANDLERS = [
   'isOnAir',
   'navigateToFriend',
   'openChartsAlbum',
+  'openPluginSettings',
   'openSyncSetupModal',
   'playArtistTopTracks',
   'playListenerTopTracks',
+  'setLovePushEnabled',
   'setProviderSyncEnabled',
   'setQueueWithContext',
   'syncFriendsFromServices',
@@ -119,6 +121,9 @@ const CollectionPage = React.memo(function CollectionPage(props) {
     resolverSyncSettings,
     syncPausedUntil,
     syncSignedOut,
+    syncMenuLoveRows,
+    openPluginSettings,
+    setLovePushEnabled,
     setProviderSyncEnabled,
     setAddFriendModalOpen,
     setAddToPlaylistPanel,
@@ -253,6 +258,27 @@ React.createElement('div', { className: 'ml-auto' },
                       checked: !!resolverSyncSettings[pid]?.enabled && !syncSignedOut?.[pid],
                       label: `Sync ${config.name}`,
                       onChange: (next) => setProviderSyncEnabled(pid, next),
+                    },
+                  });
+                }
+                // Loves-only rows (#1445): a service that syncs your loves but
+                // has no library sync (Last.fm, a server's stars). The switch is
+                // its "Push loves to X", the same setting as in its plug-in
+                // settings; the row opens those settings. Signed out (or not set
+                // up) it reads off and opens them instead, the saved choice kept.
+                const loveRows = Array.isArray(syncMenuLoveRows) ? syncMenuLoveRows : [];
+                if (loveRows.length > 0) items.push({ separator: true, key: 'sep-loves' });
+                for (const row of loveRows) {
+                  items.push({
+                    key: `loves-${row.id}`,
+                    label: `${row.name} ${row.words.plural}`,
+                    icon: tile(row.color || 'var(--accent-fill)', React.createElement(ResolverIcon, { resolverId: row.id, size: 16, fill: 'var(--on-accent)' })),
+                    onSelect: () => openPluginSettings(row.id),
+                    trailing: !row.signedIn && React.createElement('span', { style: { fontSize: '11px', opacity: 0.7 } }, row.offLabel),
+                    toggle: {
+                      checked: row.signedIn && row.pushOn,
+                      label: `Push ${row.words.plural} to ${row.name}`,
+                      onChange: (next) => (row.signedIn ? setLovePushEnabled(row.id, next) : openPluginSettings(row.id)),
                     },
                   });
                 }

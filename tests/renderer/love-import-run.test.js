@@ -367,7 +367,8 @@ describe('wiring (source markers)', () => {
     // Connected, not just toggled.
     expect(app).toContain('otherConnected = await providerOf(id).isSignedIn();'); // signed in, not scrobbling-on
     // Every other provider with push on is offered (#1559), named in one line.
-    expect(app).toContain("if (id === service || !scrobblerLovePushEnabledRef.current?.[id]) continue;");
+    // A service paused with its sync isn't offered either (#1445).
+    expect(app).toContain("if (id === service || !scrobblerLovePushEnabledRef.current?.[id] || pausedBySync(id)) continue;");
     expect(app).toContain('otherLabel = andList(otherIds.map((id) => pluginName(id)));');
   });
 
