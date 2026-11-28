@@ -33,7 +33,7 @@ describe('isSignedIn ignores the scrobbling switch; isEnabled does not', () => {
 });
 
 describe('app.js', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const app = require('../helpers/renderer-source').appWithPages();
   test('every loved-tracks path asks isSignedIn, never isEnabled', () => {
     // Every path that writes loves (the live push for each service, the
     // backfill, the import's cross-service check). The import's own read

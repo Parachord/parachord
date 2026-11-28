@@ -144,7 +144,7 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
   // Extracted state-domain hooks whose ObjectPattern destructures are
   // state-classified (see below). Review nit: the set is the allowlist;
   // adding a hook here is an explicit step in its extraction PR.
-  const EXTRACTED_STATE_DOMAIN_HOOKS = new Set(['useVolume', 'usePlaybackQueue', 'usePlaybackEngine', 'useLocalFiles']);
+  const EXTRACTED_STATE_DOMAIN_HOOKS = new Set(['useVolume', 'usePlaybackQueue', 'usePlaybackEngine', 'useLocalFiles', 'useLoves']);
 
   // How a value prop's variable is declared, as far as identity goes.
   const stability = (variable) => {

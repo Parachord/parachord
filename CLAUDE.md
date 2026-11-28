@@ -24,7 +24,7 @@ Subsystem detail lives in `docs/architecture/`, moved there verbatim from this f
 | Now playing: Discord Rich Presence, MPRIS, `navigator.mediaSession` | [now-playing.md](docs/architecture/now-playing.md) | `discord-presence*.js`, `main-process/ipc/discord-presence.js`, `mpris-player.js` |
 | Widevine / castlabs Electron, VMP signing; the local server port (OAuth callbacks, `/protocol`) | [platform.md](docs/architecture/platform.md) | `main.js`, `scripts/vmp-sign.js`, `main-process/auth-port.js` |
 | Album art | [album-art.md](docs/architecture/album-art.md) | `getAlbumArt` in `src/renderer/app.js`, `album-art-catalog.js`, `src/renderer/lib/broken-art.js` |
-| Playlist sync (Spotify, Apple Music, ListenBrainz), mirrors, hosted XSPF, loved tracks | [sync.md](docs/architecture/sync.md) | `main-process/ipc/sync-*.js`, `main-process/sync-links.js`, `sync-engine/`, `sync-providers/` |
+| Playlist sync (Spotify, Apple Music, ListenBrainz), mirrors, hosted XSPF, loved tracks | [sync.md](docs/architecture/sync.md) | `main-process/ipc/sync-*.js`, `main-process/sync-links.js`, `sync-engine/`, `sync-providers/`, `src/renderer/hooks/use-loves.js` |
 | What the Android client must match (sync, protocol handlers) | [android-parity.md](docs/architecture/android-parity.md) | (the parachord-mobile repo) |
 | Friend sync | [friends.md](docs/architecture/friends.md) | friend sync in `src/renderer/app.js` |
 | Local files library, and local files in the Collection | [local-files.md](docs/architecture/local-files.md) | `local-files/`, `main-process/ipc/local-files.js`, `src/renderer/hooks/use-local-files.js`, `src/renderer/lib/local-albums.js` |

@@ -319,31 +319,31 @@ describe('an MBID tombstone (the kind a mark-stored MBID writes on removal)', ()
   test('the summary counts merged loves under "already in your collection"', () => {
     const fs = require('fs');
     const path = require('path');
-    const app = fs.readFileSync(path.join(__dirname, '../..', 'src/renderer/app.js'), 'utf8');
+    const app = require('../helpers/renderer-source').appWithPages();
     expect(app).toContain('const matched = matchedLoves + plan1.merged + plan2.merged;');
   });
 });
 
 describe('wiring (source markers)', () => {
-  const app = read('src/renderer/app.js');
+  const app = require('../helpers/renderer-source').appWithPages();
 
   test('the import never routes through the live add or push paths (review focus 3)', () => {
-    const start = app.indexOf('const runLoveImport = useCallback');
-    const end = app.indexOf('// Remove track from collection', start);
+    const start = app.indexOf('const runLoveImport = React.useCallback');
+    const end = app.indexOf('\n  return {\n    scrobblerLovePushEnabled', start);
     const body = app.slice(start, end);
     expect(body).not.toContain('addTrackToCollection(');
     expect(body).not.toContain('pushLoveToScrobblers(');
   });
 
   test('the cross-service push goes through the restricted backfill, confirmed adds only, never unhandled', () => {
-    const start = app.indexOf('const runLoveImport = useCallback');
-    const end = app.indexOf('// Remove track from collection', start);
+    const start = app.indexOf('const runLoveImport = React.useCallback');
+    const end = app.indexOf('\n  return {\n    scrobblerLovePushEnabled', start);
     const body = app.slice(start, end);
     expect(body).toContain('runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch(');
   });
 
   test('runLoveBackfill filters by onlyIds when given', () => {
-    expect(app).toContain("const runLoveBackfill = useCallback(async (service, { onlyIds } = {}) => {");
+    expect(app).toContain("const runLoveBackfill = React.useCallback(async (service, { onlyIds } = {}) => {");
     expect(app).toContain('(!onlyIds || onlyIds.has(t.id))');
   });
 
@@ -368,7 +368,7 @@ describe('wiring (source markers)', () => {
   });
 
   test('the import needs only a username: the scrobbling sign-in\'s, else the account\'s (2026-11-23)', () => {
-    const start = app.indexOf('const runLoveImport = useCallback(');
+    const start = app.indexOf('const runLoveImport = React.useCallback(');
     const body = app.slice(start, app.indexOf('const fetchPage =', start) + 400);
     expect(body).toContain('const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;');
     expect(body).toContain('Add your ${label} username first');
@@ -454,7 +454,7 @@ describe('wiring (source markers)', () => {
   });
 
   test('the running flag is taken synchronously, before the first await (a fast double click)', () => {
-    const runStart = app.indexOf('const runLoveImport = useCallback');
+    const runStart = app.indexOf('const runLoveImport = React.useCallback');
     const tryAt = app.indexOf('try {', runStart);
     const flagAt = app.indexOf('loveImportRunningRef.current = { ...loveImportRunningRef.current, [service]: true };', runStart);
     expect(tryAt).toBeGreaterThan(-1);
@@ -467,10 +467,10 @@ describe('wiring (source markers)', () => {
   });
 
   test('the love-push re-check drops gone tracks from the retry queue (unique to pushLoveToScrobblers, not the backfill walk)', () => {
-    const pushStart = app.indexOf('const pushLoveToScrobblers = useCallback');
-    const pushEnd = app.indexOf('const markLovePushed = useCallback', pushStart);
+    const pushStart = app.indexOf('const pushLoveToScrobblers = React.useCallback');
+    const pushEnd = app.indexOf('const markLovePushed = React.useCallback', pushStart);
     const pushBody = app.slice(pushStart, pushEnd);
-    expect(pushBody).toContain("pushLoveToScrobblers = useCallback(async (track, { justAdded = false } = {}) => {");
+    expect(pushBody).toContain("pushLoveToScrobblers = React.useCallback(async (track, { justAdded = false } = {}) => {");
     expect(pushBody).toContain('removed from the collection since the love was queued');
     expect(pushBody).toContain('loveRetryQueueRef.current.delete(track.id);');
   });
