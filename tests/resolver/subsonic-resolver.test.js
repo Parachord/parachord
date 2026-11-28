@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.3.8');
+    expect(axe.manifest.version).toBe('0.3.9');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
@@ -122,7 +122,7 @@ describe('subsonic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'getStreamUrl', 'init', 'isConfigured', 'lookupAlbum', 'play', 'resolve', 'search', 'searchAlbums', 'searchArtistImage'].sort()
+      ['cleanup', 'getLovedPage', 'getStreamUrl', 'init', 'isConfigured', 'lookupAlbum', 'loveTrack', 'play', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'serverHelpers'].sort()
     );
   });
 });

@@ -830,6 +830,106 @@ module.exports = {
     );
     return false;
   },
+  // The URL builders the search and stream functions share (each function
+  // is isolated, so they live on window.__subsonicHelpers, built the first
+  // time getStreamUrl runs). One reader for the functions that call the
+  // server's other endpoints: scrobble, star, getStarred2.
+  serverHelpers: async function (config) {
+    if (!window.__subsonicHelpers) await this.getStreamUrl({ subsonicId: 'init' }, config);
+    return window.__subsonicHelpers || null;
+  },
+  // Loves (Parachord/parachord#1559, #1658): a heart in Parachord stars the
+  // song on your server when "Push loves to Subsonic" is on, and Import adds
+  // your starred songs to the Collection, each playable from the server. The
+  // manifest's `loves` field says the song is identified by its id on the
+  // server (needs: 'serviceId'), so the host finds it first: the track
+  // arrives with its source here in track.sources[this plug-in]. Never
+  // unstar: Parachord never removes a love on any service. Songs only, not
+  // starred albums or artists.
+  loveTrack: async function (track, config) {
+    var pluginId = this.id || 'subsonic';
+    var sources = track && track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources) ? track.sources : null;
+    var source = sources ? sources[pluginId] : null;
+    var songId = (source && source.subsonicId) || null;
+    if (!songId) return { ok: false, reason: 'no-match' };
+    var h = await this.serverHelpers(config);
+    // A source found on another server (the address changed since) names a
+    // different song here: no match, never a guess.
+    var server = h ? h.normalizeBase(config && config.serverUrl) : null;
+    if (source.subsonicServer && server && source.subsonicServer !== server) return { ok: false, reason: 'no-match' };
+    var url = h ? h.apiUrl(config, 'star', 'f=json&id=' + encodeURIComponent(songId)) : null;
+    if (!url) throw new Error('Subsonic star failed: no server address');
+    var resp;
+    try {
+      resp = await fetch(url);
+    } catch (_e) {
+      throw new Error('Subsonic star failed: the server could not be reached');
+    }
+    if (!resp || !resp.ok) throw new Error('Subsonic star failed: HTTP ' + (resp ? resp.status : 0));
+    var data = null;
+    try {
+      data = await resp.json();
+    } catch (_e) {}
+    var sub = data && data['subsonic-response'];
+    if (!sub) throw new Error('Subsonic star failed: not a Subsonic response');
+    if (sub.status !== 'ok') {
+      throw new Error(
+        'Subsonic star failed: ' +
+          (sub.error ? 'error ' + sub.error.code + (sub.error.message ? ' ' + sub.error.message : '') : 'status ' + sub.status),
+      );
+    }
+    return { ok: true, ref: String(songId) };
+  },
+  // Your starred songs (getStarred2), newest first, in one page: the server
+  // answers them all at once. Each carries its source on this server, built
+  // like a search result (no stream URL: that bakes in the token), so an
+  // imported love plays from the server straight away. `account` isn't
+  // needed: the server answers for the signed-in user.
+  getLovedPage: async function (args, config) {
+    if (!(config && config.serverUrl && config.username && config.password)) throw new Error('Not connected');
+    var h = await this.serverHelpers(config);
+    var url = h ? h.apiUrl(config, 'getStarred2', 'f=json') : null;
+    if (!url) throw new Error('Not connected');
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error('Subsonic starred list failed: HTTP ' + resp.status);
+    var data = await resp.json();
+    var sub = data && data['subsonic-response'];
+    if (!sub || sub.status !== 'ok') {
+      var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'not a Subsonic response';
+      throw new Error('Subsonic starred list failed: ' + apiErr);
+    }
+    var songs = (sub.starred2 && sub.starred2.song) || [];
+    var server = h.normalizeBase(config.serverUrl);
+    var items = [];
+    for (var i = 0; i < songs.length; i++) {
+      var s = songs[i];
+      if (!s || !s.id || !s.title) continue;
+      var starredAt = s.starred ? Date.parse(s.starred) : NaN;
+      var source = {
+        id: 'subsonic-' + s.id,
+        title: s.title,
+        artist: s.artist || 'Unknown Artist',
+        album: s.album || '',
+        duration: s.duration || 0,
+        subsonicId: s.id,
+        subsonicServer: server,
+        genre: s.genre || null,
+        year: s.year || null,
+        trackNumber: s.track || null,
+      };
+      items.push({
+        artist: s.artist || '',
+        title: s.title,
+        album: s.album || '',
+        lovedAt: isNaN(starredAt) ? null : Math.floor(starredAt / 1000),
+        source: source,
+      });
+    }
+    items.sort(function (a, b) {
+      return (b.lovedAt || 0) - (a.lovedAt || 0);
+    });
+    return { items: items, total: items.length, returned: items.length, next: null };
+  },
   // The host asks this before flagging the resolver as "needs configuration".
   isConfigured: function (config) {
     return !!(config && config.serverUrl && config.username && config.password);
@@ -897,8 +997,7 @@ module.exports = {
     var AUTH_CODES = { 40: true, 44: true };
     var PERMANENT_CODES = { 10: true, 20: true, 30: true, 41: true, 42: true, 43: true, 50: true, 60: true, 70: true };
     var report = async function (cfg, songId, submission, timestamp) {
-      if (!window.__subsonicHelpers) await self.getStreamUrl({ subsonicId: 'init' }, cfg);
-      var h = window.__subsonicHelpers;
+      var h = await self.serverHelpers(cfg);
       var extra = 'f=json&id=' + encodeURIComponent(songId) + '&submission=' + (submission ? 'true' : 'false');
       if (submission && typeof timestamp === 'number' && timestamp > 0) extra += '&time=' + Math.floor(timestamp * 1000);
       var url = h ? h.apiUrl(cfg, 'scrobble', extra) : null;

@@ -326,6 +326,12 @@ function planLoveImport(loves, tracks, tombstones, markMbids = null, nowMs = Dat
       addedAt,
     };
     if (isMbid(love.mbid)) row.mbid = love.mbid;
+    // A love that came with its own source on that service (a server's
+    // starred song, #1559 step 3) arrives playable from it. Never a
+    // credential: the provider builds it like a search result.
+    if (love.source && typeof love.source === 'object' && !Array.isArray(love.source) && love.service) {
+      row.sources = { [love.service]: { ...love.source } };
+    }
     add.set(row.id, row);
     if (isMbid(row.mbid)) addedByMbid.set(row.mbid, row);
     if (nameKey) addedByName.set(nameKey, row);

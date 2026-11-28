@@ -40,13 +40,17 @@
 const LoveImport = require('../lib/love-import');
 const { pluginName } = require('../lib/plugin-names');
 const { countOf, andList } = require('../lib/plural');
-const { getLoveProvider, loveProviderIds, lovesOf, lovedPageForImport } = require('../lib/love-providers');
+const { loveProviderFor, loveProviderIds, lovesOf, lovedPageForImport } = require('../lib/love-providers');
 
 function useLoves({
   collectionDataRef,
   collectionLoadingRef,
   setCollectionData,
   metaServicesRef,
+  // The loaded plug-ins (resolvers), and the reader of a plug-in's saved
+  // config: a plug-in that implements loves in its own .axe (#1559 step 3).
+  loadedResolversRef,
+  getResolverConfigRef,
   metaServiceConfigsRef,
   scrobblerConfigsRef,
   showSidebarBadge,
@@ -117,9 +121,9 @@ function useLoves({
 
     // Every love provider whose "Push loves to X" is on and that doesn't have
     // this love yet (lib/love-providers.js, #1559): one path for all of them.
-    for (const serviceId of loveProviderIds(metaServicesRef.current)) {
+    for (const serviceId of loveProviderIds(loveServices())) {
       if (!enabled[serviceId] || pushed[serviceId]) continue;
-      const provider = getLoveProvider(serviceId);
+      const provider = providerOf(serviceId);
       const label = pluginName(serviceId);
       tasks.push((async () => {
         try {
@@ -151,7 +155,7 @@ function useLoves({
     // parachord (Starting Line incident, 2026-06).
     const post = lovePushedKeysRef.current[track.id] || {};
     const enabledNow = scrobblerLovePushEnabledRef.current || {};
-    const pendingIds = loveProviderIds(metaServicesRef.current).filter((id) => !!enabledNow[id] && !post[id]);
+    const pendingIds = loveProviderIds(loveServices()).filter((id) => !!enabledNow[id] && !post[id]);
     if (pendingIds.length > 0) {
       const existing = loveRetryQueueRef.current.get(track.id);
       const attempts = (existing?.attempts || 0) + 1;
@@ -218,6 +222,15 @@ function useLoves({
   const providerConfig = (serviceId) =>
     scrobblerConfigsRef.current?.[serviceId] || metaServiceConfigsRef.current?.[serviceId] || {};
 
+  // Every plug-in that could be a love provider: the meta-services (Last.fm,
+  // ListenBrainz) and the loaded plug-ins (a server's stars, #1559 step 3).
+  const loveServices = () => [...(metaServicesRef.current || []), ...((loadedResolversRef && loadedResolversRef.current) || [])];
+  // The provider for an id: registered, or the plug-in's own methods with
+  // its saved config.
+  const providerOf = (serviceId) => loveProviderFor(loveServices().find((s) => s && s.id === serviceId), {
+    getConfig: async () => ((getResolverConfigRef && getResolverConfigRef.current) ? (await getResolverConfigRef.current(serviceId)) || {} : {}),
+  });
+
   // markLovePushed(trackId, service, mbid): the entry is the push timestamp,
   // or { at, mbid } when the push resolved a recording MBID (ListenBrainz) —
   // storing it means a later removal can tombstone the exact recording the
@@ -249,7 +262,7 @@ function useLoves({
   // Is this plug-in a love provider (lib/love-providers.js, #1559)? What it
   // declares (its manifest's `loves`), from the loaded meta-services; null
   // when it isn't one.
-  const lovesFor = (service) => lovesOf((metaServicesRef.current || []).find(s => s.id === service));
+  const lovesFor = (service) => lovesOf(loveServices().find(s => s && s.id === service));
 
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
@@ -264,7 +277,7 @@ function useLoves({
     // A love provider (lib/love-providers.js, #1559; was two hard-coded names).
     const loves = lovesFor(service);
     if (!loves) return;
-    const provider = getLoveProvider(service);
+    const provider = providerOf(service);
     // Signed in is enough: the scrobbling switch doesn't stop loved tracks.
     if (!(await provider.isSignedIn())) { showToast(`Sign in to ${pluginName(service)} to sync loved tracks`); return; }
 
@@ -340,7 +353,7 @@ function useLoves({
   const runLoveImport = React.useCallback(async (service) => {
     // A love provider that can list your loves (lib/love-providers.js, #1559).
     const declared = lovesFor(service);
-    const provider = getLoveProvider(service);
+    const provider = providerOf(service);
     if (!declared || !declared.canImport || typeof provider.getLovedPage !== 'function') return;
     if (loveImportRunningRef.current[service]) return;
     const label = pluginName(service);
@@ -365,8 +378,10 @@ function useLoves({
       // account's. Both services publish a user's loves by username, so the
       // import needs no sign-in (it showed only while scrobbling was signed
       // in, and Last.fm's import went missing with it, 2026-11-23).
-      const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;
-      if (!username) { showToast(`Add your ${label} username first`, 'error'); return; }
+      // The provider says whose (#1559): Last.fm and ListenBrainz, the
+      // username; a plug-in's own, its configured account.
+      const username = await provider.importAccount({ scrobblerConfig: scrobblerConfigsRef.current?.[service], pluginConfig: metaServiceConfigsRef.current?.[service] });
+      if (!username) { showToast(provider.importAccountHint(label), 'error'); return; }
 
       // Cross-service propagation, confirmed up front (issue #1071 rule 2):
       // every other love provider whose push is on (#1559: was "the other
@@ -374,10 +389,10 @@ function useLoves({
       // pushes a disconnected service can't make. Cancel (the button or the
       // backdrop) stops the run.
       let crossConfirm = false;
-      for (const id of loveProviderIds(metaServicesRef.current)) {
+      for (const id of loveProviderIds(loveServices())) {
         if (id === service || !scrobblerLovePushEnabledRef.current?.[id]) continue;
         let otherConnected = false;
-        try { otherConnected = await getLoveProvider(id).isSignedIn(); } catch (_e) { otherConnected = false; }
+        try { otherConnected = await providerOf(id).isSignedIn(); } catch (_e) { otherConnected = false; }
         if (otherConnected) otherIds.push(id);
       }
       otherLabel = andList(otherIds.map((id) => pluginName(id)));
@@ -412,7 +427,7 @@ function useLoves({
         onProgress: (done, total) => setProgress(done, total),
       });
       if (error && loves.length === 0 && skipped === 0) {
-        if (error === 'Not connected') showToast(`Add your ${label} username first`, 'error');
+        if (error === 'Not connected') showToast(provider.importAccountHint(label), 'error');
         else showToast(`Couldn't import from ${label}: ${error}`, 'error');
         return;
       }

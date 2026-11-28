@@ -10,7 +10,6 @@ const { FriendMiniPlaybar } = require('./friend-mini-playbar');
 const Icons = require('./icons');
 const { Button } = require('./button');
 const { TextField, SecretField, SettingRow, StackedField, Switch, Checkbox } = require('./fields');
-const { countOf } = require('../lib/plural');
 const { AccountRow } = require('./account-row');
 const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { menuKeyHandler } = require('./card-button');
@@ -251,23 +250,10 @@ const ScrobblerSettingsCard = React.memo(({
   // settings ("Scrobbling", under Last.fm's own account row); by default
   // "<Service> account".
   accountLabel,
-  lovePushEnabled = false,
-  onSetLovePushEnabled = null,
-  onRunBackfill = null,
-  backfillRunning = false,
-  backfillProgress = null,
-  unpushedCount = 0,
-  onRunLoveImport = null,
-  loveImportRunning = false,
-  loveImportProgress = null,
-  // The plug-in declares `lovedTracks` (its manifest): show the love
-  // import, push and backfill. Was a check on two service names.
+  // The plug-in has loves (lib/love-providers.js): the sign-in line says it
+  // pushes them too. The loves rows themselves are the dialog's shared
+  // LovedTracks section (components/plugin-extras.js, #1559 step 3).
   lovedTracks = false,
-  hasImportedLoves = false,
-  // The username the import reads loves for: the scrobbling sign-in's, else
-  // the plug-in account's. Both services publish a user's loves by username,
-  // so the import needs no sign-in; without any username it can't run.
-  loveImportUsername = null,
   // From the plug-in's manifest: where to get a user token (a token
   // sign-in) and where to make an account (a password sign-in).
   tokenUrl = null,
@@ -455,45 +441,7 @@ const ScrobblerSettingsCard = React.memo(({
 
       // Complete Authorization button (fallback for pending token without polling)
       config?.pendingToken && !isPolling && React.createElement(Button, { variant: 'primary', pageColor: 'var(--fill-success)', className: 'w-full', onClick: handleCompleteAuth, disabled: connecting }, connecting ? 'Completing…' : 'Complete authorization')
-    ) : null,
-
-    // Loved tracks (issue #1071; one layout for every plug-in that declares
-    // lovedTracks, signed in or not, 2026-11-23): shared rows, one control
-    // per job. Import needs only a username (both services publish a user's
-    // loves), so it shows signed out too; pushing loves and sending the
-    // backlog need the scrobbling sign-in, so Push reads off and locked
-    // signed out (#1614) and Send shows only signed in. Libre.fm never gets
-    // these (no lovedTracks, no handlers).
-    lovedTracks && (onRunLoveImport || onSetLovePushEnabled) && React.createElement('div', {
-      'data-section': 'loved-tracks', style: { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' },
-    },
-      onRunLoveImport && React.createElement(SettingRow, {
-        label: 'Import loved tracks',
-        hint: loveImportRunning && loveImportProgress
-          ? (loveImportProgress.phase === 'confirm' ? 'Waiting for confirmation…'
-            : loveImportProgress.phase === 'lookup'
-              ? `Looking up names… ${loveImportProgress.done} of ${loveImportProgress.total}`
-              : `Importing… ${loveImportProgress.done} of ${loveImportProgress.total}`)
-          : loveImportUsername ? `Add your ${scrobbler.name} loves to your Collection`
-          : `Add your ${scrobbler.name} username first`,
-      },
-        React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: onRunLoveImport, busy: !!loveImportRunning, disabled: !loveImportUsername },
-          hasImportedLoves ? 'Import new' : 'Import')),
-      onSetLovePushEnabled && React.createElement(SettingRow, {
-        label: `Push loves to ${scrobbler.name}`,
-        hint: isConnected ? `Love it on ${scrobbler.name} when you love it here` : 'Sign in to scrobble first',
-        style: { padding: '12px 0 0' },
-      },
-        React.createElement(Switch, { checked: isConnected && !!lovePushEnabled, disabled: !isConnected, onToggle: (v) => onSetLovePushEnabled(v) })),
-      isConnected && onRunBackfill && unpushedCount > 0 && React.createElement(SettingRow, {
-        label: `Send ${countOf(unpushedCount, 'loved track')} to ${scrobbler.name}`,
-        hint: backfillRunning && backfillProgress
-          ? `Sending… ${backfillProgress.done} of ${backfillProgress.total}`
-          : `Loves from before you turned this on. ${scrobbler.name} dates them today.`,
-        style: { padding: '12px 0 0' },
-      },
-        React.createElement(Button, { variant: 'secondary', size: 'sm', onClick: onRunBackfill, busy: !!backfillRunning }, 'Send'))
-    )
+    ) : null
   );
 });
 
