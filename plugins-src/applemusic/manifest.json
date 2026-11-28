@@ -2,7 +2,7 @@
   "manifest": {
     "id": "applemusic",
     "name": "Apple Music",
-    "version": "1.5.8",
+    "version": "1.5.9",
     "author": "Parachord Team",
     "description": "Search and play Apple Music, and open music.apple.com links.",
     "requirement": "Needs an Apple Music subscription. Sign in with your Apple Account.",
@@ -23,8 +23,11 @@
     "recommendations": true,
     "historyMixes": true,
     "librarySync": true,
-    "systemVolume": true
+    "systemVolume": true,
+    "lovedTracks": true
   },
+  "loves": { "contract": 1, "verb": "Favorite", "needs": "serviceId", "canImport": false },
+  "requires": { "optionalHostBridges": ["musicKit"] },
   "urlPatterns": [
     "music.apple.com/*/album/*/*",
     "music.apple.com/*/song/*/*",

@@ -795,6 +795,42 @@ module.exports = {
     });
     return { artist: { name: found.attributes.name }, releases: releases };
   },
+  // The one place this plug-in reaches the host through the contract
+  // (docs/architecture/plugins.md "The plug-in host contract"): a bridge it
+  // declares in its manifest, or null. `musicKit` is optional: a host
+  // without it (the phones today, an older desktop) leaves loves off.
+  hostBridge: function (name) {
+    return this.host ? this.host[name] || null : null;
+  },
+  // Loves (Parachord/parachord#1559 step 5): a song you love in Parachord is
+  // favourited in Apple Music when "Push favorites to Apple Music" is on.
+  // Apple's API calls it a personal rating of 1 (Love was renamed Favorite in
+  // the Music app); the manifest's `loves` says so with the verb "Favorite".
+  // The song is named by its catalog id (needs: 'serviceId'), so the host
+  // finds it first and hands it in track.sources[this plug-in]. Apple can't
+  // list your favourites by id-less request, so there's no import
+  // (canImport: false). Never a dislike, never a removal.
+  isSignedIn: async function () {
+    var musicKit = this.hostBridge('musicKit');
+    return !!(musicKit && (await musicKit.isSignedIn()));
+  },
+  loveTrack: async function (track, config) {
+    var pluginId = this.id || 'applemusic';
+    var sources = track && track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources) ? track.sources : null;
+    var source = sources ? sources[pluginId] : null;
+    var songId = (source && source.appleMusicId) || null;
+    if (!songId && source && typeof source.id === 'string' && source.id.indexOf('applemusic-') === 0) {
+      songId = source.id.slice('applemusic-'.length);
+    }
+    if (!songId) return { ok: false, reason: 'no-match' };
+    var musicKit = this.hostBridge('musicKit');
+    if (!musicKit || typeof musicKit.favoriteSong !== 'function') {
+      throw new Error('This app can’t favorite songs in Apple Music');
+    }
+    var result = await musicKit.favoriteSong(String(songId));
+    if (result && result.ok === true) return { ok: true, ref: String(songId) };
+    return { ok: false, reason: 'no-match' };
+  },
   init: async function (config) {
     console.log('Apple Music resolver initialized');
     if (config.developerToken && window.getMusicKitWeb) {

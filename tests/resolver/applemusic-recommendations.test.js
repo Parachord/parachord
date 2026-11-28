@@ -137,18 +137,22 @@ describe('Apple Music recommendations (capabilities.recommendations)', () => {
 describe('the host hook (window.appleMusicPersonalRecommendations)', () => {
   const hook = app.slice(app.indexOf('window.appleMusicPersonalRecommendations = async'), app.indexOf('// MusicKit-enabled Apple Music search wrapper'));
 
+  // The request itself is lib/apple-music-api.js's appleMusicUserFetch, shared
+  // with the loves' favorite (#1559 step 5); its token handling is tested
+  // behaviourally in tests/renderer/apple-music-api.test.js.
   test('asks only /v1/me/recommendations, with the developer token and the app\'s user token of record', () => {
-    expect(hook).toContain('const url = `https://api.music.apple.com/v1/me/recommendations?limit=${n}`;');
-    expect(hook).toContain("headers: { Authorization: `Bearer ${developerToken}`, 'Music-User-Token': userToken }");
-    expect(hook).toContain('let userToken = localStorage.getItem(AppleMusicUserToken.APP_TOKEN_KEY) || \'\';');
+    expect(hook).toContain('AppleMusicApi.appleMusicUserFetch(appleMusicApiDeps, `https://api.music.apple.com/v1/me/recommendations?limit=${n}`)');
+    expect(app).toContain('getDeveloperToken: () => getMusicKitDeveloperToken(),');
+    expect(app).toContain('getUserToken: () => localStorage.getItem(AppleMusicUserToken.APP_TOKEN_KEY),');
     // Never a general proxy: no path parameter.
     expect(hook).toMatch(/window\.appleMusicPersonalRecommendations = async \(limit = 30\) =>/);
   });
 
   test('a refusal adopts another stored token Apple accepts once, else throws notReady', () => {
-    expect(hook).toContain('const check = await checkAppleMusicUserToken(developerToken);');
-    expect(hook).toContain("throw notReady('token-refused'");
-    expect(hook).toContain("throw notReady('not-signed-in'");
-    expect(hook).toContain("throw notReady('no-developer-token'");
+    expect(app).toContain('recheckUserToken: (developerToken) => checkAppleMusicUserToken(developerToken),');
+    const lib = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/lib/apple-music-api.js'), 'utf8');
+    expect(lib).toContain("throw notReady('token-refused'");
+    expect(lib).toContain("throw notReady('not-signed-in'");
+    expect(lib).toContain("throw notReady('no-developer-token'");
   });
 });

@@ -200,7 +200,7 @@ const PluginSettingsDialog = React.memo(function PluginSettingsDialog(props) {
       name,
       words: loveWords(loves.verb),
       canImport: loves.canImport,
-      state: loveRowState(selectedResolver, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: metaServiceConfigs[id] }),
+      state: loveRowState(selectedResolver, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: metaServiceConfigs[id], signedIn }),
       pushEnabled: !!scrobblerLovePushEnabled[id],
       onSetPush: (v) => setLovePushEnabled(id, v),
       onImport: () => runLoveImport(id),
