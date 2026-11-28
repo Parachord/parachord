@@ -1284,6 +1284,7 @@ const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId, isPl
 // tombstone/cursor logic per docs/plans/2026-11-06-import-loved-tracks.md;
 // the run (runLoveImport) lives in hooks/use-loves.js.
 const LoveImport = require('./lib/love-import');
+const { registerBuiltInLoveProviders } = require('./lib/love-providers');
 const { loveTombstoneEntries } = LoveImport;
 
 // Generate a unique hash from a string (for deterministic pattern generation)
@@ -8920,6 +8921,11 @@ const Parachord = () => {
           // The built-in pair, and the scrobbler reads its key and secret
           // from window.lastfmKeys from now on (lib/lastfm-key.js).
           window.lastfmKeys?.setBuiltin({ apiKey: config.lastfmApiKey, apiSecret: config.lastfmApiSecret });
+          // Last.fm's and ListenBrainz's loves, as love providers over their
+          // scrobblers (lib/love-providers.js, #1559). Before the init below:
+          // its failed-scrobble retry can take a while, and a heart in the
+          // meantime must still reach them.
+          registerBuiltInLoveProviders(window);
           await window.initializeScrobblers({ ...config, lastfmKeys: window.lastfmKeys });
           console.log('[App] Scrobblers initialized');
           setScrobblersInitialized(true);
@@ -14126,14 +14132,12 @@ ${trackListXml}
     // src/renderer/lib/love-import.js), so a track loved on both services
     // and removed once stays removed from both imports.
     entries.push(...loveTombstoneEntries(track));
-    // A heart-added track's ListenBrainz push resolved a recording MBID it
-    // never wrote on the row; the mark kept it, so the removal tombstones the
-    // exact recording the service holds (the name key can miss when
-    // Parachord's names differ from MusicBrainz's).
-    const pushedMbid = lovePushedKeysRef.current?.[track.id]?.listenbrainz;
-    if (pushedMbid && typeof pushedMbid === 'object' && /^[a-f0-9-]{36}$/i.test(pushedMbid.mbid || '')) {
-      push('listenbrainz', pushedMbid.mbid);
-    }
+    // A heart-added track's push resolved a recording MBID it never wrote
+    // on the row (ListenBrainz's, today); the mark kept it, so the removal
+    // tombstones the exact recording the service holds (the name key can
+    // miss when Parachord's names differ from MusicBrainz's).
+    const pushedMbid = LoveImport.markedMbid(lovePushedKeysRef.current?.[track.id]);
+    if (pushedMbid) push(LoveImport.MBID_TOMBSTONE_BUCKET, pushedMbid);
     return entries;
   }, []);
 

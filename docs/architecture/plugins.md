@@ -295,7 +295,7 @@ To keep a plugin's implementation text ES5-level, flag it with `{ "es5": true }`
 
 ## Authoring a plugin (.axe format)
 
-An `.axe` file is JSON with up to seven top-level keys: `manifest`, `capabilities`, `urlPatterns`, `settings`, `embedPlayer` (only for an embedded-player resolver; see above), `requires` (only for a plugin that needs host bridges; see "Required host bridges" above) and `implementation`. For a bundled plugin you never write that JSON by hand. You write `plugins-src/<id>/manifest.json` (everything except `implementation`) and `plugins-src/<id>/implementation.js` (`module.exports = { search: async function (query, config) { ... }, ... }`), then run `node scripts/build-axes.js`, which serializes each exported function with `String(fn)` into the `.axe`. Because the source is a real module, modern syntax including template literals is fine, except in plugins flagged `es5` (see above). A community plugin installed from a file is the same JSON, however it was produced.
+An `.axe` file is JSON with these top-level keys: `manifest`, `capabilities`, `urlPatterns`, `settings`, `embedPlayer` (only for an embedded-player resolver; see above), `requires` (only for a plugin that needs host bridges; see "Required host bridges" above), `charts` (only for a chart provider; see "Charts" below), `loves` (only for a love provider; see "Loves" below) and `implementation`. For a bundled plugin you never write that JSON by hand. You write `plugins-src/<id>/manifest.json` (everything except `implementation`) and `plugins-src/<id>/implementation.js` (`module.exports = { search: async function (query, config) { ... }, ... }`), then run `node scripts/build-axes.js`, which serializes each exported function with `String(fn)` into the `.axe`. Because the source is a real module, modern syntax including template literals is fine, except in plugins flagged `es5` (see above). A community plugin installed from a file is the same JSON, however it was produced.
 
 ### Manifest
 
@@ -551,6 +551,30 @@ Many services have a tier that can search, browse and sync but can't play a chos
 - **Only where the app understands it.** Check for `window.__parachordNotePlanRefusal` first and fall back to returning `false` without it (older apps and the mobile clients), and declare `manifest.minAppVersion.desktop` as the first desktop release with the hook (see "Minimum app version" above). The refusal shape has a reference since #1356 M9 — the plugin path's `getPlaybackManifest` throws `plan-ineligible` with `planKey` before any manifest request — but the `play()`-method hook check itself still waits for its first user.
 - **A search that can't run on the plan is not-ready, not a miss.** If the service refuses searches on that plan too (Amazon gates its track search), surface it as `notReady` with `code: 'plan-ineligible'`, so nothing is cached as a 30-day `noMatch` and an upgrade searches again; the app never opens a sign-in prompt for it. A service whose search works on every plan needs nothing here.
 - **The app supplies the wording and the plan reading.** A new service is one mapper in `src/renderer/lib/playback-limits.js` (`{ blocked, planKey, label, message, searchesHeldBack }`) fed from wherever the plan is known (the plugin's own `getStatus`, below, or the play refusal itself when the service doesn't report the plan until you play). Mobile mirrors none of this yet.
+
+### Loves (`loves`, optional)
+
+A plug-in whose service has a love signal separate from its library (Last.fm's love, ListenBrainz's feedback, a server's star, Apple's love rating) can take part in Parachord's loves (#1559): a heart in the Collection reaches it when "Push loves to X" is on, "Send N loved tracks to X" sends the backlog, and Import brings its loves into the Collection. A service whose library *is* its loves (Spotify's Liked Songs) doesn't declare it, or every heart would be written twice.
+
+It declares `capabilities.lovedTracks: true` and a **top-level** manifest field, outside `capabilities` because every client reads those as booleans (as with `charts` and `embedPlayer`):
+
+```json
+"loves": { "contract": 1, "verb": "Love", "needs": "mbid", "canImport": true }
+```
+
+- `contract`: the API level. An app that doesn't know it ignores the plug-in's loves.
+- `verb`: the word for the UI ("Love", "Like", "Star"), never a word hard-coded in the app.
+- `needs`: what identifies a track there: `mbid`, `name` (artist and title) or `serviceId` (the service's own id).
+- `canImport`: whether the service can list your loves. Import shows only then.
+
+The provider implements:
+
+- `isSignedIn()`: pushing needs a sign-in; reading loves needs only `account`.
+- `loveTrack(track, config)` → `{ ok: true, ref? }`, or `{ ok: false, reason: 'no-match' }` when it can't identify the track confidently: it never loves a guess. It **throws** on a failed or refused request, so a failure is never read as a success (the push queues a retry). `ref` is what the service stored; a recording MBID there goes on the push mark, so a later removal tombstones that recording.
+- `getLovedPage({ cursor, account }, config)` → `{ items, next, total?, skipped? }`, only when `canImport`. Newest first; `cursor` is null for the first page, then the previous page's `next`, and `next` is null after the last. `account` is whose loves to read. Each item is `{ artist, title, album?, mbid?, lovedAt, source? }`, `lovedAt` in seconds; an item with a recording MBID and no names is looked up by the app; `source` is the item's own source record on that service, never a credential.
+- **No unlove.** Parachord never removes a love on any service.
+
+`src/renderer/lib/love-providers.js` holds the contract (`loveDescriptor`), the registry and Last.fm's and ListenBrainz's providers, which wrap their scrobblers and register at startup; those writes stay inside the app ([scrobbling.md](scrobbling.md)). The push, Send and Import (`src/renderer/hooks/use-loves.js`) ask `loveProviderIds` and never name a service. The push setting stays `scrobbler_love_push_enabled`, keyed by plug-in id. A plug-in implementing the methods in its own `.axe` (Subsonic's stars) is the next step, with the Settings rows moving from the scrobbler card to the shared plug-in parts. Tests: `tests/renderer/love-providers.test.js`, `tests/renderer/use-loves.test.js`.
 
 ### Status and playback limits (`getStatus`, optional)
 

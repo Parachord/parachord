@@ -36,6 +36,21 @@ const isMbid = (m) => typeof m === 'string' && /^[a-f0-9-]{36}$/i.test(m);
 // the removal — a fresh decision they are not (issue #1071 review).
 const LOVE_TOMBSTONE_GRACE_MS = 5 * 60 * 1000;
 
+// The tombstone bucket for a removed track's recording MBID. Named for
+// ListenBrainz, whose sync surface wrote it first, but it is MusicBrainz
+// identity: the import checks it for a love from any service, and a love
+// push that stored an MBID (a provider's `ref`) clears it (#1559).
+const MBID_TOMBSTONE_BUCKET = 'listenbrainz';
+
+// The recording MBID a push mark stored, from any service's entry
+// ({ at, mbid }; a plain timestamp stores none), or null.
+function markedMbid(markEntry) {
+  for (const stamped of Object.values(markEntry || {})) {
+    if (stamped && typeof stamped === 'object' && isMbid(stamped.mbid)) return stamped.mbid;
+  }
+  return null;
+}
+
 // A loved-at timestamp in SECONDS. Last.fm's `date.uts` is a string,
 // ListenBrainz's `created` a number; 0/NaN/negative mean unknown (real
 // accounts always carry a date, but a missing one must not read as epoch).
@@ -196,7 +211,7 @@ function loveTombstoneAt(tombstones, love) {
     return at;
   };
   const name = read('love-import', loveNameKey(love));
-  const mbid = read('listenbrainz', isMbid(love && love.mbid) ? love.mbid : null);
+  const mbid = read(MBID_TOMBSTONE_BUCKET, isMbid(love && love.mbid) ? love.mbid : null);
   if (name == null && mbid == null) return null;
   return Math.max(name == null ? 0 : name, mbid == null ? 0 : mbid);
 }
@@ -342,9 +357,11 @@ function rowMbidIndex(tracks, markMbids = null) {
 // ── The page walk ──────────────────────────────────────────────────────────
 
 // Walk the service's pages newest-first until the cursor's window is read.
-// `fetchPage({ page, offset, count })` is injected (Last.fm pages by `page`,
-// ListenBrainz by `offset`, advanced by `returned` because a service may
-// return fewer rows than asked). Stops at the first love older than the
+// `fetchPage({ page, offset, count, pageCursor })` is injected: a service
+// may page by `page`, by `offset` (advanced by `returned`, because a service
+// may return fewer rows than asked), or by the page cursor its last page
+// handed back (`next` on the parsed page, null after the last: a love
+// provider's getLovedPage, lib/love-providers.js, #1559). Stops at the first love older than the
 // cursor — loves EQUAL to it are kept and the overlap is absorbed by dedupe —
 // or when a page comes back empty / the whole account has been read.
 //
@@ -370,6 +387,7 @@ function collectLoves({
     let total = 0;
     let page = 1;
     let offset = 0;
+    let pageCursor = null;
 
     for (;;) {
       let json;
@@ -377,7 +395,7 @@ function collectLoves({
         let attempt = 0;
         for (;;) {
           try {
-            json = await fetchPage({ page, offset, count: pageSize });
+            json = await fetchPage({ page, offset, count: pageSize, pageCursor });
             break;
           } catch (err) {
             // Permanent failures don't get the backoff — a config problem
@@ -418,6 +436,7 @@ function collectLoves({
         || parsed.returned === 0
         || (parsed.total > 0 && seen >= parsed.total)
         || (parsed.totalPages && page >= parsed.totalPages)
+        || parsed.next === null
         || page >= maxPages;
       if (lastPage) {
         // Capped claims only when the account had more: an account whose
@@ -428,6 +447,7 @@ function collectLoves({
       }
       page++;
       offset += parsed.returned;
+      pageCursor = parsed.next === undefined ? null : parsed.next;
       await new Promise((r) => setTimeout(r, pageGapMs));
     }
   })();
@@ -470,6 +490,8 @@ function withLovesPushed(pushedKeys, trackIds, service, now = Date.now()) {
 }
 
 module.exports = {
+  MBID_TOMBSTONE_BUCKET,
+  markedMbid,
   LOVE_TOMBSTONE_GRACE_MS,
   isOrphanedLovePush,
   parseLastfmLovedPage,

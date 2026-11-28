@@ -39,7 +39,8 @@
 
 const LoveImport = require('../lib/love-import');
 const { pluginName } = require('../lib/plugin-names');
-const { countOf } = require('../lib/plural');
+const { countOf, andList } = require('../lib/plural');
+const { getLoveProvider, loveProviderIds, lovesOf, lovedPageForImport } = require('../lib/love-providers');
 
 function useLoves({
   collectionDataRef,
@@ -114,40 +115,28 @@ function useLoves({
     const pushed = lovePushedKeysRef.current[track.id] || {};
     const tasks = [];
 
-    // Last.fm
-    if (enabled.lastfm && !pushed.lastfm && window.lastfmScrobbler) {
+    // Every love provider whose "Push loves to X" is on and that doesn't have
+    // this love yet (lib/love-providers.js, #1559): one path for all of them.
+    for (const serviceId of loveProviderIds(metaServicesRef.current)) {
+      if (!enabled[serviceId] || pushed[serviceId]) continue;
+      const provider = getLoveProvider(serviceId);
+      const label = pluginName(serviceId);
       tasks.push((async () => {
         try {
-          // Signed in is enough: "Scrobble to Last.fm" pauses scrobbling only.
-          if (!(await window.lastfmScrobbler.isSignedIn())) return;
-          await window.lastfmScrobbler.loveTrack({
-            artist: track.artist, title: track.title,
-            mbid: track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid) ? track.mbid : undefined,
-          });
-          await markLovePushed(track.id, 'lastfm');
-          console.log(`[love-push] LFM ✓ ${track.artist} – ${track.title}`);
-        } catch (err) {
-          console.warn(`[love-push] LFM failed for "${track.title}":`, err?.message || err);
-        }
-      })());
-    }
-
-    // ListenBrainz (needs MBID)
-    if (enabled.listenbrainz && !pushed.listenbrainz && window.listenbrainzScrobbler) {
-      tasks.push((async () => {
-        try {
-          if (!(await window.listenbrainzScrobbler.isSignedIn())) return;
-          const mbid = await window.resolveMbidForLove(track);
-          if (!mbid) {
-            console.log(`[love-push] LB skip "${track.title}" — no MBID`);
+          // Signed in is enough: "Scrobble to X" pauses scrobbling only.
+          if (!(await provider.isSignedIn())) return;
+          const result = await provider.loveTrack(track, providerConfig(serviceId));
+          // It couldn't place the track (ListenBrainz: no recording MBID):
+          // nothing is loved, and the retry below tries again later.
+          if (!result || result.ok !== true) {
+            console.log(`[love-push] ${label} skip "${track.title}" — no match`);
             return;
           }
-          await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
-          await markLovePushed(track.id, 'listenbrainz', mbid);
-          clearListenbrainzLoveTombstone(mbid);
-          console.log(`[love-push] LB ✓ ${track.artist} – ${track.title}`);
+          await markLovePushed(track.id, serviceId, result.ref);
+          clearLoveTombstone(result.ref);
+          console.log(`[love-push] ${label} ✓ ${track.artist} – ${track.title}`);
         } catch (err) {
-          console.warn(`[love-push] LB failed for "${track.title}":`, err?.message || err);
+          console.warn(`[love-push] ${label} failed for "${track.title}":`, err?.message || err);
         }
       })());
     }
@@ -162,15 +151,14 @@ function useLoves({
     // parachord (Starting Line incident, 2026-06).
     const post = lovePushedKeysRef.current[track.id] || {};
     const enabledNow = scrobblerLovePushEnabledRef.current || {};
-    const lfmPending = !!enabledNow.lastfm && !post.lastfm;
-    const lbPending = !!enabledNow.listenbrainz && !post.listenbrainz;
-    if (lfmPending || lbPending) {
+    const pendingIds = loveProviderIds(metaServicesRef.current).filter((id) => !!enabledNow[id] && !post[id]);
+    if (pendingIds.length > 0) {
       const existing = loveRetryQueueRef.current.get(track.id);
       const attempts = (existing?.attempts || 0) + 1;
       const MAX_ATTEMPTS = 5;
       if (attempts > MAX_ATTEMPTS) {
         loveRetryQueueRef.current.delete(track.id);
-        const stillPending = [lfmPending && 'lastfm', lbPending && 'listenbrainz'].filter(Boolean).join(', ');
+        const stillPending = pendingIds.join(', ');
         console.warn(`[love-push] giving up on "${track.artist} – ${track.title}" after ${MAX_ATTEMPTS} attempts (still pending: ${stillPending})`);
       } else {
         loveRetryQueueRef.current.set(track.id, { track, attempts });
@@ -215,14 +203,20 @@ function useLoves({
   // Persist a single love-pushed checkpoint. Keeps the ref hot and
   // writes through to electron-store so a backfill mid-run survives
   // a crash.
-  // A successful ListenBrainz push clears the tombstone its own MBID may
-  // have written on an earlier removal: a re-add after a removal must import
-  // again, and the mark's MBID is the tombstone key (parachord#1071 review).
-  const clearListenbrainzLoveTombstone = (mbid) => {
+  // A successful push that stored a recording MBID (ListenBrainz's `ref`)
+  // clears the tombstone that MBID may have written on an earlier removal: a
+  // re-add after a removal must import again, and the mark's MBID is the
+  // tombstone key (parachord#1071 review). The MBID bucket is shared by every
+  // service (LoveImport.MBID_TOMBSTONE_BUCKET).
+  const clearLoveTombstone = (mbid) => {
     if (!mbid || !/^[a-f0-9-]{36}$/i.test(mbid) || !window.electron?.tombstones) return;
-    window.electron.tombstones.clearBatch([{ providerId: 'listenbrainz', externalId: mbid }])
-      .catch((err) => console.warn('[love-push] could not clear the ListenBrainz tombstone:', err?.message || err));
+    window.electron.tombstones.clearBatch([{ providerId: LoveImport.MBID_TOMBSTONE_BUCKET, externalId: mbid }])
+      .catch((err) => console.warn('[love-push] could not clear the recording\'s tombstone:', err?.message || err));
   };
+
+  // What a provider is handed with each call: its plug-in config.
+  const providerConfig = (serviceId) =>
+    scrobblerConfigsRef.current?.[serviceId] || metaServiceConfigsRef.current?.[serviceId] || {};
 
   // markLovePushed(trackId, service, mbid): the entry is the push timestamp,
   // or { at, mbid } when the push resolved a recording MBID (ListenBrainz) —
@@ -239,7 +233,7 @@ function useLoves({
     };
     lovePushedKeysRef.current = next;
     try { await window.electron.store.set('love_pushed_keys', next); }
-    catch (e) { /* non-fatal: ref is still hot for this session */ }
+    catch (_e) { /* non-fatal: ref is still hot for this session */ }
   }, []);
 
   // Toggle the live-push setting for a service. No automatic backfill
@@ -252,10 +246,10 @@ function useLoves({
     });
   }, []);
 
-  // Does this plug-in sync loved tracks? Its manifest's `lovedTracks`
-  // capability (Last.fm, ListenBrainz), read from the loaded meta-services.
-  const serviceHasLovedTracks = (service) =>
-    !!(metaServicesRef.current || []).find(s => s.id === service)?.capabilities?.lovedTracks;
+  // Is this plug-in a love provider (lib/love-providers.js, #1559)? What it
+  // declares (its manifest's `loves`), from the loaded meta-services; null
+  // when it isn't one.
+  const lovesFor = (service) => lovesOf((metaServicesRef.current || []).find(s => s.id === service));
 
   // Manual backfill: walks the collection, pushes any track not yet
   // marked as pushed for this service. Soft rate-limit ~1 req/sec.
@@ -267,12 +261,12 @@ function useLoves({
   // queue when MBIDs can't resolve).
   const runLoveBackfill = React.useCallback(async (service, { onlyIds } = {}) => {
     if (loveBackfillRunningRef.current[service]) return;
-    // A plug-in that declares `lovedTracks` (was two hard-coded names).
-    if (!serviceHasLovedTracks(service)) return;
-    const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
-    if (!scrobbler) { showToast(`${service} scrobbler not loaded`); return; }
+    // A love provider (lib/love-providers.js, #1559; was two hard-coded names).
+    const loves = lovesFor(service);
+    if (!loves) return;
+    const provider = getLoveProvider(service);
     // Signed in is enough: the scrobbling switch doesn't stop loved tracks.
-    if (!(await scrobbler.isSignedIn())) { showToast(`Sign in to ${scrobbler.name} to sync loved tracks`); return; }
+    if (!(await provider.isSignedIn())) { showToast(`Sign in to ${pluginName(service)} to sync loved tracks`); return; }
 
     const tracks = (collectionDataRef.current?.tracks || []);
     const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service] && (!onlyIds || onlyIds.has(t.id)));
@@ -293,21 +287,11 @@ function useLoves({
       const stillThere = (collectionDataRef.current?.tracks || []).some((t) => t && t.id === track.id);
       if (!stillThere) { removedMidRun++; continue; }
       try {
-        if (service === 'lastfm') {
-          await window.lastfmScrobbler.loveTrack({
-            artist: track.artist, title: track.title,
-            mbid: track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid) ? track.mbid : undefined,
-          });
-          await markLovePushed(track.id, 'lastfm');
-          pushed++;
-        } else {
-          const mbid = await window.resolveMbidForLove(track);
-          if (!mbid) { skipped++; continue; }
-          await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
-          await markLovePushed(track.id, 'listenbrainz', mbid);
-          clearListenbrainzLoveTombstone(mbid);
-          pushed++;
-        }
+        const result = await provider.loveTrack(track, providerConfig(service));
+        if (!result || result.ok !== true) { skipped++; continue; }
+        await markLovePushed(track.id, service, result.ref);
+        clearLoveTombstone(result.ref);
+        pushed++;
       } catch (err) {
         console.warn(`[love-backfill ${service}] failed for "${track.title}":`, err?.message || err);
         failed++;
@@ -323,7 +307,7 @@ function useLoves({
 
     const label = pluginName(service);
     let msg = `Backfilled ${pushed} love${pushed === 1 ? '' : 's'} to ${label}`;
-    if (skipped > 0) msg += ` (${skipped} skipped: no MBID)`;
+    if (skipped > 0) msg += ` (${skipped} skipped: ${loves.needs === 'mbid' ? 'no MBID' : 'no match'})`;
     if (removedMidRun > 0) msg += ` (${removedMidRun} removed during the run)`;
     if (failed > 0) msg += ` (${failed} failed)`;
     showToast(msg);
@@ -354,19 +338,21 @@ function useLoves({
   //   6. One-way stays one-way: importing never unloves anything remotely.
 
   const runLoveImport = React.useCallback(async (service) => {
-    if (!serviceHasLovedTracks(service)) return;
+    // A love provider that can list your loves (lib/love-providers.js, #1559).
+    const declared = lovesFor(service);
+    const provider = getLoveProvider(service);
+    if (!declared || !declared.canImport || typeof provider.getLovedPage !== 'function') return;
     if (loveImportRunningRef.current[service]) return;
     const label = pluginName(service);
-    const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';
-    const otherLabel = pluginName(otherService);
+    // The other love providers this import will also love on (step 2 below).
+    const otherIds = [];
+    let otherLabel = '';
     // A not-yet-loaded collection reads as empty: the dedupe would add
     // every love as new. Same guard class as saveCollection (#758).
     if (collectionLoadingRef.current) {
       showToast('Your Collection is still loading. Try the import again in a moment.', 'info');
       return;
     }
-    const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
-    if (!scrobbler) { showToast(`${label} scrobbler not loaded`, 'error'); return; }
     // Take the running flag synchronously, before any await: a fast second
     // click must not pass the guard while the first run sits between awaits
     // (the updater re-check already prevents duplicate rows; this stops the
@@ -382,29 +368,33 @@ function useLoves({
       const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;
       if (!username) { showToast(`Add your ${label} username first`, 'error'); return; }
 
-      // Cross-service propagation, confirmed up front (issue #1071 rule 2).
-      // Connected, not just toggled — the dialog must not promise pushes a
-      // disconnected service can't make. Cancel (the button or the backdrop)
-      // stops the run.
+      // Cross-service propagation, confirmed up front (issue #1071 rule 2):
+      // every other love provider whose push is on (#1559: was "the other
+      // one"). Connected, not just toggled — the dialog must not promise
+      // pushes a disconnected service can't make. Cancel (the button or the
+      // backdrop) stops the run.
       let crossConfirm = false;
-      const otherScrobbler = otherService === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
-      if (scrobblerLovePushEnabledRef.current?.[otherService] && otherScrobbler) {
+      for (const id of loveProviderIds(metaServicesRef.current)) {
+        if (id === service || !scrobblerLovePushEnabledRef.current?.[id]) continue;
         let otherConnected = false;
-        try { otherConnected = await otherScrobbler.isSignedIn(); } catch (e) { otherConnected = false; }
-        if (otherConnected) {
-          setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0, phase: 'confirm' } }));
-          crossConfirm = await new Promise((resolve) => {
-            showConfirmDialog({
-              type: 'info',
-              title: 'Import loved tracks',
-              message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because "Push loves to ${otherLabel}" is on. This can't be undone from Parachord.`,
-              confirmLabel: 'Import',
-              onConfirm: () => resolve(true),
-              onCancel: () => resolve(false),
-            });
+        try { otherConnected = await getLoveProvider(id).isSignedIn(); } catch (_e) { otherConnected = false; }
+        if (otherConnected) otherIds.push(id);
+      }
+      otherLabel = andList(otherIds.map((id) => pluginName(id)));
+      if (otherIds.length > 0) {
+        setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0, phase: 'confirm' } }));
+        const because = otherIds.length === 1 ? `"Push loves to ${otherLabel}" is on` : 'pushing loves is on for each of them';
+        crossConfirm = await new Promise((resolve) => {
+          showConfirmDialog({
+            type: 'info',
+            title: 'Import loved tracks',
+            message: `Tracks you import from ${label} will also be loved on ${otherLabel}, because ${because}. This can't be undone from Parachord.`,
+            confirmLabel: 'Import',
+            onConfirm: () => resolve(true),
+            onCancel: () => resolve(false),
           });
-          if (!crossConfirm) return;
-        }
+        });
+        if (!crossConfirm) return;
       }
 
       const cursor = loveImportCursorRef.current?.[service] || 0; // loved-at seconds
@@ -413,14 +403,12 @@ function useLoves({
 
       // 1. Fetch: only loves newer than the cursor (collectLoves owns the
       //    paging, the per-page retries and the stop rules).
-      const fetchPage = service === 'lastfm'
-        ? async ({ page, count }) => window.lastfmScrobbler.getLovedTracksPage({ page, count, username })
-        : async ({ offset, count }) => window.listenbrainzScrobbler.getLovedTracksPage({ offset, count, username });
+      // The provider's pages (getLovedPage), each handed the last one's `next`.
       const { loves, skipped, complete, error, capped } = await LoveImport.collectLoves({
-        fetchPage,
-        parse: service === 'lastfm' ? LoveImport.parseLastfmLovedPage : LoveImport.parseListenbrainzFeedbackPage,
+        fetchPage: ({ pageCursor }) => provider.getLovedPage({ cursor: pageCursor, account: username }, providerConfig(service)),
+        parse: (page) => lovedPageForImport(page, service),
         cursor,
-        pageSize: service === 'lastfm' ? 200 : 100,
+        pageSize: provider.pageSize || 200,
         onProgress: (done, total) => setProgress(done, total),
       });
       if (error && loves.length === 0 && skipped === 0) {
@@ -457,7 +445,7 @@ function useLoves({
         // the gating read in step 2 already stopped the run when the list
         // couldn't be read at all.
         let now = tombstones;
-        try { now = await window.electron.tombstones.list(); } catch (e) { /* keep the snapshot */ }
+        try { now = await window.electron.tombstones.list(); } catch (_e) { /* keep the snapshot */ }
         // One predicate drives both the count and the filter, so the summary
         // can't drift from what was dropped. The pre-ship heuristic ONLY
         // applies where no tombstone entry exists at all: a removed-then-
@@ -531,16 +519,15 @@ function useLoves({
         return batch.saveOk;
       };
 
-      // The MBIDs a heart's ListenBrainz push resolved and stored on its
-      // mark: indexed alongside the rows' own MBIDs so a love for that MBID
-      // matches the hearted row instead of duplicating it. Marks from before
-      // this shipped are plain timestamps and contribute nothing.
+      // The MBIDs a heart's push resolved and stored on its mark (any
+      // service's; ListenBrainz's today): indexed alongside the rows' own
+      // MBIDs so a love for that MBID matches the hearted row instead of
+      // duplicating it. Marks from before this shipped are plain timestamps
+      // and contribute nothing.
       const markMbids = {};
       for (const [id, entry] of Object.entries(lovePushedKeysRef.current || {})) {
-        const stamped = entry && entry.listenbrainz;
-        if (stamped && typeof stamped === 'object' && /^[a-f0-9-]{36}$/i.test(stamped.mbid || '')) {
-          markMbids[id] = stamped.mbid;
-        }
+        const mbid = LoveImport.markedMbid(entry);
+        if (mbid) markMbids[id] = mbid;
       }
 
       const namedLoves = loves.filter((l) => !l.needsLookup);
@@ -627,7 +614,8 @@ function useLoves({
         // Without a restart the rows are already in memory, so a re-run
         // matches them and the confirmed cross-service push never fires —
         // say how to push them anyway.
-        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or send the imported loves from ${otherLabel}'s settings` : ''}`;
+        const otherSettings = otherIds.length === 1 ? `${otherLabel}'s settings` : `the settings of ${otherLabel}`;
+        msg += `. Saving the library failed; run the import again after a restart${crossConfirm ? `, or send the imported loves from ${otherSettings}` : ''}`;
       }
       if (!complete && error) {
         showToast(`Imported ${added} from ${label}, then stopped: ${error}. Run it again to pick up the rest.`, 'error', null, { duration: 8000 });
@@ -639,14 +627,18 @@ function useLoves({
       //    the imported ids, through the restricted backfill (its own
       //    progress on the other card), never a per-track live push.
       if (crossConfirm && confirmedIds.length > 0) {
-        // The restricted backfill is a no-op while that service's own backfill
-        // is running — say so instead of silently skipping the confirmed push.
-        if (loveBackfillRunningRef.current[otherService]) {
-          showToast(`A ${otherLabel} backfill is still running. Once it finishes, send the ${countOf(confirmedIds.length, 'imported love')} from ${otherLabel}'s settings.`, 'info');
-        } else {
-          runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch((err) => {
-            console.warn(`[love-import ${service}] cross-service push failed:`, err?.message || err);
-          });
+        for (const otherId of otherIds) {
+          const otherName = pluginName(otherId);
+          // The restricted backfill is a no-op while that service's own
+          // backfill is running — say so instead of silently skipping the
+          // confirmed push.
+          if (loveBackfillRunningRef.current[otherId]) {
+            showToast(`A ${otherName} backfill is still running. Once it finishes, send the ${countOf(confirmedIds.length, 'imported love')} from ${otherName}'s settings.`, 'info');
+          } else {
+            runLoveBackfill(otherId, { onlyIds: new Set(confirmedIds) }).catch((err) => {
+              console.warn(`[love-import ${service}] cross-service push failed:`, err?.message || err);
+            });
+          }
         }
       }
     } catch (err) {

@@ -339,7 +339,8 @@ describe('wiring (source markers)', () => {
     const start = app.indexOf('const runLoveImport = React.useCallback');
     const end = app.indexOf('\n  return {\n    scrobblerLovePushEnabled', start);
     const body = app.slice(start, end);
-    expect(body).toContain('runLoveBackfill(otherService, { onlyIds: new Set(confirmedIds) }).catch(');
+    // Each other love provider the dialog named (#1559: was "the other one").
+    expect(body).toMatch(/for \(const otherId of otherIds\) \{[\s\S]*runLoveBackfill\(otherId, \{ onlyIds: new Set\(confirmedIds\) \}\)\.catch\(/);
   });
 
   test('runLoveBackfill filters by onlyIds when given', () => {
@@ -364,18 +365,21 @@ describe('wiring (source markers)', () => {
     expect(app).toContain('onConfirm: () => resolve(true),');
     expect(app).toContain('onCancel: () => resolve(false),');
     // Connected, not just toggled.
-    expect(app).toContain('otherConnected = await otherScrobbler.isSignedIn();'); // signed in, not scrobbling-on
+    expect(app).toContain('otherConnected = await getLoveProvider(id).isSignedIn();'); // signed in, not scrobbling-on
+    // Every other provider with push on is offered (#1559), named in one line.
+    expect(app).toContain("if (id === service || !scrobblerLovePushEnabledRef.current?.[id]) continue;");
+    expect(app).toContain('otherLabel = andList(otherIds.map((id) => pluginName(id)));');
   });
 
   test('the import needs only a username: the scrobbling sign-in\'s, else the account\'s (2026-11-23)', () => {
     const start = app.indexOf('const runLoveImport = React.useCallback(');
-    const body = app.slice(start, app.indexOf('const fetchPage =', start) + 400);
+    const body = app.slice(start, app.indexOf('LoveImport.collectLoves({', start) + 400);
     expect(body).toContain('const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;');
     expect(body).toContain('Add your ${label} username first');
     // Not gated on the scrobbling sign-in: both services publish loves by username.
     expect(body).not.toContain('connected = await scrobbler.isSignedIn();');
-    expect(body).toContain('getLovedTracksPage({ page, count, username })');
-    expect(body).toContain('getLovedTracksPage({ offset, count, username })');
+    // The provider's pages, read by the username (lib/love-providers.js, #1559).
+    expect(body).toContain('provider.getLovedPage({ cursor: pageCursor, account: username }, providerConfig(service))');
   });
 
   test('a failed tombstone read stops the run', () => {
@@ -406,17 +410,20 @@ describe('wiring (source markers)', () => {
   });
 
   test('the resolved MBID is stored on the ListenBrainz mark, so a removal tombstones the recording the service holds', () => {
-    expect(app).toContain("const pushedMbid = lovePushedKeysRef.current?.[track.id]?.listenbrainz;");
-    expect(app).toContain("await markLovePushed(track.id, 'listenbrainz', mbid);");
+    // The provider's `ref` (ListenBrainz's recording MBID) goes on the mark,
+    // and a removal reads it from whichever service stored it (#1559).
+    expect(app).toContain('const pushedMbid = LoveImport.markedMbid(lovePushedKeysRef.current?.[track.id]);');
+    expect(app).toContain('await markLovePushed(track.id, serviceId, result.ref);');
+    expect(app).toContain('await markLovePushed(track.id, service, result.ref);');
     // The storage itself: a plain timestamp would keep the marker passing while
     // losing the MBID.
     expect(app).toContain('? { at: Date.now(), mbid }');
-    expect(app).toContain('push(\'listenbrainz\', pushedMbid.mbid);');
+    expect(app).toContain('if (pushedMbid) push(LoveImport.MBID_TOMBSTONE_BUCKET, pushedMbid);');
   });
 
   test('a successful ListenBrainz push clears its own MBID tombstone (a re-add after a removal must import again)', () => {
-    expect(app).toContain("window.electron.tombstones.clearBatch([{ providerId: 'listenbrainz', externalId: mbid }])");
-    expect(app).toContain('clearListenbrainzLoveTombstone(mbid);');
+    expect(app).toContain('window.electron.tombstones.clearBatch([{ providerId: LoveImport.MBID_TOMBSTONE_BUCKET, externalId: mbid }])');
+    expect(app).toContain('clearLoveTombstone(result.ref);');
   });
 
   test('the import indexes the mark-stored MBIDs alongside the rows\' own', () => {
