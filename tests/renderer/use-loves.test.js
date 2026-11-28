@@ -19,6 +19,7 @@ const path = require('path');
 
 const { useLoves } = require('../../src/renderer/hooks/use-loves.js');
 const { setPluginLookup } = require('../../src/renderer/lib/plugin-names');
+const { registerBuiltInLoveProviders, clearLoveProviders } = require('../../src/renderer/lib/love-providers');
 
 const appSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
 const hookSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-loves.js'), 'utf8');
@@ -135,8 +136,8 @@ function setup({ tracks = [track('a')], loading = false, lovedTracks = ['lastfm'
 
 function stubWindow({ lfm = {}, lb = {}, mbid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' } = {}) {
   const store = { set: jest.fn(async () => {}) };
-  const lastfmScrobbler = { name: 'Last.fm', isSignedIn: jest.fn(async () => true), loveTrack: jest.fn(async () => {}), ...lfm };
-  const listenbrainzScrobbler = { name: 'ListenBrainz', isSignedIn: jest.fn(async () => true), loveTrack: jest.fn(async () => {}), ...lb };
+  const lastfmScrobbler = { id: 'lastfm', name: 'Last.fm', isSignedIn: jest.fn(async () => true), loveTrack: jest.fn(async () => {}), ...lfm };
+  const listenbrainzScrobbler = { id: 'listenbrainz', name: 'ListenBrainz', isSignedIn: jest.fn(async () => true), loveTrack: jest.fn(async () => {}), ...lb };
   const tombstones = { clearBatch: jest.fn(async () => ({})), list: jest.fn(async () => ({})) };
   global.window = {
     electron: { store, tombstones },
@@ -144,6 +145,8 @@ function stubWindow({ lfm = {}, lb = {}, mbid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeee
     listenbrainzScrobbler,
     resolveMbidForLove: jest.fn(async () => mbid),
   };
+  // The app registers these at startup (lib/love-providers.js, #1559).
+  registerBuiltInLoveProviders(global.window);
   return { store, lastfmScrobbler, listenbrainzScrobbler, tombstones };
 }
 
@@ -157,6 +160,7 @@ beforeEach(() => {
 afterEach(() => {
   // Unmount every harness: the retry runner's interval must not outlive its test.
   mounted.splice(0).forEach((unmount) => unmount());
+  clearLoveProviders();
   delete global.window;
   jest.useRealTimers();
   jest.restoreAllMocks();
@@ -356,5 +360,94 @@ describe('the import\'s guards', () => {
     await h.out.runLoveImport('lastfm');
     expect(inputs.showToastRef.current).not.toHaveBeenCalled();
     expect(h.out.loveImportRunning).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Loves as a capability (#1559 step 2): any registered love provider whose
+// plug-in declares `loves` takes part, with no code naming it.
+describe('any love provider', () => {
+  const { registerLoveProvider } = require('../../src/renderer/lib/love-providers');
+  const server = (over = {}) => ({
+    id: 'myserver',
+    isSignedIn: jest.fn(async () => true),
+    loveTrack: jest.fn(async () => ({ ok: true })),
+    ...over,
+  });
+  const withServer = (opts = {}) => {
+    const s = setup(opts);
+    s.inputs.metaServicesRef.current = [
+      ...s.inputs.metaServicesRef.current,
+      { id: 'myserver', loves: { contract: 1, verb: 'Star', needs: 'serviceId', canImport: false } },
+    ];
+    return s;
+  };
+
+  test('a third provider is pushed to, marked, and retried like the others', async () => {
+    stubWindow();
+    const provider = server({ loveTrack: jest.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue({ ok: true }) });
+    registerLoveProvider(provider);
+    setPluginLookup((id) => ({ lastfm: { name: 'Last.fm' }, listenbrainz: { name: 'ListenBrainz' }, myserver: { name: 'My Server' } }[id] || null));
+    const { h } = withServer();
+    await h.out.setLovePushEnabled('myserver', true);
+    h.runEffects();
+    await h.out.pushLoveToScrobblers(track('a'), { justAdded: true });
+    expect(provider.loveTrack).toHaveBeenCalledWith(track('a'), {});
+    expect(h.out.loveRetryQueueRef.current.has('a')).toBe(true);
+    await h.out.pushLoveToScrobblers(track('a'));
+    expect(typeof h.out.lovePushedKeysRef.current.a.myserver).toBe('number');
+    expect(h.out.loveRetryQueueRef.current.has('a')).toBe(false);
+    expect(global.window.lastfmScrobbler.loveTrack).not.toHaveBeenCalled(); // its push is off
+  });
+
+  test('a no-match is skipped and counted, never marked', async () => {
+    jest.useFakeTimers();
+    stubWindow();
+    registerLoveProvider(server({ loveTrack: jest.fn(async () => ({ ok: false, reason: 'no-match' })) }));
+    setPluginLookup((id) => ({ myserver: { name: 'My Server' } }[id] || null));
+    const { h, inputs } = withServer();
+    const run = h.out.runLoveBackfill('myserver');
+    await jest.advanceTimersByTimeAsync(2000);
+    await run;
+    expect(h.out.lovePushedKeysRef.current.a).toBeUndefined();
+    expect(inputs.showToastRef.current).toHaveBeenCalledWith('Backfilled 0 loves to My Server (1 skipped: no match)');
+  });
+
+  test('a provider that can\'t list your loves is never imported from', async () => {
+    stubWindow();
+    registerLoveProvider(server());
+    const { h, inputs } = withServer({ configs: { myserver: { username: 'u' } } });
+    await h.out.runLoveImport('myserver');
+    expect(inputs.showToastRef.current).not.toHaveBeenCalled();
+    expect(h.out.loveImportRunning).toEqual({});
+  });
+
+  test('the import\'s question lists every other service with push on, and Cancel stops it', async () => {
+    stubWindow();
+    registerLoveProvider(server());
+    setPluginLookup((id) => ({ lastfm: { name: 'Last.fm' }, listenbrainz: { name: 'ListenBrainz' }, myserver: { name: 'My Server' } }[id] || null));
+    const { h, inputs } = withServer({ configs: { listenbrainz: { username: 'someone' } } });
+    await h.out.setLovePushEnabled('lastfm', true);
+    await h.out.setLovePushEnabled('myserver', true);
+    h.runEffects();
+    inputs.showConfirmDialogRef.current.mockImplementation((d) => d.onCancel());
+    await h.out.runLoveImport('listenbrainz');
+    expect(inputs.showConfirmDialogRef.current).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Tracks you import from ListenBrainz will also be loved on Last.fm and My Server, because pushing loves is on for each of them. This can\'t be undone from Parachord.',
+    }));
+    expect(global.window.listenbrainzScrobbler.getLovedTracksPage).toBeUndefined(); // stopped before reading
+    expect(h.out.loveImportRunning).toEqual({ listenbrainz: false });
+  });
+
+  test('with one other service the question reads as before', async () => {
+    stubWindow();
+    const { h, inputs } = setup({ configs: { listenbrainz: { username: 'someone' } } });
+    await h.out.setLovePushEnabled('lastfm', true);
+    h.runEffects();
+    inputs.showConfirmDialogRef.current.mockImplementation((d) => d.onCancel());
+    await h.out.runLoveImport('listenbrainz');
+    expect(inputs.showConfirmDialogRef.current).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Tracks you import from ListenBrainz will also be loved on Last.fm, because "Push loves to Last.fm" is on. This can\'t be undone from Parachord.',
+    }));
   });
 });

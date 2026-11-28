@@ -54,7 +54,7 @@ A content resolver can report plays to its own service through the same contract
 | Recommendations / library metadata for those services | `plugins/lastfm.axe`, `listenbrainz.axe`, `librefm.axe` (meta-service) |
 | Playback-telemetry plugin (Achordion) | [plugins/achordion.axe](../../plugins/achordion.axe) |
 | A playing plug-in reporting its own plays (Subsonic) | `init` in [plugins-src/subsonic/implementation.js](../../plugins-src/subsonic/implementation.js), started by [src/renderer/lib/playback-telemetry.js](../../src/renderer/lib/playback-telemetry.js) |
-| Loved-tracks push toggles + backfill, and the import action (`runLoveImport`) | `src/renderer/hooks/use-loves.js` (`useLoves`, moved out of app.js for #1559 step 1; app.js's bulk load fills it and the Collection's add and remove call it), persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` / `love_import_cursor`; pure helpers in `src/renderer/lib/love-import.js` |
+| Loved-tracks push toggles + backfill, and the import action (`runLoveImport`) | `src/renderer/hooks/use-loves.js` (`useLoves`, moved out of app.js for #1559 step 1; it reaches Last.fm and ListenBrainz only as love providers, `src/renderer/lib/love-providers.js`, #1559 step 2; app.js's bulk load fills it and the Collection's add and remove call it), persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` / `love_import_cursor`; pure helpers in `src/renderer/lib/love-import.js` |
 | Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 
 ### Signed in vs scrobbling on

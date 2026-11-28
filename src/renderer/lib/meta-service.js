@@ -25,6 +25,9 @@ function metaServiceFromAxe(axe, filename) {
     color: m.color,
     homepage: m.homepage,
     capabilities: axe.capabilities,
+    // Loves as a capability (lib/love-providers.js, #1559): the manifest's
+    // top-level `loves` field, as written; lovesOf validates it.
+    loves: axe.loves || null,
     settings: axe.settings,
     _filename: filename !== undefined ? filename : axe._filename,
   };

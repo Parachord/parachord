@@ -10,4 +10,11 @@ function countOf(n, singular, pluralForm) {
   return `${num.toLocaleString('en-US')} ${word}`;
 }
 
-module.exports = { countOf };
+// Names in a sentence: "Last.fm", "Last.fm and ListenBrainz", "A, B and C".
+function andList(names) {
+  const list = (Array.isArray(names) ? names : []).filter((n) => typeof n === 'string' && n);
+  if (list.length <= 1) return list[0] || '';
+  return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+}
+
+module.exports = { countOf, andList };

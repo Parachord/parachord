@@ -27,3 +27,14 @@ test('UI text never hard-codes "${n} tracks" or "${n} track(s)"', () => {
   }
   expect(hits).toEqual([]);
 });
+
+describe('andList', () => {
+  const { andList } = require('../../src/renderer/lib/plural');
+  test('names in a sentence', () => {
+    expect(andList([])).toBe('');
+    expect(andList(['Last.fm'])).toBe('Last.fm');
+    expect(andList(['Last.fm', 'ListenBrainz'])).toBe('Last.fm and ListenBrainz');
+    expect(andList(['A', 'B', 'C'])).toBe('A, B and C');
+    expect(andList(['A', '', null, 'B'])).toBe('A and B');
+  });
+});

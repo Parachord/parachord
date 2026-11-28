@@ -76,7 +76,8 @@ test('the sites read the registry, not a written-out name', () => {
   expect(app).not.toMatch(/service === 'listenbrainz' \? 'ListenBrainz'/);
   expect(app).not.toMatch(/service === 'lastfm' \? '(?:Last\.fm|ListenBrainz)'/);
   expect(app).toContain('is not currently listening on ${pluginName(service)}');
-  expect(app).toContain('const otherLabel = pluginName(otherService);');
+  // The import's other love providers, named from the registry (#1559).
+  expect(app).toContain('otherLabel = andList(otherIds.map((id) => pluginName(id)));');
   // The playlist page: provider names and the import-source label.
   expect(page).not.toMatch(/providerId === '(?:spotify|applemusic)'/);
   expect(page).not.toMatch(/source === '[a-z]+-(?:sync|import)'/);
