@@ -10,7 +10,9 @@
 //   hide rule reads) and exposed at window.electron.<name>;
 // - the renderer's own: `widevine`, the shared Widevine player
 //   (window.__parachordWidevine, set by hooks/use-playback-engine.js), which
-//   plugins declare as optional because the phones have none.
+//   plugins declare as optional because the phones have none; and
+//   `musicKit`, the Apple Music account calls the app makes for its plug-in
+//   (window.__parachordMusicKit, set in app.js: isSignedIn, favoriteSong).
 // Each is read when the plugin asks, so a bridge set up after plugins load is
 // still the live object.
 //
@@ -21,6 +23,7 @@
 // Bridges the renderer supplies itself, by name → how to read it.
 const RENDERER_BRIDGES = {
   widevine: (win) => win.__parachordWidevine,
+  musicKit: (win) => win.__parachordMusicKit,
 };
 
 function desktopPluginHostSupplier(win, getConfig) {

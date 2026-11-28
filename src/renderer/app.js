@@ -831,27 +831,33 @@ async function checkAppleMusicUserToken(developerToken, extraTokens = []) {
 // developer token, no user token, or Apple refuses every stored token (after
 // adopting one it still accepts, if any), so the Recommendations page never
 // caches a refusal as "nothing for you"; any other failure throws plainly.
+// The account calls go through lib/apple-music-api.js with these: the
+// developer token, the app's user token of record, and the re-check that
+// adopts another token Apple still accepts.
+const AppleMusicApi = require('./lib/apple-music-api');
+const appleMusicApiDeps = {
+  fetch: (...args) => fetch(...args),
+  getDeveloperToken: () => getMusicKitDeveloperToken(),
+  getUserToken: () => localStorage.getItem(AppleMusicUserToken.APP_TOKEN_KEY),
+  recheckUserToken: (developerToken) => checkAppleMusicUserToken(developerToken),
+};
 window.appleMusicPersonalRecommendations = async (limit = 30) => {
-  const notReady = (code, message) => Object.assign(new Error(message), { notReady: true, code });
-  const developerToken = await getMusicKitDeveloperToken();
-  if (!developerToken) throw notReady('no-developer-token', 'Apple Music developer token unavailable');
   const n = Math.max(1, Math.min(30, Number(limit) || 30));
-  const url = `https://api.music.apple.com/v1/me/recommendations?limit=${n}`;
-  const ask = (userToken) => fetch(url, { headers: { Authorization: `Bearer ${developerToken}`, 'Music-User-Token': userToken } });
-  let userToken = localStorage.getItem(AppleMusicUserToken.APP_TOKEN_KEY) || '';
-  if (!userToken) throw notReady('not-signed-in', 'Not signed in to Apple Music');
-  let res = await ask(userToken);
-  if (res.status === 401 || res.status === 403) {
-    const check = await checkAppleMusicUserToken(developerToken);
-    if (check.verdict !== 'ok' || !check.token || check.token === userToken) {
-      throw notReady('token-refused', `Apple Music refused the sign-in (HTTP ${res.status})`);
-    }
-    userToken = check.token;
-    res = await ask(userToken);
-    if (res.status === 401 || res.status === 403) throw notReady('token-refused', `Apple Music refused the sign-in (HTTP ${res.status})`);
-  }
+  const res = await AppleMusicApi.appleMusicUserFetch(appleMusicApiDeps, `https://api.music.apple.com/v1/me/recommendations?limit=${n}`);
   if (!res.ok) throw new Error(`Apple Music recommendations failed: ${res.status}`);
   return res.json();
+};
+
+// The `musicKit` host bridge (the plug-in host contract, #1561;
+// docs/architecture/plugins.md): what the Apple Music plug-in reaches as
+// this.host.musicKit, declared in its manifest's optionalHostBridges.
+// lib/plugin-host-supplier.js reads it from here. Narrow on purpose: whether
+// the account is signed in, and favouriting one catalog song (its loves,
+// #1559 step 5). Moving the plug-in's other window.appleMusic* helpers onto
+// it is the contract's migration, its own change.
+window.__parachordMusicKit = {
+  isSignedIn: async () => !!localStorage.getItem(AppleMusicUserToken.APP_TOKEN_KEY) && !!(await getMusicKitDeveloperToken()),
+  favoriteSong: (catalogId) => AppleMusicApi.favoriteSong(appleMusicApiDeps, catalogId),
 };
 
 // MusicKit-enabled Apple Music search wrapper
@@ -13036,20 +13042,6 @@ ${trackListXml}
     };
   }, [allResolvers]);
 
-  // Loves in sync (#1445, lib/love-providers.js): every love provider with
-  // its push switch and whether it can push. One with library sync
-  // (ListenBrainz) gets the switch in its sync dialog; one without (Last.fm,
-  // a server's stars) gets a loves-only row in the Collection's Sync menu.
-  // The same setting as the plug-in's "Push loves to X", never a second one.
-  // scrobblersInitialized: Last.fm's and ListenBrainz's providers register
-  // with the scrobblers.
-  const loveRows = useMemo(() => loveSyncRows([...metaServices, ...loadedResolvers], {
-    scrobblerConfigs, pluginConfigs: metaServiceConfigs, pushEnabled: scrobblerLovePushEnabled,
-  }), [metaServices, loadedResolvers, scrobblerConfigs, metaServiceConfigs, scrobblerLovePushEnabled, scrobblersInitialized]);
-  const syncMenuLoveRows = useMemo(() => loveRows.filter((r) => !syncProviderConfig[r.id]), [loveRows, syncProviderConfig]);
-  const syncDialogLoves = useMemo(
-    () => Object.fromEntries(loveRows.filter((r) => syncProviderConfig[r.id]).map((r) => [r.id, r])),
-    [loveRows, syncProviderConfig]);
 
   // Sync resolverOrder with activeResolvers - only active resolvers belong in
   // the priority order. Add any active resolvers that are missing, and remove
@@ -35475,6 +35467,22 @@ useEffect(() => {
     soundcloud: soundcloudConnected
   }), [spotifyConnected, appleMusicConnected, soundcloudConnected]);
   const pluginAccounts = useMemo(() => PluginSetup.signedInMap(hostSignIns, pluginStatuses), [hostSignIns, pluginStatuses]);
+
+  // Loves in sync (#1445, lib/love-providers.js): every love provider with
+  // its push switch and whether it can push. One with library sync
+  // (ListenBrainz) gets the switch in its sync dialog; one without (Last.fm,
+  // a server's stars) gets a loves-only row in the Collection's Sync menu.
+  // The same setting as the plug-in's "Push loves to X", never a second one.
+  // scrobblersInitialized: Last.fm's and ListenBrainz's providers register
+  // with the scrobblers. pluginAccounts: a plug-in that signs in (Apple
+  // Music) is ready when signed in (#1559 step 5).
+  const loveRows = useMemo(() => loveSyncRows([...metaServices, ...loadedResolvers], {
+    scrobblerConfigs, pluginConfigs: metaServiceConfigs, pushEnabled: scrobblerLovePushEnabled, signedInMap: pluginAccounts,
+  }), [metaServices, loadedResolvers, scrobblerConfigs, metaServiceConfigs, scrobblerLovePushEnabled, scrobblersInitialized, pluginAccounts]);
+  const syncMenuLoveRows = useMemo(() => loveRows.filter((r) => !syncProviderConfig[r.id]), [loveRows, syncProviderConfig]);
+  const syncDialogLoves = useMemo(
+    () => Object.fromEntries(loveRows.filter((r) => syncProviderConfig[r.id]).map((r) => [r.id, r])),
+    [loveRows, syncProviderConfig]);
   // Settings › Plug-Ins marks an enabled plug-in "Needs setup" from this
   // map ({ [id]: true }), so the page never names a service (#1522). The
   // facts are the same ones: the plug-in's own status reply first, then

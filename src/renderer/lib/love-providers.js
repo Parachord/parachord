@@ -139,8 +139,9 @@ async function findLoveSource(plugin, track, config) {
   return pickTrackMatch(Array.isArray(results) ? results : [], track.artist, track.title, { mbid: track.mbid, isrc: track.isrc }) || null;
 }
 
-// A plug-in implementing the contract in its own .axe. Signed in means set
-// up (its isConfigured over its config). Its loveTrack gets the track with
+// A plug-in implementing the contract in its own .axe. Signed in is its own
+// isSignedIn(config) when it has one (Apple Music asks its account), else
+// set up (its isConfigured over its config). Its loveTrack gets the track with
 // its source on that service in `track.sources[id]` when it needs a service
 // id, and anything but { ok: true } reads as no-match.
 function pluginLoveProvider(plugin, { getConfig }) {
@@ -150,7 +151,10 @@ function pluginLoveProvider(plugin, { getConfig }) {
     id: plugin.id,
     fromPlugin: true,
     pageSize: 500,
-    isSignedIn: async () => configured(await getConfig()),
+    isSignedIn: async () => {
+      const config = await getConfig();
+      return typeof plugin.isSignedIn === 'function' ? !!(await plugin.isSignedIn(config)) : configured(config);
+    },
     importAccount: async () => {
       const config = await getConfig();
       return configured(config) ? (config && config.username) || plugin.id : null;
@@ -179,10 +183,16 @@ function pluginLoveProvider(plugin, { getConfig }) {
 // Send need it), `importReady` (Import needs an account to read) and the
 // line each says when it can't yet. A built-in provider answers from its
 // scrobbler's config; a plug-in's own, from whether it's set up.
-function loveRowState(service, { name, scrobblerConfig, pluginConfig, needsSetup } = {}) {
+//   signedIn  what the app knows of a plug-in's own sign-in (app.js
+//             pluginAccounts, #1614: Apple Music's), when it knows: a plug-in
+//             that signs in is ready when signed in, not when set up.
+function loveRowState(service, { name, scrobblerConfig, pluginConfig, needsSetup, signedIn } = {}) {
   const provider = service ? getLoveProvider(service.id) : null;
   const label = name || (service && service.id) || '';
   if (provider && typeof provider.rowState === 'function') return provider.rowState({ name: label, scrobblerConfig, pluginConfig });
+  if (typeof signedIn === 'boolean') {
+    return { signedIn, importReady: signedIn, signedOutHint: `Sign in to ${label} first`, importHint: `Sign in to ${label} first`, offLabel: 'Signed out' };
+  }
   const ready = service && typeof service.isConfigured === 'function' ? !!service.isConfigured(pluginConfig || {}) : !needsSetup;
   return { signedIn: ready, importReady: ready, signedOutHint: `Set up ${label} first`, importHint: `Set up ${label} first`, offLabel: 'Not set up' };
 }
@@ -221,7 +231,7 @@ function lovesPausedBySync(syncSettings) {
 // sync row, and its loves are a switch in its sync dialog.
 //   services         the loaded plug-ins (meta-services and resolvers)
 //   syncProviderIds  the ids with a sync row
-function loveSyncRows(services, { syncProviderIds = [], scrobblerConfigs = {}, pluginConfigs = {}, pushEnabled = {} } = {}) {
+function loveSyncRows(services, { syncProviderIds = [], scrobblerConfigs = {}, pluginConfigs = {}, pushEnabled = {}, signedInMap = {} } = {}) {
   const synced = new Set(syncProviderIds);
   // The first entry for each id (a plug-in can be listed as a meta-service
   // and as a loaded resolver).
@@ -232,7 +242,7 @@ function loveSyncRows(services, { syncProviderIds = [], scrobblerConfigs = {}, p
     .map((id) => {
       const service = byId.get(id);
       const name = service.name || id;
-      const state = loveRowState(service, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: pluginConfigs[id] });
+      const state = loveRowState(service, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: pluginConfigs[id], signedIn: (signedInMap || {})[id] });
       return {
         id, name, color: service.color || null, words: loveWords(lovesOf(service).verb),
         signedIn: !!state.signedIn, pushOn: !!pushEnabled[id], signedOutHint: state.signedOutHint, offLabel: state.offLabel,

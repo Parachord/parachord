@@ -131,7 +131,8 @@ describe('the dialog', () => {
     expect(dialog).toContain('onImport: () => runLoveImport(id),');
     expect(dialog).toContain('importRunning: !!loveImportRunning[id],');
     expect(dialog).toContain('hasImported: !!loveImportCursorRef.current?.[id],');
-    expect(dialog).toContain("state: loveRowState(selectedResolver, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: metaServiceConfigs[id] }),");
+    // A plug-in that signs in (Apple Music) is ready when the app knows it's signed in (#1559 step 5).
+    expect(dialog).toContain("state: loveRowState(selectedResolver, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: metaServiceConfigs[id], signedIn }),");
   });
 
   test('the scrobbler card no longer draws them', () => {

@@ -422,7 +422,10 @@ function LovedTracks({
     : state && state.importReady ? `Add your ${name} ${w.plural} to your Collection`
     : (state && state.importHint) || `Set up ${name} first`;
   const pluralCap = w.plural.charAt(0).toUpperCase() + w.plural.slice(1);
-  return e('div', { 'data-section': 'loved-tracks', style: { ...SECTION, ...(inAccount ? { paddingBottom: 0 } : {}), display: 'flex', flexDirection: 'column', gap: '12px' } },
+  // Inside an account it's a section under the account's line; otherwise a
+  // block like its neighbours in "what needs the sign-in" (LibrarySync,
+  // StartupRow), so it keeps their spacing after any of them.
+  return e('div', { 'data-section': 'loved-tracks', style: { ...(inAccount ? { ...SECTION, paddingBottom: 0 } : BLOCK), display: 'flex', flexDirection: 'column', gap: '12px' } },
     canImport && onImport && e(SettingRow, { label: `Import ${w.tracksNoun}`, hint: importHint, style: { padding: 0 } },
       e(Button, { variant: 'secondary', size: 'sm', onClick: onImport, busy: !!importRunning, disabled: !(state && state.importReady) },
         hasImported ? 'Import new' : 'Import')),
