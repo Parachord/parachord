@@ -1284,7 +1284,7 @@ const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId, isPl
 // tombstone/cursor logic per docs/plans/2026-11-06-import-loved-tracks.md;
 // the run (runLoveImport) lives in hooks/use-loves.js.
 const LoveImport = require('./lib/love-import');
-const { registerBuiltInLoveProviders } = require('./lib/love-providers');
+const { registerBuiltInLoveProviders, loveSyncRows } = require('./lib/love-providers');
 const { loveTombstoneEntries } = LoveImport;
 
 // Generate a unique hash from a string (for deterministic pattern generation)
@@ -7428,6 +7428,7 @@ const Parachord = () => {
     metaServicesRef,
     loadedResolversRef,
     getResolverConfigRef,
+    resolverSyncSettingsRef,
     metaServiceConfigsRef,
     scrobblerConfigsRef,
     showSidebarBadge,
@@ -10383,7 +10384,8 @@ const Parachord = () => {
   // pause: only `enabled` changes. Every other setting, the Collection's
   // syncSources and playlists' syncedFrom/syncedTo stay, and nothing calls the
   // service until it's back on (the background loop, the startup syncs, the
-  // love/unlove pushes and the N-way drive all check `enabled`). Removing what
+  // love/unlove pushes and the N-way drive all check `enabled`, and so do
+  // its loved-tracks pushes and Send, hooks/use-loves.js, #1445). Removing what
   // a service synced is Settings' Stop syncing, not this. On: a service with
   // saved choices resumes with them on the next background run; one never set
   // up opens the setup dialog instead.
@@ -13033,6 +13035,21 @@ ${trackListXml}
       listenbrainz: provider('listenbrainz', 'ListenBrainz', { tracks: false, albums: false, artists: false, playlists: true })
     };
   }, [allResolvers]);
+
+  // Loves in sync (#1445, lib/love-providers.js): every love provider with
+  // its push switch and whether it can push. One with library sync
+  // (ListenBrainz) gets the switch in its sync dialog; one without (Last.fm,
+  // a server's stars) gets a loves-only row in the Collection's Sync menu.
+  // The same setting as the plug-in's "Push loves to X", never a second one.
+  // scrobblersInitialized: Last.fm's and ListenBrainz's providers register
+  // with the scrobblers.
+  const loveRows = useMemo(() => loveSyncRows([...metaServices, ...loadedResolvers], {
+    scrobblerConfigs, pluginConfigs: metaServiceConfigs, pushEnabled: scrobblerLovePushEnabled,
+  }), [metaServices, loadedResolvers, scrobblerConfigs, metaServiceConfigs, scrobblerLovePushEnabled, scrobblersInitialized]);
+  const syncMenuLoveRows = useMemo(() => loveRows.filter((r) => !syncProviderConfig[r.id]), [loveRows, syncProviderConfig]);
+  const syncDialogLoves = useMemo(
+    () => Object.fromEntries(loveRows.filter((r) => syncProviderConfig[r.id]).map((r) => [r.id, r])),
+    [loveRows, syncProviderConfig]);
 
   // Sync resolverOrder with activeResolvers - only active resolvers belong in
   // the priority order. Add any active resolvers that are missing, and remove
@@ -35230,7 +35247,7 @@ useEffect(() => {
   // Stable function props for the memo'd SyncSetupDialog (keys must
   // match SYNC_SETUP_DIALOG_HANDLERS in sync-setup-dialog.js).
   const syncSetupDialogHandlers = useStableHandlers({
-    setProviderSyncEnabled, startSync,
+    setLovePushEnabled, setProviderSyncEnabled, startSync,
   });
 
   // Stable function props for the memo'd SyncStatusDialog (keys must
@@ -35597,7 +35614,7 @@ useEffect(() => {
     addToQueue, albumCardActions, copyParachordLink, fetchArtistData, getAlbumArt, getArtistImage,
     getArtistTopTracks, getCollectionSortOptions, handleCollectionAlbumClick, handlePlay,
     handlePlaylistDragEnd, handleStartCollectionStation, isOnAir, navigateToFriend,
-    openChartsAlbum, openSyncSetupModal, playArtistTopTracks, playListenerTopTracks, setProviderSyncEnabled, setQueueWithContext, syncFriendsFromServices,
+    openChartsAlbum, openPluginSettings, openSyncSetupModal, playArtistTopTracks, playListenerTopTracks, setLovePushEnabled, setProviderSyncEnabled, setQueueWithContext, syncFriendsFromServices,
   });
 
 
@@ -35804,7 +35821,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionAlbums, collectionArtists, collectionData, collectionHeaderCollapsed, collectionSongs, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionAlbums, collectionArtists, collectionData, collectionHeaderCollapsed, collectionSongs, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, syncMenuLoveRows, syncPausedUntil, syncSignedOut: syncSignedOutView, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionTab, setDraggingTrackForPlaylist, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -36541,6 +36558,7 @@ useEffect(() => {
     // SyncSetupDialog (components/sync-setup-dialog.js), a memo'd dialog.
     syncSetupModal.open && React.createElement(SyncSetupDialog, {
       resolverSyncSettings,
+      syncDialogLoves,
       setSyncSetupModal,
       syncProviderConfig,
       syncSetupModal,

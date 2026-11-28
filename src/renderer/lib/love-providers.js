@@ -109,11 +109,12 @@ function loveProviderFor(service, { getConfig } = {}) {
 }
 
 // The love providers: every loaded plug-in that declares loves and has a
-// provider, in the plug-ins' order.
+// provider, in the plug-ins' order, each once (a plug-in can be both a
+// meta-service and a loaded resolver; one love is one push).
 function loveProviderIds(services) {
-  return (Array.isArray(services) ? services : [])
+  return [...new Set((Array.isArray(services) ? services : [])
     .filter((s) => s && lovesOf(s))
-    .map((s) => s.id);
+    .map((s) => s.id))];
 }
 
 // ── A plug-in's own loves ──────────────────────────────────────────────────
@@ -183,7 +184,7 @@ function loveRowState(service, { name, scrobblerConfig, pluginConfig, needsSetup
   const label = name || (service && service.id) || '';
   if (provider && typeof provider.rowState === 'function') return provider.rowState({ name: label, scrobblerConfig, pluginConfig });
   const ready = service && typeof service.isConfigured === 'function' ? !!service.isConfigured(pluginConfig || {}) : !needsSetup;
-  return { signedIn: ready, importReady: ready, signedOutHint: `Set up ${label} first`, importHint: `Set up ${label} first` };
+  return { signedIn: ready, importReady: ready, signedOutHint: `Set up ${label} first`, importHint: `Set up ${label} first`, offLabel: 'Not set up' };
 }
 
 // The words a plug-in's verb makes in the Settings rows: "Push loves to X",
@@ -200,6 +201,43 @@ function loveWords(verb) {
   const words = VERB_WORDS[v] || { plural: `${v}s`, past: v.endsWith('e') ? `${v}d` : `${v}ed` };
   // The row's noun ("loved tracks"), whole: it names the kind, not a count.
   return { verb: v.charAt(0).toUpperCase() + v.slice(1), ...words, tracksNoun: [words.past, 'tracks'].join(' ') };
+}
+
+// ── Loves in sync (#1445) ──────────────────────────────────────────────────
+
+// Is a service's love push paused with its sync? The Collection's Sync menu
+// switch pauses everything that service syncs, its loves included: its sync
+// settings exist and say enabled: false. Settings' "Remove sync" (stopped)
+// ends its library sync, not its loves, and a service that never set up
+// sync has nothing to pause. The import is a one-off you start, so it
+// never asks this.
+function lovesPausedBySync(syncSettings) {
+  return !!(syncSettings && syncSettings.enabled === false && !syncSettings.stopped);
+}
+
+// The Sync menu's loves-only rows: every love provider that has no library
+// sync of its own (Last.fm, a server's stars), each with its push switch and
+// whether it can push (loveRowState). A service with library sync keeps its
+// sync row, and its loves are a switch in its sync dialog.
+//   services         the loaded plug-ins (meta-services and resolvers)
+//   syncProviderIds  the ids with a sync row
+function loveSyncRows(services, { syncProviderIds = [], scrobblerConfigs = {}, pluginConfigs = {}, pushEnabled = {} } = {}) {
+  const synced = new Set(syncProviderIds);
+  // The first entry for each id (a plug-in can be listed as a meta-service
+  // and as a loaded resolver).
+  const byId = new Map();
+  for (const s of Array.isArray(services) ? services : []) if (s && !byId.has(s.id)) byId.set(s.id, s);
+  return loveProviderIds([...byId.values()])
+    .filter((id) => !synced.has(id))
+    .map((id) => {
+      const service = byId.get(id);
+      const name = service.name || id;
+      const state = loveRowState(service, { name, scrobblerConfig: scrobblerConfigs[id], pluginConfig: pluginConfigs[id] });
+      return {
+        id, name, color: service.color || null, words: loveWords(lovesOf(service).verb),
+        signedIn: !!state.signedIn, pushOn: !!pushEnabled[id], signedOutHint: state.signedOutHint, offLabel: state.offLabel,
+      };
+    });
 }
 
 // ── Pages ──────────────────────────────────────────────────────────────────
@@ -254,6 +292,7 @@ const SCROBBLER_ACCOUNT = {
     importReady: !!((scrobblerConfig && scrobblerConfig.username) || (pluginConfig && pluginConfig.username)),
     signedOutHint: 'Sign in to scrobble first',
     importHint: `Add your ${name} username first`,
+    offLabel: 'Signed out',
   }),
 };
 
@@ -331,6 +370,8 @@ module.exports = {
   clearLoveProviders,
   lovesOf,
   loveWords,
+  lovesPausedBySync,
+  loveSyncRows,
   loveProviderFor,
   loveProviderIds,
   loveRowState,

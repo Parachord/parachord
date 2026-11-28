@@ -40,7 +40,7 @@
 const LoveImport = require('../lib/love-import');
 const { pluginName } = require('../lib/plugin-names');
 const { countOf, andList } = require('../lib/plural');
-const { loveProviderFor, loveProviderIds, lovesOf, lovedPageForImport } = require('../lib/love-providers');
+const { loveProviderFor, loveProviderIds, lovesOf, lovedPageForImport, lovesPausedBySync } = require('../lib/love-providers');
 
 function useLoves({
   collectionDataRef,
@@ -51,6 +51,9 @@ function useLoves({
   // config: a plug-in that implements loves in its own .axe (#1559 step 3).
   loadedResolversRef,
   getResolverConfigRef,
+  // Each service's sync settings: a service paused from the Sync menu gets
+  // no love pushes either (#1445).
+  resolverSyncSettingsRef,
   metaServiceConfigsRef,
   scrobblerConfigsRef,
   showSidebarBadge,
@@ -122,7 +125,7 @@ function useLoves({
     // Every love provider whose "Push loves to X" is on and that doesn't have
     // this love yet (lib/love-providers.js, #1559): one path for all of them.
     for (const serviceId of loveProviderIds(loveServices())) {
-      if (!enabled[serviceId] || pushed[serviceId]) continue;
+      if (!enabled[serviceId] || pushed[serviceId] || pausedBySync(serviceId)) continue;
       const provider = providerOf(serviceId);
       const label = pluginName(serviceId);
       tasks.push((async () => {
@@ -155,7 +158,9 @@ function useLoves({
     // parachord (Starting Line incident, 2026-06).
     const post = lovePushedKeysRef.current[track.id] || {};
     const enabledNow = scrobblerLovePushEnabledRef.current || {};
-    const pendingIds = loveProviderIds(loveServices()).filter((id) => !!enabledNow[id] && !post[id]);
+    // A service paused with its sync isn't pending: nothing goes to it until
+    // it's back on, and Send offers what it missed then.
+    const pendingIds = loveProviderIds(loveServices()).filter((id) => !!enabledNow[id] && !post[id] && !pausedBySync(id));
     if (pendingIds.length > 0) {
       const existing = loveRetryQueueRef.current.get(track.id);
       const attempts = (existing?.attempts || 0) + 1;
@@ -218,6 +223,11 @@ function useLoves({
       .catch((err) => console.warn('[love-push] could not clear the recording\'s tombstone:', err?.message || err));
   };
 
+  // Paused from the Sync menu (#1445): the switch for a service pauses
+  // everything it syncs, its loves included (lib/love-providers.js).
+  const pausedBySync = (serviceId) => lovesPausedBySync(resolverSyncSettingsRef && resolverSyncSettingsRef.current
+    ? resolverSyncSettingsRef.current[serviceId] : null);
+
   // What a provider is handed with each call: its plug-in config.
   const providerConfig = (serviceId) =>
     scrobblerConfigsRef.current?.[serviceId] || metaServiceConfigsRef.current?.[serviceId] || {};
@@ -278,6 +288,7 @@ function useLoves({
     const loves = lovesFor(service);
     if (!loves) return;
     const provider = providerOf(service);
+    if (pausedBySync(service)) { showToast(`${pluginName(service)} sync is paused. Turn it on in the Collection’s Sync menu to send your loves.`); return; }
     // Signed in is enough: the scrobbling switch doesn't stop loved tracks.
     if (!(await provider.isSignedIn())) { showToast(`Sign in to ${pluginName(service)} to sync loved tracks`); return; }
 
@@ -390,7 +401,7 @@ function useLoves({
       // backdrop) stops the run.
       let crossConfirm = false;
       for (const id of loveProviderIds(loveServices())) {
-        if (id === service || !scrobblerLovePushEnabledRef.current?.[id]) continue;
+        if (id === service || !scrobblerLovePushEnabledRef.current?.[id] || pausedBySync(id)) continue;
         let otherConnected = false;
         try { otherConnected = await providerOf(id).isSignedIn(); } catch (_e) { otherConnected = false; }
         if (otherConnected) otherIds.push(id);
