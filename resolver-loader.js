@@ -233,6 +233,9 @@ class ResolverLoader {
       '__proto__', 'constructor', 'prototype',
       'id', 'name', 'version', 'author', 'description', 'icon', 'color',
       'homepage', 'email', 'capabilities', 'urlPatterns', 'embedPlayer',
+      // Loves (#1559): the manifest's top-level `loves` field, a resolver
+      // field like embedPlayer; a method of that name would clobber it.
+      'loves',
       // The typed URL patterns (#1356 M11): the resolver field urlTypes, like
       // urlPatterns — an implementation method of this name would clobber it.
       'urlTypes',
@@ -288,6 +291,11 @@ class ResolverLoader {
       // kind { global?, countries? }), for Pop of the Tops' source and region
       // menus. Outside `capabilities` for the same reason. null when none.
       charts: ResolverLoader.chartsInfo(axe.charts),
+      // Loves (#1559): the manifest's top-level `loves` field ({ contract,
+      // verb, needs, canImport }), outside `capabilities` for the same
+      // reason; src/renderer/lib/love-providers.js validates it. null when
+      // none.
+      loves: axe.loves && typeof axe.loves === 'object' && !Array.isArray(axe.loves) ? { ...axe.loves } : null,
       // Artist bios (capabilities.biography, #1539 step 6): the manifest's
       // top-level `biography` ({ preferred: true }), outside `capabilities`
       // for the same reason. A preferred plug-in's bio is shown first until

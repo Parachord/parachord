@@ -365,7 +365,7 @@ describe('wiring (source markers)', () => {
     expect(app).toContain('onConfirm: () => resolve(true),');
     expect(app).toContain('onCancel: () => resolve(false),');
     // Connected, not just toggled.
-    expect(app).toContain('otherConnected = await getLoveProvider(id).isSignedIn();'); // signed in, not scrobbling-on
+    expect(app).toContain('otherConnected = await providerOf(id).isSignedIn();'); // signed in, not scrobbling-on
     // Every other provider with push on is offered (#1559), named in one line.
     expect(app).toContain("if (id === service || !scrobblerLovePushEnabledRef.current?.[id]) continue;");
     expect(app).toContain('otherLabel = andList(otherIds.map((id) => pluginName(id)));');
@@ -374,8 +374,13 @@ describe('wiring (source markers)', () => {
   test('the import needs only a username: the scrobbling sign-in\'s, else the account\'s (2026-11-23)', () => {
     const start = app.indexOf('const runLoveImport = React.useCallback(');
     const body = app.slice(start, app.indexOf('LoveImport.collectLoves({', start) + 400);
-    expect(body).toContain('const username = scrobblerConfigsRef.current?.[service]?.username || metaServiceConfigsRef.current?.[service]?.username;');
-    expect(body).toContain('Add your ${label} username first');
+    // The provider says whose (#1559): Last.fm's and ListenBrainz's read the
+    // scrobbling sign-in's username, else the account's (love-providers.js).
+    expect(body).toContain('const username = await provider.importAccount({ scrobblerConfig: scrobblerConfigsRef.current?.[service], pluginConfig: metaServiceConfigsRef.current?.[service] });');
+    expect(body).toContain('showToast(provider.importAccountHint(label), \'error\')');
+    const providers = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/lib/love-providers.js'), 'utf8');
+    expect(providers).toContain('(scrobblerConfig && scrobblerConfig.username) || (pluginConfig && pluginConfig.username) || null');
+    expect(providers).toContain('importAccountHint: (name) => `Add your ${name} username first`');
     // Not gated on the scrobbling sign-in: both services publish loves by username.
     expect(body).not.toContain('connected = await scrobbler.isSignedIn();');
     // The provider's pages, read by the username (lib/love-providers.js, #1559).

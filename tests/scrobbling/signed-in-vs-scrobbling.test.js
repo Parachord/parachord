@@ -42,7 +42,7 @@ describe('app.js', () => {
     // sign-in, only a username (2026-11-23).
     expect(app).toContain('if (!(await provider.isSignedIn())) return;');
     expect(app).toContain("if (!(await provider.isSignedIn())) { showToast(`Sign in to ${pluginName(service)} to sync loved tracks`); return; }");
-    expect(app).toContain('otherConnected = await getLoveProvider(id).isSignedIn();');
+    expect(app).toContain('otherConnected = await providerOf(id).isSignedIn();');
     const providers = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/lib/love-providers.js'), 'utf8');
     expect((providers.match(/isSignedIn: \(\) => scrobbler\.isSignedIn\(\)/g) || []).length).toBe(2);
     expect(app + providers).not.toMatch(/Scrobbler\.isEnabled\(\)|scrobbler\.isEnabled\(\)|otherScrobbler\.isEnabled\(\)/);

@@ -35,10 +35,15 @@
 // Last.fm and ListenBrainz implement the contract here, over their
 // scrobblers (scrobbler-loader.js): their writes stay inside the app, never
 // in a marketplace .axe (docs/architecture/scrobbling.md). They register at
-// startup (registerBuiltInLoveProviders); a plug-in that implements the
-// methods itself joins in a later step.
+// startup (registerBuiltInLoveProviders). A plug-in that implements
+// loveTrack (and getLovedPage) in its own .axe is one too: the host wraps it
+// (pluginLoveProvider), with its own config, and for `needs: 'serviceId'`
+// finds the track's source on that service first (Subsonic's stars, #1559
+// step 3).
 
 const LoveImport = require('./love-import');
+const { pickTrackMatch } = require('../../../sync-providers/track-match');
+const { MIN_CONFIDENCE_THRESHOLD } = require('../../../sync-providers/confidence-scoring');
 
 const LOVES_CONTRACT = 1;
 const NEEDS = new Set(['mbid', 'name', 'serviceId']);
@@ -75,18 +80,32 @@ function clearLoveProviders() {
   providers.clear();
 }
 
-// What a plug-in declares, from its meta-service entry: the manifest's own
-// `loves` field, else — a Last.fm or ListenBrainz plug-in installed before
-// the field shipped — the built-in provider's, when the manifest still says
-// lovedTracks. Null when it isn't a love provider.
+// What a plug-in declares, from its meta-service entry or its loaded
+// resolver: the manifest's own `loves` field, else — a Last.fm or
+// ListenBrainz plug-in installed before the field shipped — the built-in
+// provider's, when the manifest still says lovedTracks. Null when it isn't a
+// love provider: no registered provider, and no loveTrack of its own.
+// canImport also needs a way to list them.
 function lovesOf(service) {
-  if (!service || !getLoveProvider(service.id)) return null;
-  const declared = loveDescriptor(service.loves);
-  if (declared) return declared;
-  const provider = getLoveProvider(service.id);
-  return service.capabilities && service.capabilities.lovedTracks && provider.defaultLoves
-    ? loveDescriptor(provider.defaultLoves)
-    : null;
+  if (!service) return null;
+  const registered = getLoveProvider(service.id);
+  const ownMethods = typeof service.loveTrack === 'function';
+  if (!registered && !ownMethods) return null;
+  let declared = loveDescriptor(service.loves);
+  if (!declared && registered && registered.defaultLoves && service.capabilities && service.capabilities.lovedTracks) {
+    declared = loveDescriptor(registered.defaultLoves);
+  }
+  if (!declared) return null;
+  const canList = registered ? typeof registered.getLovedPage === 'function' : typeof service.getLovedPage === 'function';
+  return declared.canImport && !canList ? { ...declared, canImport: false } : declared;
+}
+
+// The provider for a service: the registered one, else a plug-in's own
+// methods wrapped (pluginLoveProvider; `getConfig` reads its saved config).
+function loveProviderFor(service, { getConfig } = {}) {
+  if (!service || !lovesOf(service)) return null;
+  return getLoveProvider(service.id)
+    || pluginLoveProvider(service, { getConfig: getConfig || (async () => ({})) });
 }
 
 // The love providers: every loaded plug-in that declares loves and has a
@@ -95,6 +114,92 @@ function loveProviderIds(services) {
   return (Array.isArray(services) ? services : [])
     .filter((s) => s && lovesOf(s))
     .map((s) => s.id);
+}
+
+// ── A plug-in's own loves ──────────────────────────────────────────────────
+
+// A source the app already verified for this plug-in: a real record (not a
+// noMatch marker) at or above the confidence floor.
+function verifiedSource(track, pluginId) {
+  const source = track && track.sources && !Array.isArray(track.sources) ? track.sources[pluginId] : null;
+  if (!source || typeof source !== 'object' || source.noMatch) return null;
+  return typeof source.confidence === 'number' && source.confidence < MIN_CONFIDENCE_THRESHOLD ? null : source;
+}
+
+// The track on a plug-in's service, for `needs: 'serviceId'`: its verified
+// source there, else the plug-in's search, picked by pickTrackMatch (the
+// same choice a play makes: validate, then sort; null when nothing is the
+// track). A search that fails throws, so the push retries it later.
+async function findLoveSource(plugin, track, config) {
+  const own = verifiedSource(track, plugin.id);
+  if (own) return own;
+  if (typeof plugin.search !== 'function' || !track || !track.artist || !track.title) return null;
+  const results = await plugin.search(`${track.artist} ${track.title}`, config);
+  return pickTrackMatch(Array.isArray(results) ? results : [], track.artist, track.title, { mbid: track.mbid, isrc: track.isrc }) || null;
+}
+
+// A plug-in implementing the contract in its own .axe. Signed in means set
+// up (its isConfigured over its config). Its loveTrack gets the track with
+// its source on that service in `track.sources[id]` when it needs a service
+// id, and anything but { ok: true } reads as no-match.
+function pluginLoveProvider(plugin, { getConfig }) {
+  const declared = loveDescriptor(plugin.loves);
+  const configured = (config) => (typeof plugin.isConfigured === 'function' ? !!plugin.isConfigured(config || {}) : true);
+  return {
+    id: plugin.id,
+    fromPlugin: true,
+    pageSize: 500,
+    isSignedIn: async () => configured(await getConfig()),
+    importAccount: async () => {
+      const config = await getConfig();
+      return configured(config) ? (config && config.username) || plugin.id : null;
+    },
+    importAccountHint: (name) => `Set up ${name} first`,
+    async loveTrack(track) {
+      const config = await getConfig();
+      let given = track;
+      if (declared && declared.needs === 'serviceId') {
+        const source = await findLoveSource(plugin, track, config);
+        if (!source) return { ok: false, reason: 'no-match' };
+        given = { ...track, sources: { ...(track.sources && !Array.isArray(track.sources) ? track.sources : {}), [plugin.id]: source } };
+      }
+      const result = await plugin.loveTrack(given, config);
+      if (result && result.ok === true) return result.ref !== undefined ? { ok: true, ref: result.ref } : { ok: true };
+      return { ok: false, reason: (result && result.reason) || 'no-match' };
+    },
+    getLovedPage: typeof plugin.getLovedPage === 'function'
+      ? async (args) => plugin.getLovedPage(args || {}, await getConfig())
+      : undefined,
+  };
+}
+
+// What the Settings rows show for a love provider (components/plugin-extras.js
+// LovedTracks), from what the dialog already holds: `signedIn` (Push and
+// Send need it), `importReady` (Import needs an account to read) and the
+// line each says when it can't yet. A built-in provider answers from its
+// scrobbler's config; a plug-in's own, from whether it's set up.
+function loveRowState(service, { name, scrobblerConfig, pluginConfig, needsSetup } = {}) {
+  const provider = service ? getLoveProvider(service.id) : null;
+  const label = name || (service && service.id) || '';
+  if (provider && typeof provider.rowState === 'function') return provider.rowState({ name: label, scrobblerConfig, pluginConfig });
+  const ready = service && typeof service.isConfigured === 'function' ? !!service.isConfigured(pluginConfig || {}) : !needsSetup;
+  return { signedIn: ready, importReady: ready, signedOutHint: `Set up ${label} first`, importHint: `Set up ${label} first` };
+}
+
+// The words a plug-in's verb makes in the Settings rows: "Push loves to X",
+// "Import loved tracks". Every provider says "Love" today; a "Like" or a
+// "Star" reads as itself.
+const VERB_WORDS = {
+  love: { plural: 'loves', past: 'loved' },
+  like: { plural: 'likes', past: 'liked' },
+  star: { plural: 'stars', past: 'starred' },
+  favorite: { plural: 'favorites', past: 'favorited' },
+};
+function loveWords(verb) {
+  const v = typeof verb === 'string' && verb.trim() ? verb.trim().toLowerCase() : 'love';
+  const words = VERB_WORDS[v] || { plural: `${v}s`, past: v.endsWith('e') ? `${v}d` : `${v}ed` };
+  // The row's noun ("loved tracks"), whole: it names the kind, not a count.
+  return { verb: v.charAt(0).toUpperCase() + v.slice(1), ...words, tracksNoun: [words.past, 'tracks'].join(' ') };
 }
 
 // ── Pages ──────────────────────────────────────────────────────────────────
@@ -137,6 +242,21 @@ function lovedPageForImport(page, serviceId) {
 
 // ── Last.fm and ListenBrainz ───────────────────────────────────────────────
 
+// Their account, the same for both: the scrobbling sign-in pushes; a
+// username (the sign-in's, else the plug-in account's) is enough to import,
+// since each service publishes a user's loves.
+const SCROBBLER_ACCOUNT = {
+  importAccount: ({ scrobblerConfig, pluginConfig } = {}) =>
+    (scrobblerConfig && scrobblerConfig.username) || (pluginConfig && pluginConfig.username) || null,
+  importAccountHint: (name) => `Add your ${name} username first`,
+  rowState: ({ name, scrobblerConfig, pluginConfig } = {}) => ({
+    signedIn: !!(scrobblerConfig && (scrobblerConfig.sessionKey || scrobblerConfig.userToken)),
+    importReady: !!((scrobblerConfig && scrobblerConfig.username) || (pluginConfig && pluginConfig.username)),
+    signedOutHint: 'Sign in to scrobble first',
+    importHint: `Add your ${name} username first`,
+  }),
+};
+
 // Last.fm: identified by name (track.love takes artist and title; a valid
 // recording MBID rides along). Its loves list pages by page number.
 function lastfmLoveProvider(scrobbler) {
@@ -146,6 +266,7 @@ function lastfmLoveProvider(scrobbler) {
     defaultLoves: { contract: LOVES_CONTRACT, verb: 'Love', needs: 'name', canImport: true },
     pageSize: PAGE,
     isSignedIn: () => scrobbler.isSignedIn(),
+    ...SCROBBLER_ACCOUNT,
     async loveTrack(track) {
       await scrobbler.loveTrack({
         artist: track.artist, title: track.title,
@@ -173,6 +294,7 @@ function listenbrainzLoveProvider(scrobbler, { resolveMbid }) {
     defaultLoves: { contract: LOVES_CONTRACT, verb: 'Love', needs: 'mbid', canImport: true },
     pageSize: PAGE,
     isSignedIn: () => scrobbler.isSignedIn(),
+    ...SCROBBLER_ACCOUNT,
     async loveTrack(track) {
       const mbid = await resolveMbid(track);
       if (!mbid) return { ok: false, reason: 'no-match' };
@@ -208,7 +330,12 @@ module.exports = {
   getLoveProvider,
   clearLoveProviders,
   lovesOf,
+  loveWords,
+  loveProviderFor,
   loveProviderIds,
+  loveRowState,
+  findLoveSource,
+  pluginLoveProvider,
   lovedPageForImport,
   lastfmLoveProvider,
   listenbrainzLoveProvider,

@@ -243,20 +243,33 @@ describe('one layout (the #1498 contact-sheet review)', () => {
   test('Scrobbling and its loved tracks show while Enable is off, and Import reads the account\'s username', () => {
     // Last.fm with recommendations off and scrobbling signed out: the loved
     // tracks import needs only a username, so it must still be reachable.
+    // Loves are the shared LovedTracks section after the account, for any
+    // love provider (lib/love-providers.js, #1559 step 3).
+    const LP = require('../../src/renderer/lib/love-providers');
+    LP.registerLoveProvider(LP.lastfmLoveProvider({ id: 'newservice', isSignedIn: async () => false, loveTrack: noop, getLovedTracksPage: noop }));
     global.window.scrobblers = [{ id: 'newservice', name: 'New Service', startAuth: noop }];
     const plugin = base({
       type: 'meta-service', capabilities: { scrobbling: true, recommendations: true, lovedTracks: true },
+      loves: { contract: 1, verb: 'Love', needs: 'name', canImport: true },
       configurable: { username: { label: 'New Service username' } },
       settings: { account: { type: 'username' } },
     });
-    const html = render(plugin, {
-      hostAccounts: { newservice: { connect: noop, remove: noop } },
-      metaServiceConfigs: { newservice: { enabled: false, username: 'jh' } },
-      runLoveImport: noop,
-    });
-    expect(html).toContain('data-section="scrobbling"');
-    expect(html).toContain('Import loved tracks');
-    expect(html).not.toContain('Add your New Service username first');
+    try {
+      const html = render(plugin, {
+        hostAccounts: { newservice: { connect: noop, remove: noop } },
+        metaServiceConfigs: { newservice: { enabled: false, username: 'jh' } },
+        runLoveImport: noop,
+      });
+      expect(html).toContain('data-section="scrobbling"');
+      expect(html).toContain('Import loved tracks');
+      expect(html).not.toContain('Add your New Service username first');
+      // Its own section after the account, no longer inside Scrobbling.
+      expect(html.indexOf('data-section="loved-tracks"')).toBeGreaterThan(html.indexOf('data-section="scrobbling"'));
+      // Signed out of scrobbling: Push reads off and locked.
+      expect(html).toContain('Sign in to scrobble first');
+    } finally {
+      LP.clearLoveProviders();
+    }
   });
 
   test('a sign-in note is the account row\'s own line, never a coloured paragraph', () => {

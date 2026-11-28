@@ -5626,28 +5626,6 @@ const Parachord = () => {
   const [collectionLoading, setCollectionLoading] = useState(true);
   const collectionLoadingRef = useRef(true);
 
-  // Loves: the loved-tracks push, its retry queue, the backfill and the
-  // import (hooks/use-loves.js, parachord#1487 "Scrobbling and Loves",
-  // #1559 step 1). Called here, after the Collection state it reads.
-  const {
-    scrobblerLovePushEnabled, setScrobblerLovePushEnabled,
-    lovePushedKeysRef, loveImportCursorRef, loveRetryQueueRef,
-    loveBackfillRunning, loveBackfillProgress,
-    loveImportRunning, loveImportProgress,
-    pushLoveToScrobblers, setLovePushEnabled, runLoveBackfill, runLoveImport,
-  } = useLoves({
-    collectionDataRef,
-    collectionLoadingRef,
-    setCollectionData,
-    metaServicesRef,
-    metaServiceConfigsRef,
-    scrobblerConfigsRef,
-    showSidebarBadge,
-    showToastRef,
-    showConfirmDialogRef,
-    saveCollectionRef,
-  });
-
   // Collection → Songs list: the local library merged with collection tracks
   // (deduplicated by id), then filtered and sorted. This used to be built
   // inline in the render, so every state change anywhere in the app (a full
@@ -7432,6 +7410,31 @@ const Parachord = () => {
   const resolverLoader = useRef(null);
   const [loadedResolvers, setLoadedResolvers] = useState([]);
   const loadedResolversRef = useRef([]);
+
+  // Loves: the loved-tracks push, its retry queue, the backfill and the
+  // import (hooks/use-loves.js, parachord#1487 "Scrobbling and Loves",
+  // #1559). Called here, after the Collection state, the loaded plug-ins and
+  // the plug-in config reader it reads (a plug-in's own loves, step 3).
+  const {
+    scrobblerLovePushEnabled, setScrobblerLovePushEnabled,
+    lovePushedKeysRef, loveImportCursorRef, loveRetryQueueRef,
+    loveBackfillRunning, loveBackfillProgress,
+    loveImportRunning, loveImportProgress,
+    pushLoveToScrobblers, setLovePushEnabled, runLoveBackfill, runLoveImport,
+  } = useLoves({
+    collectionDataRef,
+    collectionLoadingRef,
+    setCollectionData,
+    metaServicesRef,
+    loadedResolversRef,
+    getResolverConfigRef,
+    metaServiceConfigsRef,
+    scrobblerConfigsRef,
+    showSidebarBadge,
+    showToastRef,
+    showConfirmDialogRef,
+    saveCollectionRef,
+  });
 
   // Capability lookups for the shared HTML5 audio element. A resolver that
   // declares capabilities.html5Stream (with getStreamUrl in its .axe) plays an

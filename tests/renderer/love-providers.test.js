@@ -54,7 +54,7 @@ describe('which plug-ins are love providers', () => {
   });
 
   test('a plug-in installed before the field ships still loves, through the provider\'s own description', () => {
-    LP.registerLoveProvider(provider('lastfm', { defaultLoves: { contract: 1, verb: 'Love', needs: 'name', canImport: true } }));
+    LP.registerLoveProvider(provider('lastfm', { getLovedPage: async () => ({ items: [], next: null }), defaultLoves: { contract: 1, verb: 'Love', needs: 'name', canImport: true } }));
     expect(LP.lovesOf({ id: 'lastfm', capabilities: { lovedTracks: true } })).toEqual({ contract: 1, verb: 'Love', needs: 'name', canImport: true });
     // Without lovedTracks, and without a provider, nothing.
     expect(LP.lovesOf({ id: 'lastfm', capabilities: {} })).toBeNull();
@@ -196,5 +196,73 @@ describe('the import walk follows a page cursor', () => {
     expect(asked).toEqual([null, 'p2']);
     expect(out.loves.map((l) => l.title)).toEqual(['1', '2']);
     expect(out.complete).toBe(true);
+  });
+});
+
+describe('a plug-in\'s own loves (#1559 step 3)', () => {
+  const plugin = (over = {}) => ({
+    id: 'myserver',
+    loves: { contract: 1, verb: 'Love', needs: 'serviceId', canImport: true },
+    isConfigured: (c) => !!(c && c.serverUrl),
+    loveTrack: jest.fn(async (track) => ({ ok: true, ref: track.sources.myserver.songId })),
+    getLovedPage: jest.fn(async () => ({ items: [], next: null })),
+    search: jest.fn(async () => [{ songId: 'found', artist: 'A', title: 'T' }]),
+    ...over,
+  });
+
+  test('a plug-in with loveTrack is a provider with no registration; without getLovedPage it can\'t import', () => {
+    expect(LP.lovesOf(plugin())).toMatchObject({ needs: 'serviceId', canImport: true });
+    expect(LP.lovesOf(plugin({ getLovedPage: undefined })).canImport).toBe(false);
+    expect(LP.lovesOf(plugin({ loveTrack: undefined }))).toBeNull();
+    expect(LP.lovesOf(plugin({ loves: null }))).toBeNull();
+    expect(LP.loveProviderIds([plugin(), { id: 'other' }])).toEqual(['myserver']);
+  });
+
+  test('its verified source is used as is; no search', async () => {
+    const p = plugin();
+    const provider = LP.loveProviderFor(p, { getConfig: async () => ({ serverUrl: 'x' }) });
+    await expect(provider.loveTrack({ artist: 'A', title: 'T', sources: { myserver: { songId: 'mine', confidence: 0.9 } } }))
+      .resolves.toEqual({ ok: true, ref: 'mine' });
+    expect(p.search).not.toHaveBeenCalled();
+    expect(p.loveTrack.mock.calls[0][1]).toEqual({ serverUrl: 'x' });
+  });
+
+  test('a source under the confidence floor, or a noMatch marker, is searched again and picked', async () => {
+    for (const weak of [{ songId: 'weak', confidence: 0.5 }, { noMatch: true }]) {
+      const p = plugin();
+      const provider = LP.loveProviderFor(p, { getConfig: async () => ({}) });
+      await expect(provider.loveTrack({ artist: 'A', title: 'T', sources: { myserver: weak } })).resolves.toEqual({ ok: true, ref: 'found' });
+      expect(p.search).toHaveBeenCalledWith('A T', {});
+    }
+  });
+
+  test('a plug-in answering anything but ok is no-match', async () => {
+    const provider = LP.loveProviderFor(plugin({ loveTrack: async () => false }), { getConfig: async () => ({}) });
+    await expect(provider.loveTrack({ artist: 'A', title: 'T', sources: { myserver: { songId: 's' } } })).resolves.toEqual({ ok: false, reason: 'no-match' });
+  });
+
+  test('its rows read set up from its own isConfigured', () => {
+    expect(LP.loveRowState(plugin(), { name: 'My Server', pluginConfig: { serverUrl: 'x' } })).toMatchObject({ signedIn: true, importReady: true });
+    expect(LP.loveRowState(plugin(), { name: 'My Server', pluginConfig: {} })).toMatchObject({ signedIn: false, importReady: false, signedOutHint: 'Set up My Server first' });
+  });
+});
+
+describe('the words a verb makes', () => {
+  test('Love, Star, and a verb it doesn\'t know', () => {
+    expect(LP.loveWords('Love')).toEqual({ verb: 'Love', plural: 'loves', past: 'loved', tracksNoun: 'loved tracks' });
+    expect(LP.loveWords('Star')).toMatchObject({ plural: 'stars', past: 'starred', tracksNoun: 'starred tracks' });
+    expect(LP.loveWords('Heart')).toMatchObject({ verb: 'Heart', plural: 'hearts', past: 'hearted' });
+    expect(LP.loveWords(undefined).verb).toBe('Love');
+  });
+});
+
+describe('an imported love keeps the source it came with', () => {
+  test('its row plays from that service straight away; a love without one has none', () => {
+    const plan = LoveImport.planLoveImport([
+      { artist: 'A', title: 'T', album: '', mbid: null, lovedAt: 100, service: 'myserver', source: { subsonicId: 's1', title: 'T', artist: 'A' } },
+      { artist: 'B', title: 'U', album: '', mbid: null, lovedAt: 99, service: 'lastfm' },
+    ], [], {});
+    expect(plan.add[0].sources).toEqual({ myserver: { subsonicId: 's1', title: 'T', artist: 'A' } });
+    expect(plan.add[1].sources).toEqual({});
   });
 });

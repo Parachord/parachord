@@ -43,6 +43,7 @@ const EXPECTED_KEYS = destructureKeysFrom(appSrc, CLOSE_MARKER);
 
 const BRIDGES = ['showToastRef', 'showConfirmDialogRef', 'saveCollectionRef'];
 const ARGS = ['collectionDataRef', 'collectionLoadingRef', 'setCollectionData', 'metaServicesRef',
+  'loadedResolversRef', 'getResolverConfigRef',
   'metaServiceConfigsRef', 'scrobblerConfigsRef', 'showSidebarBadge', ...BRIDGES];
 
 // ---------------------------------------------------------------------------
@@ -449,5 +450,63 @@ describe('any love provider', () => {
     expect(inputs.showConfirmDialogRef.current).toHaveBeenCalledWith(expect.objectContaining({
       message: 'Tracks you import from ListenBrainz will also be loved on Last.fm, because "Push loves to Last.fm" is on. This can\'t be undone from Parachord.',
     }));
+  });
+});
+
+// A plug-in's own loves (#1559 step 3): found among the loaded plug-ins, run
+// with its saved config, and its imported loves arrive with their source.
+describe('a plug-in\'s own loves', () => {
+  const server = () => ({
+    id: 'myserver',
+    loves: { contract: 1, verb: 'Love', needs: 'serviceId', canImport: true },
+    isConfigured: (c) => !!(c && c.serverUrl),
+    loveTrack: jest.fn(async (t) => ({ ok: true, ref: t.sources.myserver.songId })),
+    getLovedPage: jest.fn(async () => ({
+      items: [{ artist: 'Artist s', title: 'Starred', album: 'Al', lovedAt: 1700000000, source: { songId: 's9', title: 'Starred', artist: 'Artist s' } }],
+      next: null,
+    })),
+    search: jest.fn(async () => []),
+  });
+  const withPlugin = (plugin, config = { serverUrl: 'http://s', username: 'u' }) => {
+    const s = setup({ tracks: [track('a', { sources: { myserver: { songId: 'sa' } } })] });
+    s.inputs.loadedResolversRef = { current: [plugin] };
+    s.inputs.getResolverConfigRef = { current: jest.fn(async () => config) };
+    return { ...s, h: harness(s.inputs) };
+  };
+
+  test('a heart reaches it with its saved config, by its source there', async () => {
+    stubWindow();
+    setPluginLookup((id) => ({ myserver: { name: 'My Server' } }[id] || null));
+    const plugin = server();
+    const { h, inputs } = withPlugin(plugin);
+    await h.out.setLovePushEnabled('myserver', true);
+    h.runEffects();
+    await h.out.pushLoveToScrobblers(track('a', { sources: { myserver: { songId: 'sa' } } }), { justAdded: true });
+    expect(inputs.getResolverConfigRef.current).toHaveBeenCalledWith('myserver');
+    expect(plugin.loveTrack.mock.calls[0][1]).toEqual({ serverUrl: 'http://s', username: 'u' });
+    expect(typeof h.out.lovePushedKeysRef.current.a.myserver).toBe('number');
+  });
+
+  test('Import adds its starred songs with their source on it, and marks them so they never go back', async () => {
+    stubWindow();
+    setPluginLookup((id) => ({ myserver: { name: 'My Server' } }[id] || null));
+    const plugin = server();
+    const { h, inputs } = withPlugin(plugin);
+    await h.out.runLoveImport('myserver');
+    expect(plugin.getLovedPage).toHaveBeenCalledWith({ cursor: null, account: 'u' }, { serverUrl: 'http://s', username: 'u' });
+    const added = inputs.collectionDataRef.current.tracks.find((t) => t.title === 'Starred');
+    expect(added).toMatchObject({ artist: 'Artist s', addedAt: 1700000000 * 1000, sources: { myserver: { songId: 's9', title: 'Starred', artist: 'Artist s' } } });
+    expect(h.out.lovePushedKeysRef.current[added.id]).toHaveProperty('myserver');
+    expect(inputs.showToastRef.current).toHaveBeenCalledWith(expect.stringMatching(/^Imported 1 from My Server\./), 'success', null, { duration: 8000 });
+  });
+
+  test('not set up: Import says so, and nothing is read', async () => {
+    stubWindow();
+    setPluginLookup((id) => ({ myserver: { name: 'My Server' } }[id] || null));
+    const plugin = server();
+    const { h, inputs } = withPlugin(plugin, {});
+    await h.out.runLoveImport('myserver');
+    expect(inputs.showToastRef.current).toHaveBeenCalledWith('Set up My Server first', 'error');
+    expect(plugin.getLovedPage).not.toHaveBeenCalled();
   });
 });

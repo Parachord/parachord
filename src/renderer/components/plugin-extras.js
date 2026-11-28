@@ -25,6 +25,10 @@
 //                    that need its sign-in, nested under the account and
 //                    its keys (Subsonic's "Report plays to your server",
 //                    #1546)
+//   LovedTracks      the manifest's `loves` field (lib/love-providers.js,
+//                    #1559): Import, "Push loves to X" and "Send N loved
+//                    tracks to X", for Last.fm, ListenBrainz and a server's
+//                    stars alike
 //   PlaybackQualityRow  a music plug-in's "Playback quality" line: it
 //                    follows Settings › General › Playback Quality, or where
 //                    its quality is set (lib/playback-quality-line.js: by
@@ -384,6 +388,60 @@ function PluginSwitches({ plugin, config, onSet }) {
   }));
 }
 
+// LovedTracks: a love provider's rows (the manifest's `loves`, #1559), one
+// layout for every plug-in, signed in or not: Import (only when it can list
+// your loves; it needs an account to read, not a sign-in), "Push loves to
+// X" (off and locked until it's signed in or set up, #1614; the saved
+// choice is kept) and "Send N loved tracks to X" (signed in, with something
+// unsent). The words come from the manifest's verb (loveWords). It was drawn
+// inside Last.fm's and ListenBrainz's scrobbling card, so no other plug-in
+// could have it.
+//   name, words         the plug-in's name; loveWords(verb)
+//   canImport           the manifest says it can list your loves
+//   state               loveRowState: { signedIn, importReady, signedOutHint, importHint }
+//   pushEnabled, onSetPush
+//   onImport, importRunning, importProgress, hasImported
+//   onSend, sendRunning, sendProgress, unpushedCount
+//   inAccount           drawn inside a username account, above its
+//                       Advanced: no padding under it (Advanced has its own)
+function LovedTracks({
+  name, words, canImport, state,
+  pushEnabled, onSetPush,
+  onImport, importRunning, importProgress, hasImported,
+  onSend, sendRunning, sendProgress, unpushedCount = 0,
+  inAccount = false,
+}) {
+  const e = React.createElement;
+  const w = words || { verb: 'Love', plural: 'loves', past: 'loved', tracksNoun: 'loved tracks' };
+  const signedIn = !!(state && state.signedIn);
+  const importHint = importRunning && importProgress
+    ? (importProgress.phase === 'confirm' ? 'Waiting for confirmation…'
+      : importProgress.phase === 'lookup'
+        ? `Looking up names… ${importProgress.done} of ${importProgress.total}`
+        : `Importing… ${importProgress.done} of ${importProgress.total}`)
+    : state && state.importReady ? `Add your ${name} ${w.plural} to your Collection`
+    : (state && state.importHint) || `Set up ${name} first`;
+  const pluralCap = w.plural.charAt(0).toUpperCase() + w.plural.slice(1);
+  return e('div', { 'data-section': 'loved-tracks', style: { ...SECTION, ...(inAccount ? { paddingBottom: 0 } : {}), display: 'flex', flexDirection: 'column', gap: '12px' } },
+    canImport && onImport && e(SettingRow, { label: `Import ${w.tracksNoun}`, hint: importHint, style: { padding: 0 } },
+      e(Button, { variant: 'secondary', size: 'sm', onClick: onImport, busy: !!importRunning, disabled: !(state && state.importReady) },
+        hasImported ? 'Import new' : 'Import')),
+    onSetPush && e(SettingRow, {
+      label: `Push ${w.plural} to ${name}`,
+      hint: signedIn ? `${w.verb} it on ${name} when you love it here` : ((state && state.signedOutHint) || `Set up ${name} first`),
+      style: { padding: 0 },
+    },
+      e(Switch, { checked: signedIn && !!pushEnabled, disabled: !signedIn, onToggle: (v) => onSetPush(v), 'aria-label': `Push ${w.plural} to ${name}` })),
+    signedIn && onSend && unpushedCount > 0 && e(SettingRow, {
+      label: `Send ${countOf(unpushedCount, `${w.past} track`)} to ${name}`,
+      hint: sendRunning && sendProgress
+        ? `Sending… ${sendProgress.done} of ${sendProgress.total}`
+        : `${pluralCap} from before you turned this on. ${name} dates them today.`,
+      style: { padding: 0 },
+    },
+      e(Button, { variant: 'secondary', size: 'sm', onClick: onSend, busy: !!sendRunning }, 'Send')));
+}
+
 // InstallCallout: settings.installCallout { title, text, url, linkLabel },
 // software the plug-in needs that Parachord can't install (Ollama).
 function InstallCallout({ plugin }) {
@@ -442,5 +500,5 @@ function WatchFolders({ watchFolders, isScanning, scanProgress, localFilesStats,
 }
 
 module.exports = {
-  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, PlaybackQualityRow,
+  ServiceAccount, ClientKeys, AdvancedKeys, UsernameAccount, LibrarySync, StartupRow, InstallCallout, WatchFolders, PluginSwitches, PlaybackQualityRow, LovedTracks,
   switchesOf, switchOn, settingsOf, configurableOf, authTypeOf, accountOf, advancedFieldsOf, DEFAULT_AUTH_PORT, shownKeyValues };
