@@ -1266,6 +1266,106 @@ module.exports = {
       return best ? best.coid : null;
     }
 
+    // ── Loves (#1559): the like and the likes list ────────────────────────────
+    // Amazon's love signal is the track's LIKE (the Like/Unlike button on
+    // every track row — a signal separate from the library: purchases and
+    // playlists are not it, and nothing else in Parachord writes it). Live-
+    // captured 2026-11-27 against the signed-in web session:
+    // docs/architecture/amazon-music.md "Loves" — every sentence there is a
+    // requirement.
+
+    // The page that answers the likes list: /my/songs (the Songs page) fires
+    // LikedSongsPage on load, one request, paginated by its pageInfo token
+    // (the continuation the playlist pages and the purchased page also take
+    // as afterCursor). The response's rows are ONLY likes (live-verified: a
+    // 250-purchase account showed one overlap — a song both bought and
+    // liked — across the whole list), but a row is still taken only when its
+    // own likesContext says LIKE: the belt against a page that starts folding
+    // purchases in (the visible Songs page lists both).
+    const LIKED_SONGS_PAGE_URL = 'https://music.amazon.com/my/songs';
+    const LIKED_SONGS_OPERATION = 'LikedSongsPage';
+    // The page's own request replays verbatim — firstLimit 50 and all (a
+    // continuation's firstLimit is ignored: the token encodes the window,
+    // live-verified) — so 50 is the page size the manifest's `loves` declares.
+    // The server caps every likes page at 99 rows whatever firstLimit asks
+    // (live: 50/100/200/500/1000 all answered ≤99).
+    const LIKED_SONGS_PAGE_SIZE = 50;
+
+    // The like itself: the likeTrack mutation, as FULL TEXT — no persisted-query
+    // hash. A hash renumbers on every hornet redeploy (the spec-template rule),
+    // and no page fires the mutation on load, so there is no capture to harvest
+    // a current hash from; the text path asks the server to resolve the
+    // document itself (live-verified 2026-11-27: 200, data.setTrackLikeState.
+    // track.likesContext.state echoes the state written; LIKE on an already-
+    // liked track is idempotent).
+    const LIKE_TRACK_MUTATION = 'mutation likeTrack($trackId: String!, $likeState: String!) { setTrackLikeState(trackId: $trackId, likeState: $likeState) { track { id likesContext { state } } } }';
+
+    // The likeTrack request body for a track's catalog ASIN (likeState 'LIKE'
+    // — Parachord never unloves, so nothing else is ever asked for).
+    function likeTrackBody(asin) {
+      return {
+        operationName: 'likeTrack',
+        variables: { trackId: String(asin), likeState: 'LIKE' },
+        query: LIKE_TRACK_MUTATION
+      };
+    }
+
+    // Whether a likeTrack reply says the like landed: the state Amazon
+    // echoed back is the like (the caller hands the reply's `data`, what
+    // replayGqlPatiently returns). Anything else (a gql error, a null track,
+    // another state) is the caller's failure to raise.
+    function likeTrackReplyOk(data) {
+      const track = data && data.setTrackLikeState && data.setTrackLikeState.track;
+      return !!(track && track.likesContext && track.likesContext.state === 'LIKE');
+    }
+
+    // The page's own LikedSongsPage request among captured bodies (the
+    // amazonMusicHomeRequest pattern: operationName + a variables object), or
+    // null when the page never fired it.
+    function likedSongsRequest(bodies) {
+      return amazonMusicHomeRequest(bodies, LIKED_SONGS_OPERATION);
+    }
+
+    // One likes page → { items, skipped, envelope }, each item the love
+    // provider's shape ({ artist, title, album, lovedAt, source }). Amazon
+    // publishes NO like dates and NO recency sort (sortBy: name only,
+    // live-verified), so lovedAt is null on every row — the import walk keeps
+    // them all and its cursor never advances, so every run re-reads the list
+    // and the dedupe absorbs it. `source` is the row's own catalog record on
+    // this service (the search mapper's shape, no credential): an imported
+    // love arrives playable from Amazon at once. The envelope needs the
+    // connection's own edges array (the sibling parsers' rule): a connection
+    // with no edges is a renamed shape, never "no likes at all".
+    function lovedItemsFromLikedSongsGql(data) {
+      const connection = data && data.user && data.user.tracks;
+      const edges = connection && Array.isArray(connection.edges) ? connection.edges : null;
+      const items = [];
+      let skipped = 0;
+      for (const edge of (edges || [])) {
+        const state = edge && edge.node && edge.node.likesContext && edge.node.likesContext.state;
+        if (state !== 'LIKE') { skipped++; continue; }
+        const track = trackFromGqlEdge(edge);
+        if (!track) { skipped++; continue; }
+        items.push({
+          artist: track.artist,
+          title: track.title,
+          album: track.album || '',
+          lovedAt: null,
+          source: {
+            title: track.title,
+            artist: track.artist,
+            album: track.album || '',
+            duration: track.duration || 0,
+            albumArt: track.albumArt || null,
+            amazonAsin: track.asin,
+            albumAsin: track.albumAsin || null,
+            explicit: !!track.explicit
+          }
+        });
+      }
+      return { items, skipped, envelope: !!(connection && edges) };
+    }
+
     // ── The recommendations (#1356 M8) ───────────────────────────────────────
     // The home page's MUSIC tab and the see-more route: the request, response
     // and pagination shapes (live-captured 2026-11; see
@@ -2672,6 +2772,8 @@ module.exports = {
       AMAZON_HOMES, HOME_REFUSED_STATUS, PLAYLISTS_SECTION_ID,
       RECOMMENDATIONS_WALK_TIMEOUT_MS,
       OWNED_PAGE_URL, OWNED_OPERATION, OWNED_TTL_MS, OWNED_MAX_PAGES, OWNED_MAX_MS,
+      LIKED_SONGS_PAGE_URL, LIKED_SONGS_OPERATION, LIKED_SONGS_PAGE_SIZE,
+      LIKE_TRACK_MUTATION, likeTrackBody, likeTrackReplyOk, likedSongsRequest, lovedItemsFromLikedSongsGql,
       STREAMING_URLS_TARGET,
       amazonStreamingUrlsBody,
       streamingUrlFromReply,
@@ -3359,6 +3461,10 @@ module.exports = {
     // The account's bought tracks (#1494), and a read of them in flight.
     this._ownedTracks = null;
     this._ownedPromise = null;
+    // The loves caches (#1559): the mutation's gql entry and the kept likes
+    // list request — both minted under the session that signed out.
+    this._lovesEntry = null;
+    this._lovesList = null;
     this._csrfHarvest = null;
     this._configRead = null;
     return finalPost;
@@ -3671,6 +3777,178 @@ module.exports = {
       at: Date.now(),
       stop: walked.stop
     };
+  },
+
+  // ── Loves (#1559): the like and the likes list ──────────────────────────
+  // The heart's reach on Amazon (the manifest's `loves`, needs: 'serviceId'
+  // — the host finds the track's Amazon source and hands it in
+  // track.sources.amazonmusic): the likeTrack mutation writes the like, the
+  // LikedSongsPage query lists them. Both ride the ONE host web-session
+  // instance like every other flow; the shapes are live-captured (2026-11-27,
+  // docs/architecture/amazon-music.md "Loves" — every sentence there is a
+  // requirement). Amazon publishes no like dates and no recency sort, so a
+  // listed love carries no lovedAt and every import re-reads the whole list
+  // (the dedupe absorbs it). Never an unlike: likeState stays 'LIKE'.
+
+  // The last likes page flow's gql entry (the mutation's mint: headers are
+  // operation-agnostic, and the mutation has no page to capture its own),
+  // kept with the session generation and the harvest TTL. The spec-search
+  // template is NOT taken as one: its 24h freshness outlives the csrf values
+  // (the 10-min harvest bound), and a stale set is a failed push.
+  lovedGqlEntry: function () {
+    const e = this._lovesEntry;
+    if (!e || e.generation !== this._sessionGeneration) return null;
+    if (Date.now() - e.at > this.requireLib().CSRF_HARVEST_MAX_AGE_MS) return null;
+    return e;
+  },
+
+  // The kept likes list state (the captured LikedSongsPage request and its
+  // entry) a continuation page replays; same generation and TTL rules.
+  lovedListState: function () {
+    const s = this._lovesList;
+    if (!s || s.generation !== this._sessionGeneration) return null;
+    if (Date.now() - s.at > this.requireLib().CSRF_HARVEST_MAX_AGE_MS) return null;
+    return s;
+  },
+
+  // The ONE page flow behind both loves paths (the owned flow's pattern on
+  // the Songs page): load /my/songs with the capture window INSIDE the load,
+  // take the page's own LikedSongsPage request (the freshest csrf-ts among
+  // the page's own captures, never an echo — an echoed one is our own replay
+  // traffic, and minting from it re-certifies session-aged headers, the
+  // #1152 poisoning), keep the entry for the mutation and the csrf harvest
+  // for a dmls mint, then replay the first page. The window ends AT the
+  // page's own request (doneWhen, the playlist-import class: the op always
+  // fires on load) and judges a half-loaded page's captures on timeout
+  // (returnOnTimeout) — the flow reads LikedSongsPage off whatever the window
+  // holds, and a capture with no request is the structural miss below.
+  likedSongsPageFlow: async function () {
+    const lib = this.requireLib();
+    const ws = this.hostBridge('webSession');
+    if (!ws) throw lib.notReady('not-ready', 'Amazon webSession bridge not available');
+    const load = await ws.load(lib.SESSION, lib.LIKED_SONGS_PAGE_URL, {
+      capture: {
+        urlPrefixes: [lib.GQL_URL + '*'],
+        quietMs: lib.PAGE_CAPTURE_QUIET_MS,
+        budgetMs: lib.PAGE_CAPTURE_BUDGET_MS,
+        doneWhen: { bodyIncludes: '"' + lib.LIKED_SONGS_OPERATION + '"' },
+        returnOnTimeout: true
+      }
+    });
+    if (!load || !load.success) {
+      throw lib.notReady((load && load.reason) || 'load-failed', (load && load.error) || 'Amazon likes page did not finish loading');
+    }
+    // The after-load URL re-check: a wall means the session died mid-flight
+    // (the page redirected to a sign-in wall while it loaded).
+    if (lib.pageBlocksPlayback(load.finalUrl)) {
+      console.warn('[Amazon] likes page blocked: ' + load.finalUrl);
+      throw lib.notReady('not-signed-in', 'Choose an Amazon Music profile');
+    }
+    const captured = (load.captures || []).filter(r => r.headers && !r.echo);
+    let entry = null;
+    let request = null;
+    let bestTs = -1;
+    for (const r of captured) {
+      const req = lib.likedSongsRequest([r.body]);
+      if (!req) continue;
+      const ts = Number(r.headers['csrf-ts'] || r.headers['Csrf-ts']) || 0;
+      if (ts >= bestTs) { bestTs = ts; entry = r; request = req; }
+    }
+    if (!entry || !request) {
+      const ops = lib.capturedOperationNames((load.captures || []).map(r => r.body)).join(', ') || 'none';
+      console.warn('[Amazon] ' + lib.LIKED_SONGS_PAGE_URL + ' never fired ' + lib.LIKED_SONGS_OPERATION + '; gql operations seen: ' + ops);
+      throw lib.notReady('not-ready', 'Amazon likes page never asked for your likes');
+    }
+    if (!request.variables || typeof request.variables !== 'object') {
+      throw lib.notReady('not-ready', 'Unexpected Amazon likes query shape');
+    }
+    this.keepCsrfHeaders(load.captures);
+    this._lovesEntry = { url: entry.url, headers: entry.headers, at: Date.now(), generation: this._sessionGeneration };
+    this._lovesList = { entry: this._lovesEntry, request, at: Date.now(), generation: this._sessionGeneration };
+    const first = await this.replayGqlPatiently(entry, request);
+    if (first.error) throw lib.notReady('not-ready', first.error);
+    return { entry: this._lovesEntry, request, data: first.data };
+  },
+
+  // A heart's like (lib/love-providers.js pluginLoveProvider, needs:
+  // 'serviceId'): the track arrives with its Amazon source in
+  // track.sources.amazonmusic — the same dig the DRM pair makes of a track
+  // (drmAsinFromTrack). A track with no ASIN is no-match, never a guess (the
+  // host only searches when the plug-in asks for it, and it doesn't: the
+  // source must be one Amazon itself returned). A failed request THROWS (the
+  // push queues a retry) and drops the entry, so the next attempt re-mints
+  // instead of failing on the same stale headers until the TTL.
+  loveTrack: async function (track, config) {
+    const lib = this.requireLib();
+    const asin = this.drmAsinFromTrack(track);
+    if (!asin) return { ok: false, reason: 'no-match' };
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    let entry = this.lovedGqlEntry();
+    if (!entry) {
+      // The entry check runs INSIDE the queued job: two hearts pushed while
+      // no entry exists share one mint — the second takes the fresh entry the
+      // first left instead of a second page flow (which, seconds after the
+      // first /my/songs load, can hit the SPA no-refire below).
+      const page = await this.enqueuePageFlow(async () => {
+        const cached = this.lovedGqlEntry();
+        return cached ? { entry: cached } : this.likedSongsPageFlow();
+      }, { lane: 'foreground' });
+      entry = page.entry;
+    }
+    const outcome = await this.replayGqlPatiently(entry, lib.likeTrackBody(asin));
+    if (outcome.error || !lib.likeTrackReplyOk(outcome.data)) {
+      // The MUTATION's entry only is dropped (a track-specific gql failure — a
+      // delisted ASIN — must not take an in-flight import's kept list with
+      // it): the list fails on its own terms and heals on its own next run.
+      this._lovesEntry = null;
+      throw new Error('Amazon Music: liking "' + ((track && track.title) || 'the track') + '" failed' + (outcome.error ? ' (' + outcome.error + ')' : ''));
+    }
+    console.log('[Amazon] liked ' + asin + ' ("' + ((track && track.title) || '') + '")');
+    return { ok: true };
+  },
+
+  // One page of the user's likes (Import; the provider wraps this in the
+  // contract's cursor paging — `cursor` is the previous page's `next`, null
+  // for the first). The first page rides the page flow (the mint); a
+  // continuation replays the kept request with afterCursor. Amazon carries
+  // no like dates, so `total` stays 0 (unknown) and every item's lovedAt is
+  // null — the walk reads the whole list each run and the dedupe absorbs it.
+  getLovedPage: async function (args, config) {
+    const lib = this.requireLib();
+    const cursor = args && typeof args.cursor !== 'undefined' && args.cursor !== null ? args.cursor : null;
+    if (!(await this.isSignedIn())) {
+      throw lib.notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    let data;
+    if (cursor === null) {
+      const page = await this.enqueuePageFlow(() => this.likedSongsPageFlow(), { lane: 'foreground' });
+      data = page.data;
+    } else {
+      const kept = this.lovedListState();
+      if (!kept) throw new Error('The likes list read expired — run the import again');
+      const outcome = await this.replayGqlPatiently(kept.entry, {
+        ...kept.request,
+        variables: { ...kept.request.variables, afterCursor: cursor }
+      });
+      if (outcome.error) {
+        // The LIST's kept state only is dropped (its own terms — the mutation's
+        // entry is a separate cache with the same headers, and a failure here
+        // says nothing about a like the same session could still write).
+        this._lovesList = null;
+        throw new Error('Amazon Music: a likes page failed (' + outcome.error + ')');
+      }
+      data = outcome.data;
+    }
+    const page = lib.lovedItemsFromLikedSongsGql(data);
+    if (!page.envelope) {
+      throw lib.notReady('not-ready', 'Amazon likes response was not the expected shape');
+    }
+    const connection = data && data.user && data.user.tracks;
+    const info = connection && connection.pageInfo;
+    const next = info && info.token && info.hasNextPage !== false ? info.token : null;
+    return { items: page.items, skipped: page.skipped, total: 0, returned: (connection && Array.isArray(connection.edges) ? connection.edges.length : 0), next };
   },
 
   // ── The session surfaces (#1356 M10): the status reply, sign-in, sign-out ──

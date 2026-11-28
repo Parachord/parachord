@@ -38,7 +38,7 @@ afterEach(() => jest.restoreAllMocks());
 describe('the manifest', () => {
   test('declares loves with Apple\'s own word, by catalog id, and no import', () => {
     expect(axe.capabilities.lovedTracks).toBe(true);
-    expect(LP.loveDescriptor(axe.loves)).toEqual({ contract: 1, verb: 'Favorite', needs: 'serviceId', canImport: false });
+    expect(LP.loveDescriptor(axe.loves)).toEqual({ contract: 1, verb: 'Favorite', needs: 'serviceId', canImport: false, pageSize: null });
     expect(axe.requires).toEqual({ optionalHostBridges: ['musicKit'] });
     expect(LP.loveWords('Favorite')).toMatchObject({ plural: 'favorites', past: 'favorited', tracksNoun: 'favorited tracks' });
   });

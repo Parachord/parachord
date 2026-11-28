@@ -42,7 +42,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.24.3');
+    expect(axe.manifest.version).toBe('1.25.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -92,7 +92,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['_lib', 'appVersion', 'assertPlanPlaysAsin', 'cacheSeeMorePage', 'cdmAvailable', 'cleanup', 'debugCaptureGql', 'debugCapturePageFlow', 'dmls', 'dropSessionState', 'drmAsinFromTrack', 'enqueuePageFlow', 'ensureSessionContext', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'fairPlayManifest', 'fetchConfigJson', 'getOwnedTracks', 'getPlan', 'getPlaybackManifest', 'getRecommendations', 'getStatus', 'getStreamUrl', 'handlePlayerEvent', 'homePageFlow', 'hostBridge', 'init', 'isSignedIn', 'keepCsrfHeaders', 'keptCsrfHeaders', 'kickCertWarm', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'mintCsrfHeaders', 'mintCsrfPageFlow', 'mintSessionContext', 'musicAgent', 'musicHomePageFlow', 'notePlanReading', 'ownedTracksPageFlow', 'pageSections', 'play', 'playlistImportPages', 'postTelemetryEvent', 'relayLicense', 'replayGql', 'replayGqlPatiently', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'searchOwned', 'seeMorePageFlow', 'sessionState', 'signIn', 'signInPromptDecision', 'signOut', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'telemetry', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'wantsFairPlay', 'warmCertSession', 'withPlaylistsSection'].sort()
+      ['_lib', 'appVersion', 'assertPlanPlaysAsin', 'cacheSeeMorePage', 'cdmAvailable', 'cleanup', 'debugCaptureGql', 'debugCapturePageFlow', 'dmls', 'dropSessionState', 'drmAsinFromTrack', 'enqueuePageFlow', 'ensureSessionContext', 'expandRecommendationSection', 'expandRecommendationSectionParsed', 'fairPlayManifest', 'fetchConfigJson', 'getLovedPage', 'getOwnedTracks', 'getPlan', 'getPlaybackManifest', 'getRecommendations', 'getStatus', 'getStreamUrl', 'handlePlayerEvent', 'homePageFlow', 'hostBridge', 'init', 'isSignedIn', 'keepCsrfHeaders', 'keptCsrfHeaders', 'likedSongsPageFlow', 'lovedGqlEntry', 'lovedListState', 'loveTrack', 'kickCertWarm', 'lookupAlbum', 'lookupAlbumFlow', 'lookupAlbumPageFlow', 'lookupPlaylist', 'lookupPlaylistFlow', 'lookupPlaylistPageFlow', 'mintCsrfHeaders', 'mintCsrfPageFlow', 'mintSessionContext', 'musicAgent', 'musicHomePageFlow', 'notePlanReading', 'ownedTracksPageFlow', 'pageSections', 'play', 'playlistImportPages', 'postTelemetryEvent', 'relayLicense', 'replayGql', 'replayGqlPatiently', 'requireLib', 'resolve', 'search', 'searchAlbums', 'searchArtistImage', 'searchOwned', 'seeMorePageFlow', 'sessionState', 'signIn', 'signInPromptDecision', 'signOut', 'specSearch', 'specSearchPageFlow', 'specStructuralError', 'telemetry', 'tryMusicHomeWalk', 'trySeeMoreReplay', 'trySpecReplay', 'walkMusicHomePages', 'wantsFairPlay', 'warmCertSession', 'withPlaylistsSection'].sort()
     );
   });
 });

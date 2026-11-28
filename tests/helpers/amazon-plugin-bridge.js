@@ -633,3 +633,105 @@ module.exports.amazonLibraryCapture = amazonLibraryCapture;
 module.exports.amazonLibrarySong = amazonLibrarySong;
 module.exports.amazonLibraryPage = amazonLibraryPage;
 module.exports.serveAmazonLibrary = serveAmazonLibrary;
+
+// ── The loves fixtures (#1559) ───────────────────────────────────────
+// The likes list (LikedSongsPage) and the like mutation (likeTrack), shaped
+// as the live web session carries them (live-captured 2026-11-27; see
+// plugins-src/amazonmusic/implementation.js "Loves").
+
+// One captured LikedSongsPage request, as the bridge's returned captures
+// carry them (the /my/songs page fires it on load).
+function amazonLikedSongsCapture({ csrfTs = '3000', echo = false, hash = 'likedhash' } = {}) {
+  return {
+    url: 'https://gql.music.amazon.com/',
+    method: 'POST',
+    echo,
+    body: JSON.stringify({
+      operationName: 'LikedSongsPage',
+      variables: { firstLimit: 50, isAuthenticated: true, sortBy: 'name' },
+      extensions: { clientLibrary: { name: '@apollo/client', version: '4.1.6' }, persistedQuery: { version: 1, sha256Hash: hash } }
+    }),
+    headers: { 'x-api-key': 'amzn1.application.x', 'csrf-token': 't', 'csrf-rnd': 'r', 'csrf-ts': csrfTs }
+  };
+}
+
+// One likes row: a catalog Track node with its like state (the live list
+// answers ONLY likes — purchase rows never appear — but a non-LIKE row must
+// still not become a love).
+function amazonLikedSong({ asin, title, artist, album = 'An Album', albumAsin = 'BALBUM0001', duration = 200, state = 'LIKE', explicitMarker = false } = {}) {
+  return {
+    node: {
+      __typename: 'Track',
+      id: asin,
+      title: explicitMarker ? `${title} [Explicit]` : title,
+      url: `/tracks/${asin}/`,
+      duration,
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: artist } }] },
+      album: { id: albumAsin, title: album },
+      images: [{ url: `https://m.media-amazon.com/images/I/${asin}.jpg`, width: 500, imageType: 'PRIMARY' }],
+      likesContext: { state, __typename: 'LikesContext' },
+      purchaseContext: { isPurchased: false, __typename: 'PurchaseContext' }
+    }
+  };
+}
+
+// The LikedSongsPage response: data.user.tracks, paged by pageInfo token.
+function amazonLikedSongsPage(songs, { token = null, hasNextPage = !!token } = {}) {
+  return {
+    data: {
+      user: {
+        tracks: {
+          edges: songs,
+          pageInfo: { hasNextPage, token, endCursor: null, hasPreviousPage: null, startCursor: null, __typename: 'PageInfo' }
+        }
+      }
+    }
+  };
+}
+
+// The likeTrack mutation's 200 reply, as the live session answers it.
+function amazonLikeTrackReply(asin, state = 'LIKE') {
+  return { data: { setTrackLikeState: { track: { __typename: 'Track', id: asin, likesContext: { state, __typename: 'LikesContext' } }, __typename: 'SetUserTrackLikeStateResponse' } } };
+}
+
+// Serve the likes flows over a web-session mock: /my/songs loads return the
+// page's own LikedSongsPage capture, LikedSongsPage replays answer by
+// afterCursor ('first' for the first), and likeTrack mutations answer the
+// 200 like reply (opts.likeReplies overrides per call, for failure tests).
+function serveAmazonLikes(ws, pages, { likeReplies } = {}) {
+  const replays = [];
+  const loads = [];
+  const load = ws.load.getMockImplementation();
+  ws.load.mockImplementation(async (id, url, o) => {
+    if (String(url).endsWith('/my/songs')) {
+      loads.push({ url, capture: o && o.capture });
+      return { success: true, finalUrl: url, captures: [amazonLikedSongsCapture()] };
+    }
+    return load(id, url, o);
+  });
+  const pageFetch = ws.pageFetch.getMockImplementation();
+  ws.pageFetch.mockImplementation(async (id, request) => {
+    let body = null;
+    try { body = JSON.parse(request.body); } catch (e) { /* not ours */ }
+    if (body && body.operationName === 'LikedSongsPage') {
+      replays.push(body);
+      const page = pages[(body.variables && body.variables.afterCursor) || 'first'];
+      if (!page) return { success: true, status: 500, text: '{}' };
+      return { success: true, status: 200, text: JSON.stringify(page) };
+    }
+    if (body && body.operationName === 'likeTrack') {
+      replays.push(body);
+      const reply = (likeReplies && likeReplies.length) ? likeReplies.shift() : amazonLikeTrackReply(body.variables && body.variables.trackId);
+      if (reply && reply.error) return { success: true, error: reply.error };
+      return { success: true, status: (reply && reply.status) || 200, text: JSON.stringify(reply) };
+    }
+    return pageFetch ? pageFetch(id, request) : { success: true, status: 404, text: '' };
+  });
+  return { replays, loads };
+}
+
+module.exports.amazonLikedSongsCapture = amazonLikedSongsCapture;
+module.exports.amazonLikedSong = amazonLikedSong;
+module.exports.amazonLikedSongsPage = amazonLikedSongsPage;
+module.exports.amazonLikeTrackReply = amazonLikeTrackReply;
+module.exports.serveAmazonLikes = serveAmazonLikes;
